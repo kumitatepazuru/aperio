@@ -1,0 +1,104 @@
+{
+  "name": "aperio",
+  "author": "John Doe <john@doe.com>",
+  "homepage": "https://github.com/kumitatepazuru/aperio",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "renderer:start": "vite",
+    "renderer:build": "vite build",
+    "main:build": "tsc -p tsconfig.main.json",
+    "main:watch": "tsc -w -p tsconfig.main.json",
+    "electron:dev": "wait-on tcp:5173 && cross-env ELECTRON_IS_DEV=1 electron .",
+    "dev": "run-p -l napi:debug renderer:start main:watch electron:dev",
+    "build": "run-s napi:build renderer:build main:build",
+    "lint": "eslint .",
+    "dist": "run-s build && electron-builder",
+    "artifacts": "napi artifacts",
+    "napi:build": "napi build --platform --release --output-dir dist/native/ --esm --dts ../../src/native/index.d.ts",
+    "napi:debug": "napi build --platform --watch --output-dir dist/native/ --esm --dts ../../src/native/index.d.ts"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@emnapi/core": "^1.5.0",
+    "@emnapi/runtime": "^1.5.0",
+    "@napi-rs/cli": "^3.2.0",
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "babel-plugin-react-compiler": "^19.1.0-rc.3",
+    "cross-env": "^10.1.0",
+    "electron": "^38.3.0",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
+    "globals": "^16.4.0",
+    "npm-run-all2": "^8.0.4",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.45.0",
+    "vite": "npm:rolldown-vite@7.1.14",
+    "wait-on": "^9.0.1"
+  },
+  "overrides": {
+    "vite": "npm:rolldown-vite@7.1.14"
+  },
+  "napi": {
+    "binaryName": "napi-test",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-apple-darwin"
+    ]
+  },
+  "engines": {
+    "node": ">= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0"
+  },
+  "build": {
+    "appId": "io.kumitatepazuru.aperio",
+    "productName": "Aperio",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "extraResources": [],
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+  }
+}
