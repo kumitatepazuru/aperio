@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Context, Ok, Result};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::Python;
 use std::{env, fs};
@@ -9,6 +8,7 @@ use crate::dir_util::get_data_dir;
 use crate::dir_util::get_local_data_dir;
 use toml_edit::DocumentMut;
 use crate::Dirs;
+use crate::error::{AperioError, AperioResult};
 
 pub struct PythonStatus {
     pub installed: bool,
@@ -30,12 +30,11 @@ fn file_extension(base_dir: &str, s: &str) -> PathBuf {
     PathBuf::from(base_dir).join(s)
 }
 
-async fn run_uv(dir: &Dirs, args: Vec<&str>) -> Result<String> {
+async fn run_uv(dir: &Dirs, args: Vec<&str>) -> AperioResult<String> {
     let output = Command::new(file_extension(&dir.local_data_dir, "uv")).args(args).output()?;
 
     if !output.status.success() {
-        return Err(anyhow!(
-            "Command failed with status: {}",
+        return Err(AperioError::CommandFailed(
             String::from_utf8(output.stderr.clone())?
         ));
     }
@@ -43,7 +42,7 @@ async fn run_uv(dir: &Dirs, args: Vec<&str>) -> Result<String> {
     Ok(String::from_utf8(output.stdout.clone())?)
 }
 
-pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
+pub fn add_python_path_env(dir: &Dirs) -> AperioResult<()> {
     // PYTHONPATHとPYTHONHOMEの設定
     let local_data_dir = get_local_data_dir(dir)?; // 環境ファイルがある
     let resource_dir = PathBuf::from_str(&dir.resource_dir)?.join("plmanager"); // プラグインマネージャーがある
@@ -60,7 +59,7 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
 
     Ok(())
 }
-pub async fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
+pub async fn check_python_installed(dir: &Dirs) -> AperioResult<PythonStatus> {
     // appdataのdir pathを取得
     let appdata_dir = get_local_data_dir(dir)?;
     // python/bin/python(.exe)のpathを取得
@@ -81,7 +80,7 @@ pub async fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
     // pythonのversionを取得
     // libpythonとvenv(uvが作った環境)のバージョンが全て合わなければCライブラリ系が読み込めないっぽい?
     // https://github.com/axnsan12/drf-yasg/issues/362#issuecomment-515542184
-    let python_version = Python::attach(|py| -> Result<String> {
+    let python_version = Python::attach(|py| -> AperioResult<String> {
         let sys = py.import("sys")?;
         let version = sys.getattr("version_info")?;
         let major: i32 = version.get_item(0)?.extract()?;
@@ -120,7 +119,7 @@ pub async fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
     })
 }
 
-pub async fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
+pub async fn install_packages(dir: &Dirs, packages: Vec<&str>) -> AperioResult<()> {
     // appdataのdir pathを取得
     let appdata_path = get_local_data_dir(dir)?;
     let appdata_dir = appdata_path
@@ -143,7 +142,7 @@ pub async fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
     Ok(())
 }
 
-pub async fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Result<()> {
+pub async fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> AperioResult<()> {
     // appdataのdir pathを取得
     let appdata_path = get_local_data_dir(dir)?;
     let appdata_dir = appdata_path
@@ -241,7 +240,7 @@ pub async fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) ->
     Ok(())
 }
 
-pub async fn sync_packages(dir: &Dirs) -> Result<String> {
+pub async fn sync_packages(dir: &Dirs) -> AperioResult<String> {
     let appdata_dir = get_local_data_dir(dir)?;
     let appdata_dir = appdata_dir
         .to_str()

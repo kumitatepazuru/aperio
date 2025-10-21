@@ -1,12 +1,11 @@
 use std::{fs::File, io::Write};
 
-use anyhow::{ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::dir_util::get_data_dir;
 use crate::Dirs;
-use crate::error::AperioResult;
+use crate::error::{AperioError, AperioResult};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PythonConfig {
@@ -37,7 +36,9 @@ pub fn init_config(dirs: &Dirs) -> AperioResult<()> {
 pub fn read_config(dirs: &Dirs) -> AperioResult<AppConfig> {
     let appdata_dir = get_data_dir(dirs)?;
     let config_path = appdata_dir.join("config.json");
-    ensure!(config_path.exists());
+    if config_path.exists(){
+        return Err(AperioError::FileNotFound(config_path.to_str().expect("couldn't convert").to_string()));
+    }
 
     let config = std::fs::read_to_string(&config_path)?;
     let config: AppConfig = match serde_json::from_str(&config) {
