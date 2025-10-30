@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::str::FromStr;
+use anyhow::Result;
 use crate::Dirs;
-use crate::error::AperioResult;
 
-pub fn get_data_dir(dirs: &Dirs) -> AperioResult<PathBuf> {
+pub fn get_data_dir(dirs: &Dirs) -> Result<PathBuf> {
     let appdata_dir = PathBuf::from_str(&dirs.data_dir)?;
     if !appdata_dir.exists() {
         println!("Creating app data directory at {:?}", &appdata_dir);
@@ -12,7 +12,7 @@ pub fn get_data_dir(dirs: &Dirs) -> AperioResult<PathBuf> {
     Ok(appdata_dir)
 }
 
-pub fn get_local_data_dir(dirs: &Dirs) -> AperioResult<PathBuf> {
+pub fn get_local_data_dir(dirs: &Dirs) -> Result<PathBuf> {
     let local_data_dir = PathBuf::from_str(&dirs.local_data_dir)?;
     if !local_data_dir.exists() {
         println!("Creating local data directory at {:?}", &local_data_dir);

@@ -1,11 +1,10 @@
 use std::{fs::File, io::Write};
-
+use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::dir_util::get_data_dir;
 use crate::Dirs;
-use crate::error::{AperioError, AperioResult};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PythonConfig {
@@ -16,7 +15,7 @@ pub struct AppConfig {
     pub python: PythonConfig,
 }
 
-pub fn init_config(dirs: &Dirs) -> AperioResult<()> {
+pub fn init_config(dirs: &Dirs) -> Result<()> {
     // 設定ファイルがあるか確認し、なければdefault-config.jsonをコピー
     let appdata_dir = get_data_dir(dirs)?;
     let config_path = appdata_dir.join("config.json");
@@ -33,12 +32,10 @@ pub fn init_config(dirs: &Dirs) -> AperioResult<()> {
     Ok(())
 }
 
-pub fn read_config(dirs: &Dirs) -> AperioResult<AppConfig> {
+pub fn read_config(dirs: &Dirs) -> Result<AppConfig> {
     let appdata_dir = get_data_dir(dirs)?;
     let config_path = appdata_dir.join("config.json");
-    if config_path.exists(){
-        return Err(AperioError::FileNotFound(config_path.to_str().expect("couldn't convert").to_string()));
-    }
+    ensure!(config_path.exists(), "Config file does not exist.");
 
     let config = std::fs::read_to_string(&config_path)?;
     let config: AppConfig = match serde_json::from_str(&config) {
@@ -49,8 +46,7 @@ pub fn read_config(dirs: &Dirs) -> AperioResult<AppConfig> {
                 err
             );
             let merged_config = merge_configs(&config)?;
-            let config: AppConfig = serde_json::from_value(merged_config)
-                .expect("Failed to parse config even after merging with default config.");
+            let config: AppConfig = serde_json::from_value(merged_config)?;
 
             // 成功したなら保存
             let config_str = serde_json::to_string_pretty(&config)?;
@@ -62,7 +58,7 @@ pub fn read_config(dirs: &Dirs) -> AperioResult<AppConfig> {
     Ok(config)
 }
 
-fn merge_configs(config: &str) -> AperioResult<Value> {
+fn merge_configs(config: &str) -> Result<Value> {
     let default_config_bytes = include_bytes!("data/default-config.json");
     let default_config: Value = serde_json::from_slice(default_config_bytes)?;
     let user_config: Value = serde_json::from_str(config)?;

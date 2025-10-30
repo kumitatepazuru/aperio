@@ -1,20 +1,25 @@
-use std::path::PathBuf;
-use std::str::FromStr;
 use crate::dir_util::get_data_dir;
-use anyhow::Result;
+use crate::Dirs;
+use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::{Py, PyAny, PyErr, Python};
-use crate::Dirs;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 pub fn initialize_python(dir: &Dirs) -> Result<Py<PyAny>> {
     let appdata_dir = get_data_dir(dir)?;
-    let resource_dir = PathBuf::from_str(&dir.resource_dir)?;
-    let base_plugin_dir = resource_dir.join("default-plugins").join("base");
+    let appdata_dir = appdata_dir.to_str().context("Failed to convert from pathbuf to str")?;
+    let base_plugin_dir = PathBuf::from_str(&dir.default_plugins_dir)?.join("base");
 
     // Pythonのプラグインシステムを初期化
     let pl_manager = Python::attach(|py| {
         // pythonのversionを取得
         let sys = py.import("sys")?;
+
+        // プラグインマネージャーのパスをsys.pathに追加
+        let sys_path = sys.getattr("path")?;
+        sys_path.call_method1("append", (&dir.plugin_manager_dir,))?;
+        sys_path.call_method1("append", (&appdata_dir,))?;
 
         // sys.pathを表示
         let sys_path: Vec<String> = sys.getattr("path")?.extract()?;

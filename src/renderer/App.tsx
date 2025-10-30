@@ -6,7 +6,9 @@ import "./App.css";
 function App() {
   const [count, setCount] = useState(0);
   useEffect(() => {
-    console.log(window.native.plus100(42));
+    window.native.getPlManager().then((manager) => {
+      console.log("PL Manager:", manager);
+    });
   }, []);
 
   return (

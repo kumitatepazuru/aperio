@@ -4,20 +4,22 @@
   "homepage": "https://github.com/kumitatepazuru/aperio",
   "version": "0.0.0",
   "type": "module",
-  "main": "dist/main/main.js",
+  "main": "dist/main.js",
   "scripts": {
     "renderer:start": "vite",
     "renderer:build": "vite build",
-    "main:build": "tsc -p tsconfig.main.json",
-    "main:watch": "tsc -w -p tsconfig.main.json",
+    "main:build": "rolldown -c",
     "electron:dev": "wait-on tcp:5173 && cross-env ELECTRON_IS_DEV=1 electron .",
-    "dev": "run-p -l napi:debug renderer:start main:watch electron:dev",
-    "build": "run-s napi:build renderer:build main:build",
+    "dev": "npm-run-all napi:debug main:build --parallel renderer:start electron:dev",
+    "build": "run-s napi:build main:build renderer:build",
     "lint": "eslint .",
     "dist": "run-s build && electron-builder",
     "artifacts": "napi artifacts",
-    "napi:build": "napi build --platform --release --output-dir dist/native/ --esm --dts ../../src/native/index.d.ts",
-    "napi:debug": "napi build --platform --watch --output-dir dist/native/ --esm --dts ../../src/native/index.d.ts"
+    "napi:build": "mkdir dist/native -p && napi build --platform --release --output-dir dist/ --js native/index.js --esm --dts native/index.d.ts",
+    "napi:debug": "mkdir dist/native -p && napi build --platform --output-dir dist/ --js native/index.js --esm --dts native/index.d.ts",
+    "python:stubgen": "uv run stubgen src-python/src/ -o src-python/out --include-docstrings",
+    "python:check": "uv run python -m mypy.stubtest aperio-plugin",
+    "uv:update": "uv run scripts/update-uv.py"
   },
   "dependencies": {
     "react": "^19.1.1",
@@ -26,8 +28,8 @@
   "devDependencies": {
     "@emnapi/core": "^1.5.0",
     "@emnapi/runtime": "^1.5.0",
-    "@napi-rs/cli": "^3.2.0",
     "@eslint/js": "^9.36.0",
+    "@napi-rs/cli": "^3.2.0",
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
@@ -41,6 +43,7 @@
     "eslint-plugin-react-refresh": "^0.4.22",
     "globals": "^16.4.0",
     "npm-run-all2": "^8.0.4",
+    "rolldown": "^1.0.0-beta.45",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.45.0",
     "vite": "npm:rolldown-vite@7.1.14",
@@ -50,7 +53,7 @@
     "vite": "npm:rolldown-vite@7.1.14"
   },
   "napi": {
-    "binaryName": "napi-test",
+    "binaryName": "aperio",
     "targets": [
       "x86_64-pc-windows-msvc",
       "x86_64-apple-darwin",
@@ -74,6 +77,9 @@
       "package.json"
     ],
     "asar": true,
+    "asarUnpack": [
+      "dist/*.node"
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
@@ -98,7 +104,32 @@
       ],
       "category": "Utility"
     },
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "resources/${os}-${arch}",
+        "to": ".",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "src-python/src/",
+        "to": "plmanager/"
+      },
+      {
+        "from": "plugins/",
+        "to": "default-plugins/"
+      },
+      {
+        "from": "dist/",
+        "to": "app.asar.unpacked/dist/",
+        "filter": [
+          "**/*.so*",
+          "**/*.dll",
+          "**/*.dylib*"
+        ]
+      }
+    ],
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
   }
 }
