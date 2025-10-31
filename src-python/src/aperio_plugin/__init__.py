@@ -11,12 +11,14 @@ from typing import Callable
 try:
     import cv2
     import numpy as np
+    import taichi as ti
 except ImportError as e:
+    # TODO: 診断情報を出力
     import traceback
 
     traceback.print_exc()
 
-    raise ImportError("Failed to import required modules. Make sure OpenCV (cv2) and numpy are installed."
+    raise ImportError("Failed to import required modules. Make sure OpenCV (cv2) , numpy and taichi are installed."
                       "\n--- For Developer ---\nThis error was occured by many complicated reasons. Ensure the below check list and fix them:"
                       "\n1. Make sure OpenCV (cv2) and numpy are installed in the python environment used by Aperio."
                       "\n  Running Environment can be checked in below debug info. Generally, required packages should be installed during post running process."
@@ -29,7 +31,8 @@ except ImportError as e:
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import FilterGeneratorBase, ObjectGeneratorBase
 from .types.frame_structure import LayerStructure
-from .utils import ExpandedUMat
+from .taichi.kernels import *
+from .utils import check_array_shape
 
 executor = ThreadPoolExecutor()
 
@@ -237,24 +240,21 @@ class PluginManager:
                 raise ValueError("channels must be 1 (grayscale), 3 (RGB), or 4 (RGBA)")
 
             # 最終的なフレームを保持する配列を初期化 (RGB)
-            final_frame = cv2.UMat(height, width, cv2.CV_8UC3)
+            final_frame_field = ti.Vector.field(3, dtype=ti.f32, shape=(height, width))
+            final_frame_field.fill(0.0)  # 黒で初期化
             for layer in frame_structure:
                 if layer["obj_base"] not in self.object_plugins:
                     raise ValueError(f"Object plugin {layer['obj_base']} is not registered")
 
                 obj_plugin = self.object_plugins[layer["obj_base"]]
-                layer_frame = obj_plugin.generate(frame_number, layer["obj_parameters"],
+                layer_frame_raw = obj_plugin.generate(frame_number, layer["obj_parameters"],
                                                   (height, width, layer["channels"]))
-                # numpyかUMatかを確認
-                # UMatの場合はshapeの確認ができないのでpass(numpyに変換して確認する方法もあるが、速度面で不利になるため避ける)
-                if isinstance(layer_frame, np.ndarray):
-                    if layer_frame.shape != (height, width, layer["channels"]):
-                        raise ValueError(f"Generated frame shape {layer_frame.shape} does not match "
-                                         f"expected shape {(height, width, layer['channels'])}")
-
-                    layer_frame = ExpandedUMat.from_numpy(layer_frame)  # UMatに変換
-                elif not isinstance(layer_frame, ExpandedUMat):
-                    raise TypeError(f"Generated frame must be np.ndarray or ExpandedUMat, got {type(layer_frame)}")
+                
+                # 正しい形式か確認
+                check_array_shape(layer_frame_raw, (height, width, layer["channels"]), np.uint8)
+                if layer_frame_raw.shape != (height, width, layer["channels"]) :
+                    raise ValueError(f"Generated frame shape {layer_frame_raw.shape} does not match "
+                                        f"expected shape {(height, width, layer['channels'])}")
 
                 # layer_frameに対してエフェクトを順に適用
                 for effect in layer["effects"]:
@@ -262,73 +262,46 @@ class PluginManager:
                         raise ValueError(f"Filter plugin {effect['name']} is not registered")
 
                     filter_plugin = self.filter_plugins[effect["name"]]
-                    layer_frame = filter_plugin.generate(frame_number, layer_frame, effect["parameters"])
-                    # numpyかUMatかを確認
-                    if isinstance(layer_frame, np.ndarray):
-                        if layer_frame.shape != (height, width, layer["channels"]):
-                            raise ValueError(f"After applying filter {effect['name']}, frame shape {layer_frame.shape} "
-                                             f"does not match expected shape {(height, width, layer['channels'])}")
+                    layer_frame_raw = filter_plugin.generate(frame_number, layer_frame_raw, effect["parameters"])
+                    # 正しい形式か確認
+                    check_array_shape(layer_frame_raw, (height, width, layer["channels"]), np.uint8)
+                    if layer_frame_raw.shape != (height, width, layer["channels"]):
+                        raise ValueError(f"Generated frame shape {layer_frame_raw.shape} does not match "
+                                            f"expected shape {(height, width, layer['channels'])}")
 
-                        layer_frame = ExpandedUMat.from_numpy(layer_frame)  # UMatに変換
-                    elif not isinstance(layer_frame, ExpandedUMat):
-                        raise TypeError(f"After applying filter {effect['name']}, frame must be np.ndarray or ExpandedUMat, "
-                                        f"got {type(layer_frame)}")
-
-                # OpenCVでレイヤーを最終フレームに重ねる
+                # レイヤーを最終フレームに重ねる
                 # TODO: ブレンディングもプラグイン化できるように
-                x, y = layer["x"], layer["y"]
-                layer_width, layer_height = layer_frame.shape[1], layer_frame.shape[0]
-                layer_frame_mat = layer_frame.umat
+                layer_shape = (layer_frame_raw.shape[0], layer_frame_raw.shape[1])
+                channels = layer["channels"]
 
-                # 平行移動行列（CPU側でOK。小さい行列なのでコストは無視できる）
-                M = np.float32([[1, 0, x],
-                                [0, 1, y]])
+                # データを格納するための一時的なTaichiフィールドを用意
+                if channels == 1:
+                    layer_field = ti.field(dtype=ti.f32, shape=layer_shape)
+                else: # 3 or 4
+                    layer_field = ti.Vector.field(channels, dtype=ti.f32, shape=layer_shape)
 
-                # 便利ユーティリティ（最終サイズの「1」画像を用意：float32の3ch）
-                # noinspection PyTypeChecker
-                ones3 = cv2.UMat(np.ones((height, width, 3), np.float32))
-
-                if layer_height <= 0 or layer_width <= 0:
-                    continue  # レイヤーがフレーム外にはみ出している場合はスキップ
-
-                # レイヤーのチャンネル数に応じて処理を分岐
-                if layer["channels"] == 4:
-                    # 1) レイヤのBGRとAlphaを分離
-                    bgr = cv2.cvtColor(layer_frame_mat, cv2.COLOR_BGRA2BGR)
-                    alpha = cv2.extractChannel(layer_frame_mat, 3)  # 0..255 の 1ch
-                elif layer["channels"] == 1:
-                    bgr = cv2.cvtColor(layer_frame_mat, cv2.COLOR_GRAY2BGR)
-                    alpha = cv2.inRange(layer_frame_mat, 0, 255)  # レイヤ領域→255
+                # 型に応じてデータをフィールドにロード
+                if isinstance(layer_frame_raw, np.ndarray):
+                    # NumPy配列の場合、f32に正規化してフィールドにコピー
+                    normalize_from_numpy(layer_field, layer_frame_raw)
+                elif isinstance(layer_frame_raw, ti.Field):
+                    # Taichiフィールドの場合は、直接コピー（参照渡し）
+                    layer_field = layer_frame_raw
                 else:
-                    bgr = layer_frame_mat
-                    gray = cv2.cvtColor(layer_frame_mat, cv2.COLOR_BGR2GRAY)
-                    alpha = cv2.inRange(gray, 0, 255)  # レイヤ領域→255
+                    raise TypeError(f"Unsupported layer_frame type: {type(layer_frame_raw)}")
 
-                # 2) (x,y) へ平行移動して最終サイズに射影（画面外は自動クリップ）
-                bgr_p = cv2.warpAffine(bgr, M, (width, height),
-                                       flags=cv2.INTER_NEAREST,
-                                       borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
-                a_p = cv2.warpAffine(alpha, M, (width, height),
-                                     flags=cv2.INTER_NEAREST,
-                                     borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
-
-                # 3) αを [0,1] の float32 にして3chへ拡張
-                a_f = cv2.multiply(a_p, 1 / 255.0, dtype=cv2.CV_32F)  # 1ch float
-                a3 = cv2.cvtColor(a_f, cv2.COLOR_GRAY2BGR)  # 3ch float
-                inva = cv2.subtract(ones3, a3)  # 1 - α
-
-                # 4) 全画面で合成（ROI不要・ゼロコピー）
-                term1 = cv2.multiply(a3, bgr_p, dtype=cv2.CV_32F)
-                term2 = cv2.multiply(inva, final_frame, dtype=cv2.CV_32F)
-                out_f = cv2.add(term1, term2)
-                final_frame = cv2.convertScaleAbs(out_f)  # float->8U
+                # 元のコードの複雑なクリッピングとブレンディングがこの一行に集約される
+                composite_layer(final_frame_field, layer_field, layer["x"], layer["y"], channels)
+            
+            final_frame_np = np.empty((height, width, 3), dtype=np.uint8)
+            finalize_to_numpy(final_frame_field, final_frame_np)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             raise RuntimeError(f"Failed to make frame: {e}")
 
-        return final_frame.get()
+        return final_frame_np
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
         """

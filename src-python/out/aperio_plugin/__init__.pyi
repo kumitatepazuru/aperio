@@ -1,3 +1,4 @@
+from .taichi.kernels import *
 import numpy as np
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import FilterGeneratorBase, ObjectGeneratorBase
