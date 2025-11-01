@@ -4,13 +4,20 @@ import { PlManager } from "native";
 
 let plManagerSingleton: PlManager | null = null;
 
-contextBridge.exposeInMainWorld("native", {
-  getPlManager: async () => {
+const ch = new MessageChannel();
+const p1 = ch.port1;
+const p2 = ch.port2;
+p1.start();
+
+contextBridge.exposeInMainWorld("frame", {
+  init: async () => {
     if (!plManagerSingleton) {
       const userDataPath = await ipcRenderer.invoke("get-app-path", "userData");
       const resourcesPath = await ipcRenderer.invoke("get-resources");
       const pluginManagerPath = await ipcRenderer.invoke("get-plugin-manager");
-      const defaultPluginsPath = await ipcRenderer.invoke("get-default-plugins");
+      const defaultPluginsPath = await ipcRenderer.invoke(
+        "get-default-plugins"
+      );
       const distDir = await ipcRenderer.invoke("get-dist-dir");
 
       console.log("Plugin Manager is being initialized");
@@ -30,7 +37,11 @@ contextBridge.exposeInMainWorld("native", {
       plManagerSingleton.initialize();
     }
 
-    return plManagerSingleton;
+    window.postMessage({ type: "frame-port" }, "*", [p2]);
+  },
+  getFrame: (count: number) => {
+    const data = plManagerSingleton?.getFrame(count);
+    p1.postMessage(data);
   },
 });
 

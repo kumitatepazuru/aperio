@@ -1,7 +1,6 @@
 from typing import Literal
 
 import numpy as np
-import taichi as ti
 
 from . import SubPluginBase
 
@@ -18,7 +17,7 @@ class ObjectGeneratorBase(SubPluginBase):
         """
         super().__init__()
 
-    def generate(self, frame_number: int, obj_args: dict, shape: tuple[int, int, Literal[1, 3, 4]]) -> np.ndarray | ti.Field:
+    def generate(self, frame_number: int, obj_args: dict, shape: tuple[int, int, Literal[1, 3, 4]]) -> np.ndarray:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -45,7 +44,7 @@ class FilterGeneratorBase(SubPluginBase):
         """
         super().__init__()
 
-    def generate(self, frame_number: int, frame: np.ndarray | ti.Field, filter_args: dict) -> np.ndarray | ti.Field:
+    def generate(self, frame_number: int, frame: np.ndarray, filter_args: dict) -> np.ndarray:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 

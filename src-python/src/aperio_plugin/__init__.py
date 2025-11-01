@@ -11,14 +11,13 @@ from typing import Callable
 try:
     import cv2
     import numpy as np
-    import taichi as ti
 except ImportError as e:
     # TODO: 診断情報を出力
     import traceback
 
     traceback.print_exc()
 
-    raise ImportError("Failed to import required modules. Make sure OpenCV (cv2) , numpy and taichi are installed."
+    raise ImportError("Failed to import required modules. Make sure OpenCV (cv2) and numpy are installed."
                       "\n--- For Developer ---\nThis error was occured by many complicated reasons. Ensure the below check list and fix them:"
                       "\n1. Make sure OpenCV (cv2) and numpy are installed in the python environment used by Aperio."
                       "\n  Running Environment can be checked in below debug info. Generally, required packages should be installed during post running process."
@@ -26,13 +25,11 @@ except ImportError as e:
                       "\n  Please try to install python separately (recommends uv) with `uv python install --reinstall --no-managed-python` and run `./scripts/copy-python.sh --uv`."
                       "\n3. For Linux: Make sure that libpython is preloaded as RTLD_GLOBAL correctly. In linux, libpython must be able to be seen globally because of policy of manylinux."
                       "\n  Try add the environment LD_PRELOAD to specify the path to libpython3.x.so explicitly.") from e
-
+print("test import successful: cv2, numpy")
 
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import FilterGeneratorBase, ObjectGeneratorBase
 from .types.frame_structure import LayerStructure
-from .taichi.kernels import *
-from .utils import check_array_shape
 
 executor = ThreadPoolExecutor()
 
@@ -240,21 +237,16 @@ class PluginManager:
                 raise ValueError("channels must be 1 (grayscale), 3 (RGB), or 4 (RGBA)")
 
             # 最終的なフレームを保持する配列を初期化 (RGB)
-            final_frame_field = ti.Vector.field(3, dtype=ti.f32, shape=(height, width))
-            final_frame_field.fill(0.0)  # 黒で初期化
+            final_frame = np.zeros((height, width, 3), dtype=np.uint8)
             for layer in frame_structure:
                 if layer["obj_base"] not in self.object_plugins:
                     raise ValueError(f"Object plugin {layer['obj_base']} is not registered")
 
                 obj_plugin = self.object_plugins[layer["obj_base"]]
-                layer_frame_raw = obj_plugin.generate(frame_number, layer["obj_parameters"],
-                                                  (height, width, layer["channels"]))
-                
-                # 正しい形式か確認
-                check_array_shape(layer_frame_raw, (height, width, layer["channels"]), np.uint8)
-                if layer_frame_raw.shape != (height, width, layer["channels"]) :
-                    raise ValueError(f"Generated frame shape {layer_frame_raw.shape} does not match "
-                                        f"expected shape {(height, width, layer['channels'])}")
+                layer_frame = obj_plugin.generate(frame_number, layer["obj_parameters"], (height, width, layer["channels"]))
+                if layer_frame.shape != (height, width, layer["channels"]):
+                    raise ValueError(f"Generated frame shape {layer_frame.shape} does not match "
+                                     f"expected shape {(height, width, layer['channels'])}")
 
                 # layer_frameに対してエフェクトを順に適用
                 for effect in layer["effects"]:
@@ -262,46 +254,53 @@ class PluginManager:
                         raise ValueError(f"Filter plugin {effect['name']} is not registered")
 
                     filter_plugin = self.filter_plugins[effect["name"]]
-                    layer_frame_raw = filter_plugin.generate(frame_number, layer_frame_raw, effect["parameters"])
-                    # 正しい形式か確認
-                    check_array_shape(layer_frame_raw, (height, width, layer["channels"]), np.uint8)
-                    if layer_frame_raw.shape != (height, width, layer["channels"]):
-                        raise ValueError(f"Generated frame shape {layer_frame_raw.shape} does not match "
-                                            f"expected shape {(height, width, layer['channels'])}")
+                    layer_frame = filter_plugin.generate(frame_number, layer_frame, effect["parameters"])
+                    if layer_frame.shape != (height, width, layer["channels"]):
+                        raise ValueError(f"After applying filter {effect['name']}, frame shape {layer_frame.shape} "
+                                         f"does not match expected shape {(height, width, layer['channels'])}")
 
-                # レイヤーを最終フレームに重ねる
+                # OpenCVでレイヤーを最終フレームに重ねる
                 # TODO: ブレンディングもプラグイン化できるように
-                layer_shape = (layer_frame_raw.shape[0], layer_frame_raw.shape[1])
-                channels = layer["channels"]
+                x, y = layer["x"], layer["y"]
+                layer_width, layer_height = layer_frame.shape[1], layer_frame.shape[0]
 
-                # データを格納するための一時的なTaichiフィールドを用意
-                if channels == 1:
-                    layer_field = ti.field(dtype=ti.f32, shape=layer_shape)
-                else: # 3 or 4
-                    layer_field = ti.Vector.field(channels, dtype=ti.f32, shape=layer_shape)
+                # フレーム外にはみ出している部分を切り取る
+                if x < 0:
+                    layer_frame = layer_frame[:, -x:, :]
+                    x = 0
+                if y < 0:
+                    layer_frame = layer_frame[-y:, :, :]
+                    y = 0
+                if x + layer_width > width:
+                    layer_frame = layer_frame[:, :width - x, :]
+                if y + layer_height > height:
+                    layer_frame = layer_frame[:height - y, :, :]
+                if layer_height <= 0 or layer_width <= 0:
+                    continue  # レイヤーがフレーム外にはみ出している場合はスキップ
 
-                # 型に応じてデータをフィールドにロード
-                if isinstance(layer_frame_raw, np.ndarray):
-                    # NumPy配列の場合、f32に正規化してフィールドにコピー
-                    normalize_from_numpy(layer_field, layer_frame_raw)
-                elif isinstance(layer_frame_raw, ti.Field):
-                    # Taichiフィールドの場合は、直接コピー（参照渡し）
-                    layer_field = layer_frame_raw
-                else:
-                    raise TypeError(f"Unsupported layer_frame type: {type(layer_frame_raw)}")
-
-                # 元のコードの複雑なクリッピングとブレンディングがこの一行に集約される
-                composite_layer(final_frame_field, layer_field, layer["x"], layer["y"], channels)
-            
-            final_frame_np = np.empty((height, width, 3), dtype=np.uint8)
-            finalize_to_numpy(final_frame_field, final_frame_np)
+                # レイヤーのチャンネル数に応じて処理を分岐
+                if layer["channels"] == 1:
+                    # グレースケールの場合、3チャンネルに変換してから重ねる
+                    gray_layer = cv2.cvtColor(layer_frame, cv2.COLOR_GRAY2BGR)
+                    final_frame[y:y + layer_height, x:x + layer_width] = gray_layer
+                elif layer["channels"] == 3:
+                    # RGBの場合、そのまま重ねる
+                    final_frame[y:y + layer_height, x:x + layer_width] = layer_frame
+                elif layer["channels"] == 4:
+                    # RGBAの場合、アルファチャンネルを考慮して重ねる
+                    alpha_channel = layer_frame[:, :, 3] / 255.0
+                    for c in range(3):  # RGB各チャンネルに対して処理
+                        final_frame[y:y + layer_height, x:x + layer_width, c] = (
+                                alpha_channel * layer_frame[:, :, c] +
+                                (1 - alpha_channel) * final_frame[y:y + layer_height, x:x + layer_width, c]
+                        )
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             raise RuntimeError(f"Failed to make frame: {e}")
 
-        return final_frame_np
+        return cv2.cvtColor(final_frame, cv2.COLOR_BGR2RGBA)
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
         """

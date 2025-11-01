@@ -31,7 +31,7 @@ fn file_extension(base_dir: &PathBuf, s: &str) -> PathBuf {
     base_dir.join(s)
 }
 
-async fn run_uv(dir: &Dirs, args: Vec<&str>) -> Result<String> {
+fn run_uv(dir: &Dirs, args: Vec<&str>) -> Result<String> {
     let bin_dir = PathBuf::from_str(&dir.resource_dir)?.join("bin");
     let output = Command::new(file_extension(&bin_dir, "uv"))
         .args(args)
@@ -48,22 +48,19 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
     // PYTHONPATHとPYTHONHOMEの設定
     let local_data_dir = get_local_data_dir(dir)?; // 環境ファイルがある
     let python_path = local_data_dir.join("python"); // pythonがある
+    let bin_path = file_extension(&python_path.join("bin"), "python"); // pythonの実行ファイルがある
     env::set_var("UV_PROJECT_ENVIRONMENT", &python_path);
 
-    println!("Initializing Python with home: {:?}", python_path);
-
     unsafe {
-        let python_path = CString::new(
-            python_path
+        let bin_path = CString::new(
+            bin_path
                 .to_str()
-                .context("Failed to convert python path to str")?,
+                .context("Failed to convert python bin path to str")?,
         )?;
 
         let mut config: PyConfig = std::mem::zeroed();
         PyConfig_InitIsolatedConfig(&mut config);
-
-        PyConfig_SetBytesString(&mut config, &mut config.home, python_path.as_ptr());
-        PyConfig_SetBytesString(&mut config, &mut config.prefix, python_path.as_ptr());
+        PyConfig_SetBytesString(&mut config, &mut config.executable, bin_path.as_ptr());
 
         let err = Py_InitializeFromConfig(&mut config);
         PyConfig_Clear(&mut config);
@@ -77,7 +74,7 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
 
     Ok(())
 }
-pub async fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
+pub fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
     // appdataのdir pathを取得
     let appdata_dir = get_local_data_dir(dir)?;
     // python/bin/python(.exe)のpathを取得
@@ -138,7 +135,7 @@ pub async fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
     })
 }
 
-pub async fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
+pub fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
     // appdataのdir pathを取得
     let appdata_path = get_local_data_dir(dir)?;
     let appdata_dir = appdata_path
@@ -157,11 +154,11 @@ pub async fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
     ]);
     args.extend(get_base_args(appdata_dir));
 
-    run_uv(dir, args).await?;
+    run_uv(dir, args)?;
     Ok(())
 }
 
-pub async fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Result<()> {
+pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Result<()> {
     // appdataのdir pathを取得
     let appdata_path = get_local_data_dir(dir)?;
     let appdata_dir = appdata_path
@@ -199,7 +196,7 @@ pub async fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) ->
             "aperio-env",
         ];
         args.extend(get_base_args(appdata_dir));
-        run_uv(dir, args).await?;
+        run_uv(dir, args)?;
     }
 
     // uv python installコマンドを実行してpythonをインストール
@@ -214,7 +211,7 @@ pub async fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) ->
         &python_version_str,
     ];
     args.extend(get_base_args(appdata_dir));
-    run_uv(dir, args).await?;
+    run_uv(dir, args)?;
 
     // 何故かゴミができるのであれば削除
     fs::remove_file(appdata_path.join(".gitignore")).ok();
@@ -252,14 +249,13 @@ pub async fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) ->
         vec![wheel_path
             .to_str()
             .context("could not convert wheel path to str")?],
-    )
-    .await?;
+    )?;
     println!("Successfully installed Python and required packages");
 
     Ok(())
 }
 
-pub async fn sync_packages(dir: &Dirs) -> Result<String> {
+pub fn sync_packages(dir: &Dirs) -> Result<String> {
     let appdata_dir = get_local_data_dir(dir)?;
     let appdata_dir = appdata_dir
         .to_str()
@@ -268,5 +264,5 @@ pub async fn sync_packages(dir: &Dirs) -> Result<String> {
     let mut args = vec!["sync"];
     args.extend(get_base_args(appdata_dir));
 
-    Ok(run_uv(dir, args).await?)
+    Ok(run_uv(dir, args)?)
 }

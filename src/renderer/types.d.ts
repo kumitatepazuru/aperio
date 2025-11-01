@@ -1,13 +1,17 @@
-import { PlManager } from "../native";
-
 declare global {
   interface Window {
-    native: {
-      getPlManager: () => Promise<PlManager>;
-    };
+    frame: {
+      init: () => void;
+      getFrame: (count: number) => Promise<Uint8Array<ArrayBufferLike>>;
+    },
     path: {
       getPath: (name: "userData" | "temp" | "exe") => Promise<string>;
       getResources: () => Promise<string>;
+      getPluginManager: () => Promise<string>;
+      getDefaultPlugins: () => Promise<string>;
+      getDistDir: () => Promise<string>;
     };
   }
 }
+
+export {};

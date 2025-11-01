@@ -1,4 +1,5 @@
 use crate::{app_config::read_config, dir_util::get_local_data_dir};
+use napi::bindgen_prelude::Uint8Array;
 use napi_derive::napi;
 use numpy::{PyArrayMethods, PyReadonlyArray3};
 use pyo3::{
@@ -36,7 +37,7 @@ pub struct Dirs {
     pub dist_dir: String,
 }
 
-pub async fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
+pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
     // configの初期化
     app_config::init_config(dirs)?;
     let config = read_config(dirs)?;
@@ -48,11 +49,11 @@ pub async fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
     // python環境変数の設定
     if !python_path.exists() {
         println!("Found no Python installation at {:?}", python_path);
-        python::utils::install_python(dirs, &default_version, true).await?;
+        python::utils::install_python(dirs, &default_version, true)?;
     }
     python::utils::add_python_path_env(dirs)?;
 
-    let mut result = python::utils::check_python_installed(dirs).await?;
+    let mut result = python::utils::check_python_installed(dirs)?;
     let mut try_count = 0;
     // TODO: try_countが3回を超えたら正しいエラーハンドリングをする
     while !result.installed && try_count < 3 {
@@ -61,17 +62,16 @@ pub async fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
             dirs,
             result.version.as_ref().unwrap_or(&default_version),
             result.version.is_none(),
-        )
-        .await?;
+        )?;
         println!("Python installed");
-        result = python::utils::check_python_installed(dirs).await?;
+        result = python::utils::check_python_installed(dirs)?;
         try_count += 1;
     }
 
     println!("Installed python version: {:?}", result.version);
 
     println!("syncing packages...");
-    let sync_result = python::utils::sync_packages(dirs).await;
+    let sync_result = python::utils::sync_packages(dirs);
     println!("Package sync result: {:?}", sync_result);
 
     // Linuxの場合、libpythonをRTLD_GLOBALで読み込む
@@ -92,7 +92,6 @@ pub async fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
     }
     // python環境の初期化
     let pl_manager = python::initialize::initialize_python(dirs)?;
-    // let (tx, _) = broadcast::channel::<Arc<Vec<u8>>>(100);
 
     Ok(pl_manager)
 }
@@ -116,8 +115,8 @@ impl JsPlManager {
     }
 
     #[napi]
-    pub async unsafe fn initialize(&mut self) -> napi::Result<()> {
-        let result = _initialize(&self.dirs).await;
+    pub fn initialize(&mut self) -> napi::Result<()> {
+        let result = _initialize(&self.dirs);
         let pl_manager = result.map_err(|e| {
             eprintln!("Failed to initialize Python environment: {:?}", e);
 
@@ -131,7 +130,7 @@ impl JsPlManager {
     }
 
     #[napi]
-    pub fn get_frame(&self, count: i32) -> napi::Result<Vec<u8>> {
+    pub fn get_frame(&self, count: i32) -> napi::Result<Uint8Array> {
         let pl_manager = self
             .plmanager
             .as_ref()
@@ -169,6 +168,6 @@ impl JsPlManager {
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
-        Ok(buffers)
+        Ok(Uint8Array::new(buffers))
     }
 }

@@ -39,6 +39,13 @@ function getDistDir() {
 }
 
 async function createWindow() {
+  // TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
+  ipcMain.handle("get-app-path", getAppPath);
+  ipcMain.handle("get-resources", getResources);
+  ipcMain.handle("get-plugin-manager", getPluginManager);
+  ipcMain.handle("get-default-plugins", getDefaultPlugins);
+  ipcMain.handle("get-dist-dir", getDistDir);
+
   win = new BrowserWindow({
     width: 1100,
     height: 720,
@@ -63,13 +70,6 @@ async function createWindow() {
   }
 
   win.on("closed", () => (win = null));
-
-  // TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
-  ipcMain.handle("get-app-path", getAppPath);
-  ipcMain.handle("get-resources", getResources);
-  ipcMain.handle("get-plugin-manager", getPluginManager);
-  ipcMain.handle("get-default-plugins", getDefaultPlugins);
-  ipcMain.handle("get-dist-dir", getDistDir);
 }
 
 app.whenReady().then(createWindow);
