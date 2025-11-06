@@ -4,6 +4,7 @@ import os.path
 import shutil
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Callable
+import gpu_util
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。

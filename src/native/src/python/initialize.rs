@@ -2,19 +2,29 @@ use crate::dir_util::get_data_dir;
 use crate::Dirs;
 use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;
+use pyo3::types::{PyDict, PyModule};
 use pyo3::{Py, PyAny, PyErr, Python};
 use std::path::PathBuf;
 use std::str::FromStr;
 
 pub fn initialize_python(dir: &Dirs) -> Result<Py<PyAny>> {
     let appdata_dir = get_data_dir(dir)?;
-    let appdata_dir = appdata_dir.to_str().context("Failed to convert from pathbuf to str")?;
+    let appdata_dir = appdata_dir
+        .to_str()
+        .context("Failed to convert from pathbuf to str")?;
     let base_plugin_dir = PathBuf::from_str(&dir.default_plugins_dir)?.join("base");
 
     // Pythonのプラグインシステムを初期化
     let pl_manager = Python::attach(|py| {
         // pythonのversionを取得
         let sys = py.import("sys")?;
+
+        // ネイティブモジュールを追加
+        let modules = sys.getattr("modules")?;
+        let modules = modules.downcast::<PyDict>()?;
+        let m = PyModule::new(py, "gpu_util")?;
+        gpu_util::gpu_util(&m)?;
+        modules.set_item("gpu_util", m)?;
 
         // プラグインマネージャーのパスをsys.pathに追加
         let sys_path = sys.getattr("path")?;
