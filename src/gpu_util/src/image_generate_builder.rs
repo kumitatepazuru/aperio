@@ -51,7 +51,7 @@ impl ImageGenerateBuilder {
     /// # Arguments
     ///
     /// * `wgsl` - `CompiledWgsl`のArc参照。
-    /// * `params` - シェーダーのUniform Bufferに渡すパラメータ。`bytemuck`でシリアライズされたバイト列を渡します。
+    /// * `params` - シェーダーのStorage Bufferに渡すパラメータ。`bytemuck`でシリアライズされたバイト列を渡します。
     pub fn add_wgsl(
         self,
         wgsl: CompiledWgsl,

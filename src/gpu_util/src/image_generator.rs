@@ -20,7 +20,6 @@ use std::{
 use wgpu::include_wgsl;
 
 // WGSLの後処理シェーダー（f32 RGBA -> u32 RRGGBBAA）
-// widthをUniformで渡すように変更
 const POST_PROCESS_WGSL: wgpu::ShaderModuleDescriptor<'_> =
     include_wgsl!("shaders/post_process.wgsl");
 
@@ -29,7 +28,7 @@ const POST_PROCESS_WGSL: wgpu::ShaderModuleDescriptor<'_> =
 pub(crate) struct PipelineCacheKey {
     id: String,
     input_texture_count: usize,
-    has_uniform: bool,
+    has_storage: bool,
 }
 
 // テクスチャキャッシュのキーとなる構造体
@@ -122,7 +121,8 @@ impl ImageGenerator {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("ImageGenerator Device"),
-                required_features: wgpu::Features::TEXTURE_BINDING_ARRAY, // 配列テクスチャバインディングを有効化
+                required_features: wgpu::Features::TEXTURE_BINDING_ARRAY
+                    | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING, // 配列テクスチャバインディングを有効化
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 1000, // 必要に応じて調整
                     max_storage_buffer_binding_size: 2147483647,       // 2GB
@@ -507,9 +507,9 @@ impl ImageGenerator {
                     entries: &bgl_entries_group0,
                 });
 
-        // --- バインドグループ1 (Uniformパラメータ) ---
+        // --- バインドグループ1 (Storageパラメータ) ---
         let mut bind_group_layouts = vec![bind_group_layout_0];
-        if key.has_uniform {
+        if key.has_storage {
             let bind_group_layout_1 =
                 self.device
                     .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -518,7 +518,7 @@ impl ImageGenerator {
                             binding: 0,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
                                 has_dynamic_offset: false,
                                 min_binding_size: None,
                             },

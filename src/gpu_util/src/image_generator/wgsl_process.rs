@@ -74,7 +74,7 @@ pub fn handle_wgsl_step(
     let key = PipelineCacheKey {
         id: wgsl.id.clone(),
         input_texture_count: input_texture_views.len(),
-        has_uniform: params.is_some(),
+        has_storage: params.is_some(),
     };
     let cached_pipeline = generator.get_or_create_pipeline(&key, &wgsl.module)?;
 
@@ -110,15 +110,15 @@ pub fn handle_wgsl_step(
         cpass.set_pipeline(&cached_pipeline.pipeline);
         cpass.set_bind_group(0, &bind_group_0, &[]);
 
-        // --- バインドグループ1 (Uniformパラメータ) の構築とセット ---
+        // --- バインドグループ1 (Storage Bufferパラメータ) の構築とセット ---
         if let Some(p) = params {
-            let uniform_buffer =
+            let storage_buffer =
                 generator
                     .device
                     .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some(&format!("Step {} Uniform Buffer", step_index)),
+                        label: Some(&format!("Step {} Storage Buffer", step_index)),
                         contents: p,
-                        usage: wgpu::BufferUsages::UNIFORM,
+                        usage: wgpu::BufferUsages::STORAGE,
                     });
             let bind_group_1 = generator
                 .device
@@ -127,7 +127,11 @@ pub fn handle_wgsl_step(
                     layout: &cached_pipeline.pipeline.get_bind_group_layout(1),
                     entries: &[wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: uniform_buffer.as_entire_binding(),
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &storage_buffer,
+                            offset: 0,
+                            size: None,
+                        }),
                     }],
                 });
             cpass.set_bind_group(1, &bind_group_1, &[]);
