@@ -1,5 +1,6 @@
 from .. import PluginManager
 from _typeshed import Incomplete
+from gpu_util import PyImageGenerator as PyImageGenerator
 
 class PluginBase:
     """
@@ -30,7 +31,7 @@ class MainPluginBase(PluginBase):
     version: str
     author: str
     manager: Incomplete
-    def __init__(self, manager: PluginManager) -> None:
+    def __init__(self, manager: PluginManager, generator: PyImageGenerator) -> None:
         """
         プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """

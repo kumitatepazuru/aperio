@@ -16,6 +16,8 @@ class PluginManager:
     filter_plugins: dict[str, FilterGeneratorBase]
     data_dir: Incomplete
     plugin_dir_name: Incomplete
+    generator: Incomplete
+    compose_wgsl: Incomplete
     def __init__(self, data_dir: str, plugin_dir_name: str = 'plugins') -> None:
         '''
         フレーム生成マネージャーの初期化をする。data_dirはデータディレクトリのパス(通常はget_data_dirによるもの)、plugin_dir_nameはプラグインディレクトリの名前を指定する。

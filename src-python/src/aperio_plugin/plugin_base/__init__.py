@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from gpu_util import PyImageGenerator
+
 if TYPE_CHECKING:
     from .. import PluginManager
 
@@ -41,7 +43,7 @@ class MainPluginBase(PluginBase):
     plugin_filesには、GeneratorBaseを継承したクラスを指定する。システムは、このリストに基づいてジェネレーターを認識する。
     """
 
-    def __init__(self, manager: PluginManager) -> None:
+    def __init__(self, manager: PluginManager, generator: PyImageGenerator) -> None:
         """
         プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """

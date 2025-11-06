@@ -11,7 +11,6 @@ version = "0.1.0"
 pyo3 = { version = "0.26.0" }
 tokio = "1.48.0"
 anyhow = { version = "1.0.100", features = ["backtrace"] }
-numpy = "0.26.0"
 
 [profile.release]
 lto = true

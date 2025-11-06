@@ -23,7 +23,7 @@
     "gpu:build": "uvx maturin build -m src/gpu_util/Cargo.toml",
     "gpu:release": "uvx maturin build -m src/gpu_util/Cargo.toml --release",
     "gpu:stub": "cargo run --bin stub_gen",
-    "gpu:gen": "run-s gpu:stub && mkdir -p src-python/out/gpu_util && mv src/gpu_util/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
+    "gpu:stubgen": "run-s gpu:stub && mkdir -p src-python/out/gpu_util && mv src/gpu_util/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",

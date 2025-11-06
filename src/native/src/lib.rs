@@ -1,7 +1,6 @@
 use crate::{app_config::read_config, dir_util::get_local_data_dir};
 use napi::bindgen_prelude::Uint8Array;
 use napi_derive::napi;
-use numpy::{PyArrayMethods, PyReadonlyArray3};
 use pyo3::{
     types::{PyAnyMethods, PyDict, PyList},
     Py, PyAny, PyErr, Python,
@@ -157,14 +156,10 @@ impl JsPlManager {
             let frame_struct = PyList::new(py, vec![layer_struct])?;
 
             let make_frame_func = pl_manager.getattr("make_frame")?;
-            let frame_data: PyReadonlyArray3<u8> = make_frame_func
-                .call1((count, frame_struct, 1920, 1080))?
-                .extract()?;
+            let binding = make_frame_func.call1((count, frame_struct, 1920, 1080))?;
+            let frame_data: &[u8] = binding.extract()?;
 
-            let readonly_frame_data = frame_data.readonly();
-            let slice_data = readonly_frame_data.as_slice()?;
-
-            Ok(slice_data.to_vec()) // 参照なのでそのまま返せない コピーが発生するのがつらい
+            Ok(frame_data.to_vec())
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 

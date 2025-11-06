@@ -3,6 +3,8 @@ import hashlib
 import os.path
 import shutil
 from concurrent.futures.thread import ThreadPoolExecutor
+import struct
+import time
 from typing import Callable
 import gpu_util
 
@@ -29,7 +31,7 @@ except ImportError as e:
 print("test import successful: cv2, numpy")
 
 from .plugin_base import MainPluginBase, SubPluginBase
-from .plugin_base.generator_base import FilterGeneratorBase, ObjectGeneratorBase
+from .plugin_base.generator_base import FilterGeneratorBase, GeneratorFuncReturn, GeneratorWgslReturn, ObjectGeneratorBase
 from .types.frame_structure import LayerStructure
 
 executor = ThreadPoolExecutor()
@@ -74,6 +76,10 @@ class PluginManager:
 
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
+        self.generator = gpu_util.PyImageGenerator()
+
+        with open(os.path.join(os.path.dirname(__file__), "shaders", "compose.wgsl"), "r") as f:
+            self.compose_wgsl = gpu_util.PyCompiledWgsl("compose_layer", f.read(), self.generator)
 
         dirs = glob.glob(f"{self.data_dir}/{self.plugin_dir_name}/*")
 
@@ -100,7 +106,7 @@ class PluginManager:
                 continue  # 既に登録されている場合はスキップ
 
             try:
-                plugin_instance = plugin_cls(self)  # PluginManagerのインスタンスを渡す
+                plugin_instance = plugin_cls(self, self.generator)  # PluginManagerのインスタンスを渡す
                 self.plugins[name] = plugin_instance
                 print(f"Registered plugin: {plugin_instance.name}")
             except Exception as e:
@@ -208,7 +214,7 @@ class PluginManager:
         return True
 
     def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int,
-                   height: int) -> np.ndarray:
+                   height: int) -> list[int]:
         """
         指定されたフレーム構造に基づいてフレームを生成するメソッド。内部では高速化のためにUMatを使用している。
 
@@ -238,16 +244,22 @@ class PluginManager:
                 raise ValueError("channels must be 1 (grayscale), 3 (RGB), or 4 (RGBA)")
 
             # 最終的なフレームを保持する配列を初期化 (RGB)
-            final_frame = np.zeros((height, width, 3), dtype=np.uint8)
+            layer_builders = []
+            params = []
             for layer in frame_structure:
+                layer_builder = gpu_util.PyImageGenerateBuilder()
+
                 if layer["obj_base"] not in self.object_plugins:
                     raise ValueError(f"Object plugin {layer['obj_base']} is not registered")
 
                 obj_plugin = self.object_plugins[layer["obj_base"]]
-                layer_frame = obj_plugin.generate(frame_number, layer["obj_parameters"], (height, width, layer["channels"]))
-                if layer_frame.shape != (height, width, layer["channels"]):
-                    raise ValueError(f"Generated frame shape {layer_frame.shape} does not match "
-                                     f"expected shape {(height, width, layer['channels'])}")
+                layer_frame = obj_plugin.generate(frame_number, layer["obj_parameters"], width, height)
+                if isinstance(layer_frame, GeneratorWgslReturn):
+                    layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
+                                     layer_frame.output_width, layer_frame.output_height)
+                elif isinstance(layer_frame, GeneratorFuncReturn):
+                    layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params,
+                                      layer_frame.output_width, layer_frame.output_height)
 
                 # layer_frameに対してエフェクトを順に適用
                 for effect in layer["effects"]:
@@ -255,53 +267,35 @@ class PluginManager:
                         raise ValueError(f"Filter plugin {effect['name']} is not registered")
 
                     filter_plugin = self.filter_plugins[effect["name"]]
-                    layer_frame = filter_plugin.generate(frame_number, layer_frame, effect["parameters"])
-                    if layer_frame.shape != (height, width, layer["channels"]):
-                        raise ValueError(f"After applying filter {effect['name']}, frame shape {layer_frame.shape} "
-                                         f"does not match expected shape {(height, width, layer['channels'])}")
+                    layer_frame = filter_plugin.generate(frame_number, effect["parameters"], width, height)
+                    if isinstance(layer_frame, GeneratorWgslReturn):
+                        layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
+                                         layer_frame.output_width, layer_frame.output_height)
+                    elif isinstance(layer_frame, GeneratorFuncReturn):
+                        layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params,
+                                          layer_frame.output_width, layer_frame.output_height)
 
-                # OpenCVでレイヤーを最終フレームに重ねる
-                # TODO: ブレンディングもプラグイン化できるように
-                x, y = layer["x"], layer["y"]
-                layer_width, layer_height = layer_frame.shape[1], layer_frame.shape[0]
+                layer_builders.append(layer_builder)
 
-                # フレーム外にはみ出している部分を切り取る
-                if x < 0:
-                    layer_frame = layer_frame[:, -x:, :]
-                    x = 0
-                if y < 0:
-                    layer_frame = layer_frame[-y:, :, :]
-                    y = 0
-                if x + layer_width > width:
-                    layer_frame = layer_frame[:, :width - x, :]
-                if y + layer_height > height:
-                    layer_frame = layer_frame[:height - y, :, :]
-                if layer_height <= 0 or layer_width <= 0:
-                    continue  # レイヤーがフレーム外にはみ出している場合はスキップ
+                # paramsをpackしなくてはいけない
+                fmt = "<ii"  # x, y
+                params_bytes = struct.pack(fmt, layer["x"], layer["y"])
+                params.append(params_bytes)
 
-                # レイヤーのチャンネル数に応じて処理を分岐
-                if layer["channels"] == 1:
-                    # グレースケールの場合、3チャンネルに変換してから重ねる
-                    gray_layer = cv2.cvtColor(layer_frame, cv2.COLOR_GRAY2BGR)
-                    final_frame[y:y + layer_height, x:x + layer_width] = gray_layer
-                elif layer["channels"] == 3:
-                    # RGBの場合、そのまま重ねる
-                    final_frame[y:y + layer_height, x:x + layer_width] = layer_frame
-                elif layer["channels"] == 4:
-                    # RGBAの場合、アルファチャンネルを考慮して重ねる
-                    alpha_channel = layer_frame[:, :, 3] / 255.0
-                    for c in range(3):  # RGB各チャンネルに対して処理
-                        final_frame[y:y + layer_height, x:x + layer_width, c] = (
-                                alpha_channel * layer_frame[:, :, c] +
-                                (1 - alpha_channel) * final_frame[y:y + layer_height, x:x + layer_width, c]
-                        )
+
+            # TODO: ブレンディングもプラグイン化できるように
+            builder = gpu_util.PyImageGenerateBuilder() \
+                .add_parallel_wgsl(layer_builders) \
+                .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
+
+            final_frame_data = self.generator.generate(builder)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             raise RuntimeError(f"Failed to make frame: {e}")
 
-        return cv2.cvtColor(final_frame, cv2.COLOR_BGR2RGBA)
+        return final_frame_data
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
         """

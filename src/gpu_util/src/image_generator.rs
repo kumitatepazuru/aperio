@@ -444,9 +444,11 @@ impl ImageGenerator {
                 final_state_vec.len()
             );
         }
+
+        let result = handle_final_process(self, final_state_vec).await;
         println!("Pipeline execution completed in {:.2?}.", time.elapsed());
 
-        handle_final_process(self, final_state_vec).await
+        result
     }
 
     // --- パイプラインを取得または生成するためのヘルパーメソッドを追加 ---
