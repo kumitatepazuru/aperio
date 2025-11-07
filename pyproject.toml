@@ -3,7 +3,7 @@ name = "aperio"
 version = "0.1.0"
 description = "A Plugin-based Open Source Video Editor"
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.13"
 dependencies = [
     "aperio-plugin-stubs",
     "mypy>=1.18.2",

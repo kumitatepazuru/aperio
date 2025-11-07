@@ -316,8 +316,7 @@ class PluginManager:
                        for i in range(amount)]
             for future in futures:
                 frames.append(future.result())
-            # for i in range(amount):
-            #     frames.append(self.make_frame(start_frame_number + i, *args, **kwargs))
+
 
             return frames
         except Exception as e:

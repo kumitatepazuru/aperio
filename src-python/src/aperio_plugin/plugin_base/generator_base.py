@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from typing import Literal
+
 
 from gpu_util import PyCompiledFunc, PyCompiledWgsl, PyImageGenerator
-import numpy as np
 
 from . import SubPluginBase
 
