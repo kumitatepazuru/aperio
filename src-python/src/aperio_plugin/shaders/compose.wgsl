@@ -40,13 +40,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // 出力ピクセル座標から、このレイヤー上の対応する座標を計算
     let layer_coord = output_coord - vec2<i32>(params.x, params.y);
 
-    // Pythonのクリッピング処理に相当する境界チェック
     // 計算した座標がレイヤーテクスチャの有効範囲内にある場合のみ処理を続行
     if (layer_coord.x >= 0 && layer_coord.x < i32(layer_dims.x) &&
         layer_coord.y >= 0 && layer_coord.y < i32(layer_dims.y)) {
 
-      // レイヤーテクスチャから色を読み込む (source color)
-      // 全てのレイヤーはRGBAフォーマットであると仮定
       let src_color = textureLoad(inputTex[i], layer_coord, 0);
 
       // --- アルファブレンディング (Over演算) ---
@@ -54,10 +51,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
       let dst_color = final_color;
       let alpha = src_color.a;
 
-      // final_rgb = src_rgb * alpha + dst_rgb * (1.0 - alpha)
       let blended_rgb = src_color.rgb * alpha + dst_color.rgb * (1.0 - alpha);
-      
-      // final_alpha = src_alpha + dst_alpha * (1.0 - src_alpha)
       let blended_a = src_color.a + dst_color.a * (1.0 - src_color.a);
 
       final_color = vec4<f32>(blended_rgb, blended_a);

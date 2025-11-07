@@ -2,6 +2,7 @@ import os
 import site
 import struct
 import sys
+import time
 from typing import Literal
 
 import cv2
@@ -37,20 +38,15 @@ class TestObject(ObjectGeneratorBase):
             self.shader = PyCompiledWgsl("test", f.read(), generator)
 
     def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn:
-        # ret, img = self.frame.read()
-        # if not ret:
-        #     raise RuntimeError("Failed to read frame from videotestsrc")
+        ret, img = self.frame.read()
+        if not ret:
+            raise RuntimeError("Failed to read frame from videotestsrc")
 
-        # cv2.putText(img, f"Frame: {frame_number}", (50, 50),
-        #             cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-        # img = cv2.resize(img, (shape[1], shape[0]))  # 指定された形状にリサイズ
-        # if shape[2] == 1:
-        #     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # グレースケールに変換
-        #     img = img[:, :, np.newaxis]  # チャンネル次元を追加
-        # elif shape[2] == 4:
-        #     img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)  # BGRAに変換
+        cv2.putText(img, f"Frame: {frame_number}", (50, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+        
+        # float32に変換
+        img = img.astype(np.float32) / 255.0        
 
-        # return img
-
-        params = struct.pack("<i", frame_number)
-        return GeneratorWgslReturn(self.shader, params, width, height)
+        params = struct.pack("<ii", img.shape[1], img.shape[0])  # width, height
+        return GeneratorWgslReturn(self.shader, params+img.tobytes(), width-100, height-100)
