@@ -1,3 +1,5 @@
+import type { FrameLayerStructure } from "native";
+
 const Frame = class {
   port?: MessagePort;
 
@@ -21,7 +23,7 @@ const Frame = class {
     });
   }
 
-  async get(frameCount: number): Promise<Uint8Array<ArrayBufferLike>> {
+  async get(frameCount: number, frameStruct: FrameLayerStructure[]): Promise<Uint8Array<ArrayBufferLike>> {
     if (!this.port) {
       await this.init();
     }
@@ -36,7 +38,7 @@ const Frame = class {
         { once: true }
       );
 
-      window.frame.getFrame(frameCount);
+      window.frame.getFrame(frameCount, frameStruct);
     });
   }
 };

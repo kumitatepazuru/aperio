@@ -1,4 +1,4 @@
-use crate::dir_util::get_data_dir;
+use crate::util::get_data_dir;
 use crate::Dirs;
 use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;

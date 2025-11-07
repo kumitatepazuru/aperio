@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import path from "path";
-import { PlManager } from "native";
+import { FrameLayerStructure, PlManager } from "native";
 
 let plManagerSingleton: PlManager | null = null;
 
@@ -39,8 +39,8 @@ contextBridge.exposeInMainWorld("frame", {
 
     window.postMessage({ type: "frame-port" }, "*", [p2]);
   },
-  getFrame: (count: number) => {
-    const data = plManagerSingleton?.getFrame(count);
+  getFrame: (count: number, frameStruct: FrameLayerStructure[]) => {
+    const data = plManagerSingleton?.getFrame(count, frameStruct);
     p1.postMessage(data);
   },
 });

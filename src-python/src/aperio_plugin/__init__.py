@@ -4,7 +4,6 @@ import os.path
 import shutil
 from concurrent.futures.thread import ThreadPoolExecutor
 import struct
-import time
 from typing import Callable
 import gpu_util
 
@@ -239,21 +238,19 @@ class PluginManager:
                 raise ValueError("width and height must be positive integers")
             if len(frame_structure) == 0:
                 raise ValueError("frame_structure must contain at least one layer")
-            if not all((layer["channels"] == 4 or layer["channels"] == 3 or layer["channels"] == 1)
-                       for layer in frame_structure):
-                raise ValueError("channels must be 1 (grayscale), 3 (RGB), or 4 (RGBA)")
 
             # 最終的なフレームを保持する配列を初期化 (RGB)
             layer_builders = []
             params = []
             for layer in frame_structure:
                 layer_builder = gpu_util.PyImageGenerateBuilder()
+                obj_name = layer["obj"]["name"]
 
-                if layer["obj_base"] not in self.object_plugins:
-                    raise ValueError(f"Object plugin {layer['obj_base']} is not registered")
+                if obj_name not in self.object_plugins:
+                    raise ValueError(f"Object plugin {obj_name} is not registered")
 
-                obj_plugin = self.object_plugins[layer["obj_base"]]
-                layer_frame = obj_plugin.generate(frame_number, layer["obj_parameters"], width, height)
+                obj_plugin = self.object_plugins[obj_name]
+                layer_frame = obj_plugin.generate(frame_number, layer["obj"]["parameters"], width, height)
                 if isinstance(layer_frame, GeneratorWgslReturn):
                     layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                      layer_frame.output_width, layer_frame.output_height)
@@ -288,9 +285,7 @@ class PluginManager:
                 .add_parallel_wgsl(layer_builders) \
                 .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
 
-            t = time.time()
             final_frame_data = self.generator.generate(builder)
-            print(f"generated frame in {time.time() - t:.4f}s")
 
         except Exception as e:
             import traceback

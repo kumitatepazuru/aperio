@@ -1,14 +1,14 @@
-use crate::{app_config::read_config, dir_util::get_local_data_dir};
+use crate::{app_config::read_config, util::get_local_data_dir, structs::{Dirs, FrameLayerStructure}};
 use napi::bindgen_prelude::Uint8Array;
 use napi_derive::napi;
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::{
-    types::{PyAnyMethods, PyDict, PyList},
-    Py, PyAny, PyResult, Python,
+    IntoPyObject, Py, PyAny, PyResult, Python, types::{PyAnyMethods}
 };
 mod app_config;
-mod dir_util;
+mod util;
 mod python;
+mod structs;
 
 #[cfg(target_os = "linux")]
 fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
@@ -25,16 +25,6 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
 
         Ok(())
     }
-}
-
-#[napi(object)]
-pub struct Dirs {
-    pub data_dir: String,
-    pub local_data_dir: String,
-    pub resource_dir: String,
-    pub plugin_manager_dir: String,
-    pub default_plugins_dir: String,
-    pub dist_dir: String,
 }
 
 pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
@@ -130,7 +120,7 @@ impl JsPlManager {
     }
 
     #[napi]
-    pub fn get_frame(&self, count: i32) -> napi::Result<Uint8Array> {
+    pub fn get_frame(&self, count: i32, frame_struct: Vec<FrameLayerStructure>) -> napi::Result<Uint8Array> {
         let pl_manager = self
             .plmanager
             .as_ref()
@@ -143,21 +133,7 @@ impl JsPlManager {
         // PythonのPluginManagerを使ってフレームデータを取得
         Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);
-
-            let layer_struct = PyDict::new(py);
-            layer_struct.set_item("x", 0)?;
-            layer_struct.set_item("y", 0)?;
-            layer_struct.set_item("channels", 3)?;
-            layer_struct.set_item("obj_base", "TestObject")?;
-
-            let obj_parameters = PyDict::new(py);
-            layer_struct.set_item("obj_parameters", obj_parameters)?;
-
-            let effects_list: Vec<i32> = vec![];
-            let effects = PyList::new(py, effects_list)?;
-            layer_struct.set_item("effects", effects)?;
-
-            let frame_struct = PyList::new(py, vec![layer_struct])?;
+            let frame_struct = frame_struct.into_pyobject(py)?;
 
             let make_frame_func = pl_manager.getattr("make_frame")?;
             let binding = make_frame_func

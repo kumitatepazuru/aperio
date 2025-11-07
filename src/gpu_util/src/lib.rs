@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use anyhow::Result;
 use numpy::{PyArray1, PyReadonlyArray1, ToPyArray};
 use pyo3::{prelude::*, types::*};
@@ -209,12 +207,7 @@ impl PyImageGenerator {
             .rt
             .block_on(async { self.inner.generate(builder.inner.clone()).await })?;
 
-        let time = Instant::now();
         let b = result.to_pyarray(py);
-        println!(
-            "PyImageGenerator::generate: Finished generation in {:?}",
-            time.elapsed()
-        );
         Ok(b)
     }
 }

@@ -2,6 +2,21 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import Frame from "./bridge";
+import type { FrameLayerStructure } from "native";
+
+const frameStruct: FrameLayerStructure[] = [
+  {
+    x: 0,
+    y: 0,
+    scale: 1.0,
+    rotation: 0.0,
+    obj: {
+      name: "TestObject",
+      parameters: {},
+    },
+    effects: [],
+  },
+];
 
 const FrameRenderer = () => {
   // テクスチャとマテリアルへの参照
@@ -37,7 +52,7 @@ const FrameRenderer = () => {
 
   useEffect(() => {
     (async () => {
-      const data = await frame.get(0);
+      const data = await frame.get(0, frameStruct);
       setFrameData(data);
     })();
   }, [frame]);
@@ -46,7 +61,7 @@ const FrameRenderer = () => {
   useFrame(async () => {
     // テクスチャのデータを新しいデータで更新
     if (textureRef.current) {
-      const data = await frame.get(countRef.current);
+      const data = await frame.get(countRef.current, frameStruct);
       textureRef.current.image.data.set(data);
       // needsUpdateをtrueにすることで、GPUにテクスチャデータが再アップロードされます。
       textureRef.current.needsUpdate = true;

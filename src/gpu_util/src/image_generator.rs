@@ -15,7 +15,6 @@ use anyhow::{bail, Context, Result};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
-    time::Instant,
 };
 use wgpu::include_wgsl;
 
@@ -432,7 +431,6 @@ impl ImageGenerator {
 
     /// ImageGenerateBuilderで構築されたパイプラインを実行し、画像を生成します。
     pub async fn generate(&self, builder: ImageGenerateBuilder) -> Result<Vec<u8>> {
-        let time = Instant::now();
         let (final_state_vec, encoders) = self.execute_pipeline(&builder.steps, Vec::new()).await?;
 
         self.queue.submit(encoders.into_iter().map(|e| e.finish()));
@@ -445,10 +443,7 @@ impl ImageGenerator {
             );
         }
 
-        let result = handle_final_process(self, final_state_vec).await;
-        println!("Pipeline execution completed in {:.2?}.", time.elapsed());
-
-        result
+        handle_final_process(self, final_state_vec).await
     }
 
     // --- パイプラインを取得または生成するためのヘルパーメソッドを追加 ---

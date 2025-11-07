@@ -1,8 +1,10 @@
+import { FrameLayerStructure } from "native";
+
 declare global {
   interface Window {
     frame: {
       init: () => void;
-      getFrame: (count: number) => Promise<Uint8Array<ArrayBufferLike>>;
+      getFrame: (count: number, frameStruct: FrameLayerStructure[]) => Promise<Uint8Array<ArrayBufferLike>>;
     },
     path: {
       getPath: (name: "userData" | "temp" | "exe") => Promise<string>;
@@ -13,5 +15,3 @@ declare global {
     };
   }
 }
-
-export {};
