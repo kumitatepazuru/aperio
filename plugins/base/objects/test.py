@@ -1,9 +1,6 @@
 import os
 import site
-import struct
 import sys
-import time
-from typing import Literal
 
 import cv2
 from gpu_util import PyCompiledWgsl, PyImageGenerator
@@ -48,5 +45,4 @@ class TestObject(ObjectGeneratorBase):
         # float32に変換
         img = img.astype(np.float32) / 255.0        
 
-        params = struct.pack("<ii", img.shape[1], img.shape[0])  # width, height
-        return GeneratorWgslReturn(self.shader, params+img.tobytes(), width-100, height-100)
+        return GeneratorWgslReturn(self.shader, img.tobytes(), img.shape[1], img.shape[0])
