@@ -1,9 +1,10 @@
 use crate::{app_config::read_config, dir_util::get_local_data_dir};
 use napi::bindgen_prelude::Uint8Array;
 use napi_derive::napi;
+use numpy::{PyArray1, PyArrayMethods};
 use pyo3::{
     types::{PyAnyMethods, PyDict, PyList},
-    Py, PyAny, PyErr, Python,
+    Py, PyAny, PyResult, Python,
 };
 mod app_config;
 mod dir_util;
@@ -135,9 +136,12 @@ impl JsPlManager {
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
 
+        // ゼロコピーのため事前にメモリを確保しておく
+        let mut frame_data: Vec<u8> = vec![0u8; 1920 * 1080 * 4]; // 仮に1920x1080x4のフレームサイズとする
+
         // ここでピクセルデータからGStreamerのバッファを作成する
         // PythonのPluginManagerを使ってフレームデータを取得
-        let buffers = Python::attach(|py| -> Result<Vec<u8>, PyErr> {
+        Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);
 
             let layer_struct = PyDict::new(py);
@@ -156,13 +160,18 @@ impl JsPlManager {
             let frame_struct = PyList::new(py, vec![layer_struct])?;
 
             let make_frame_func = pl_manager.getattr("make_frame")?;
-            let binding = make_frame_func.call1((count, frame_struct, 1920, 1080))?;
-            let frame_data: &[u8] = binding.extract()?;
+            let binding = make_frame_func
+                .call1((count, frame_struct, 1920, 1080))?
+                .cast_into::<PyArray1<u8>>()?;
+            let binding = binding.readonly();
+            let python_frame_data: &[u8] = binding.as_slice()?;
+            // frame_dataを事前に確保したbuffersにコピー
+            frame_data.copy_from_slice(python_frame_data);
 
-            Ok(frame_data.to_vec())
+            Ok(())
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
-        Ok(Uint8Array::new(buffers))
+        Ok(Uint8Array::new(frame_data))
     }
 }

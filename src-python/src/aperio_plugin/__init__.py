@@ -214,7 +214,7 @@ class PluginManager:
         return True
 
     def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int,
-                   height: int) -> list[int]:
+                   height: int) -> np.ndarray:
         """
         指定されたフレーム構造に基づいてフレームを生成するメソッド。内部では高速化のためにUMatを使用している。
 
@@ -288,7 +288,9 @@ class PluginManager:
                 .add_parallel_wgsl(layer_builders) \
                 .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
 
+            t = time.time()
             final_frame_data = self.generator.generate(builder)
+            print(f"generated frame in {time.time() - t:.4f}s")
 
         except Exception as e:
             import traceback

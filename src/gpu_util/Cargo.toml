@@ -16,10 +16,10 @@ bytemuck = "1.24.0"
 # https://pyo3.rs/latest/type-stub.html
 # 追跡issue: https://github.com/PyO3/pyo3/issues/5137
 pyo3-stub-gen = "0.17.0"
-numpy = "0.26.0"
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-pyo3 = { workspace = true }
+pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
+numpy = { workspace = true }
 
 [[bin]]
 name = "stub_gen"

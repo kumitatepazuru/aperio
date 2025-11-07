@@ -21,7 +21,7 @@ pub fn initialize_python(dir: &Dirs) -> Result<Py<PyAny>> {
 
         // ネイティブモジュールを追加
         let modules = sys.getattr("modules")?;
-        let modules = modules.downcast::<PyDict>()?;
+        let modules = modules.cast::<PyDict>()?;
         let m = PyModule::new(py, "gpu_util")?;
         gpu_util::gpu_util(&m)?;
         modules.set_item("gpu_util", m)?;

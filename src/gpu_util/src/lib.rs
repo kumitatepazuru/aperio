@@ -1,7 +1,12 @@
+use std::time::Instant;
+
 use anyhow::Result;
-use numpy::{PyReadonlyArray1, ToPyArray};
-use pyo3::{exceptions::PyException, prelude::*, types::*};
-use pyo3_stub_gen::{define_stub_info_gatherer, derive::{gen_stub_pyclass, gen_stub_pymethods}};
+use numpy::{PyArray1, PyReadonlyArray1, ToPyArray};
+use pyo3::{prelude::*, types::*};
+use pyo3_stub_gen::{
+    define_stub_info_gatherer,
+    derive::{gen_stub_pyclass, gen_stub_pymethods},
+};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -39,6 +44,7 @@ pub struct PyImageGenerateBuilder {
 #[pyclass]
 pub struct PyImageGenerator {
     pub inner: image_generator::ImageGenerator,
+    rt: Runtime,
 }
 
 #[gen_stub_pymethods]
@@ -46,8 +52,7 @@ pub struct PyImageGenerator {
 impl PyCompiledWgsl {
     #[new]
     pub fn new(id: &str, wgsl_code: &str, generator: &PyImageGenerator) -> Result<Self, PyErr> {
-        let inner = compiled_wgsl::CompiledWgsl::new(id, wgsl_code, &generator.inner.device)
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
+        let inner = compiled_wgsl::CompiledWgsl::new(id, wgsl_code, &generator.inner.device)?;
 
         Ok(Self { inner })
     }
@@ -87,7 +92,10 @@ impl PyCompiledFunc {
                     // { data: ndarray, width: int, height: int }
                     let output = func_ref.call1(py, (py_data, py_params))?;
                     let output = output.bind(py);
-                    let out_data: PyReadonlyArray1<f32> = output.getattr("data")?.extract()?;
+                    let out_data: PyReadonlyArray1<f32> = output
+                        .getattr("data")?
+                        .extract()
+                        .map_err(|e: pyo3::CastError<'_, '_>| anyhow::anyhow!(e.to_string()))?;
 
                     // 全部変換
                     let output = CpuOutput {
@@ -118,13 +126,15 @@ impl PyImageGenerateBuilder {
         Self { inner }
     }
 
-    pub fn add_wgsl(
+    pub fn add_wgsl<'py>(
         &self,
         wgsl: &PyCompiledWgsl,
-        params: Option<Vec<u8>>,
+        params: Option<&Bound<'py, PyBytes>>,
         output_width: u32,
         output_height: u32,
     ) -> Self {
+        let params = params.map(|p| p.as_bytes().to_vec());
+
         let new_inner =
             self.inner
                 .clone()
@@ -133,41 +143,42 @@ impl PyImageGenerateBuilder {
         Self { inner: new_inner }
     }
 
-    pub fn add_parallel_wgsl(&self, pipelines: Vec<Py<PyImageGenerateBuilder>>) -> PyResult<Self> {
-        let pipelines: Result<Vec<ImageGenerateBuilder>, PyErr> = Python::attach(|py| {
-            pipelines
-                .into_iter()
-                .map(|n| {
-                    let builder = n.borrow(py);
-                    Ok(builder.inner.clone())
-                })
-                .collect()
-        });
+    pub fn add_parallel_wgsl<'py>(
+        &self,
+        py: Python<'py>,
+        pipelines: Vec<Py<PyImageGenerateBuilder>>,
+    ) -> PyResult<Self> {
+        let pipelines: Result<Vec<ImageGenerateBuilder>, PyErr> = pipelines
+            .into_iter()
+            .map(|n| {
+                let builder = n.borrow(py);
+                Ok(builder.inner.clone())
+            })
+            .collect();
         let pipelines = pipelines?;
         let new_inner = self.inner.clone().add_parallel_wgsl(pipelines);
 
         Ok(Self { inner: new_inner })
     }
 
-    pub fn add_func(
+    pub fn add_func<'py>(
         &self,
+        py: Python<'py>,
         func: &PyCompiledFunc,
         params: Option<Py<PyAny>>,
         output_width: u32,
         output_height: u32,
     ) -> PyResult<Self> {
-        let params = Python::attach(|py| {
-            if let Some(p) = params {
-                let pickle = py.import("pickle")?;
-                let pickle_dumps = pickle.getattr("dumps")?;
-                let dumped: Py<PyAny> = pickle_dumps.call1((p,))?.unbind();
-                let dumped = dumped.bind(py);
-                let dumped: Vec<u8> = dumped.extract()?;
-                Ok::<Option<Vec<u8>>, PyErr>(Some(dumped))
-            } else {
-                Ok(None)
-            }
-        })?;
+        let params = if let Some(p) = params {
+            let pickle = py.import("pickle")?;
+            let pickle_dumps = pickle.getattr("dumps")?;
+            let dumped: Py<PyAny> = pickle_dumps.call1((p,))?.unbind();
+            let dumped = dumped.bind(py);
+            let dumped: Vec<u8> = dumped.extract()?;
+            Some(dumped)
+        } else {
+            None
+        };
 
         let new_inner =
             self.inner
@@ -183,23 +194,28 @@ impl PyImageGenerateBuilder {
 // TODO: experimental-asyncを使った非同期処理
 impl PyImageGenerator {
     #[new]
-    pub fn new() -> PyResult<Self> {
-        let rt = Runtime::new()
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
-        let inner = rt
-            .block_on(async { image_generator::ImageGenerator::new().await })
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
-        Ok(Self { inner })
+    pub fn new() -> Result<Self> {
+        let rt = Runtime::new()?;
+        let inner = rt.block_on(async { image_generator::ImageGenerator::new().await })?;
+        Ok(Self { inner, rt })
     }
 
-    pub fn generate(&self, builder: &PyImageGenerateBuilder) -> PyResult<Vec<u8>> {
-        let rt = Runtime::new()
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
-        let result = rt
-            .block_on(async { self.inner.generate(builder.inner.clone()).await })
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
+    pub fn generate<'py>(
+        &self,
+        py: Python<'py>,
+        builder: &PyImageGenerateBuilder,
+    ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        let result = self
+            .rt
+            .block_on(async { self.inner.generate(builder.inner.clone()).await })?;
 
-        Ok(result)
+        let time = Instant::now();
+        let b = result.to_pyarray(py);
+        println!(
+            "PyImageGenerator::generate: Finished generation in {:?}",
+            time.elapsed()
+        );
+        Ok(b)
     }
 }
 

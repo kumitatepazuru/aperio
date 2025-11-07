@@ -21,6 +21,7 @@ gpu_util = { path = "../gpu_util" }
 tokio = { workspace = true, features = ["macros", "sync"] }
 pyo3 = { workspace = true }
 anyhow = { workspace = true }
+numpy = { workspace = true }
 
 [build-dependencies]
 napi-build = "2"
