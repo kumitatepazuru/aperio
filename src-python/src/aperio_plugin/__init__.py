@@ -69,16 +69,17 @@ class PluginManager:
         # openCLが使えるか確認して、有効化
         if cv2.ocl.haveOpenCL():
             cv2.ocl.setUseOpenCL(True)
-            print(f"OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
+            print(f"OpenCV: OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
         else:
-            print("OpenCL is not available.")
+            print("OpenCV: OpenCL is not available.")
 
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
         self.generator = gpu_util.PyImageGenerator()
 
         with open(os.path.join(os.path.dirname(__file__), "shaders", "compose.wgsl"), "r") as f:
-            self.compose_wgsl = gpu_util.PyCompiledWgsl("compose_layer", f.read(), self.generator)
+            sampler = gpu_util.PySamplerOptions("clamp_to_edge", "linear")
+            self.compose_wgsl = gpu_util.PyCompiledWgsl("compose_layer", f.read(), self.generator, sampler)
 
         dirs = glob.glob(f"{self.data_dir}/{self.plugin_dir_name}/*")
 
@@ -272,8 +273,8 @@ class PluginManager:
                 layer_builders.append(layer_builder)
 
                 # params準備
-                fmt = "<ii"  # x, y
-                params_bytes = struct.pack(fmt, layer["x"], layer["y"])
+                fmt = "<iif"  # x, y, scale
+                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"])
                 params.append(params_bytes)
 
             # GPU処理実行

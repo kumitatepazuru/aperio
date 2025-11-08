@@ -10,7 +10,7 @@ class PyCompiledFunc:
 
 @typing.final
 class PyCompiledWgsl:
-    def __new__(cls, id: builtins.str, wgsl_code: builtins.str, generator: PyImageGenerator) -> PyCompiledWgsl: ...
+    def __new__(cls, id: builtins.str, wgsl_code: builtins.str, generator: PyImageGenerator, sampler_options: typing.Optional[PySamplerOptions]) -> PyCompiledWgsl: ...
 
 @typing.final
 class PyImageGenerateBuilder:
@@ -23,4 +23,8 @@ class PyImageGenerateBuilder:
 class PyImageGenerator:
     def __new__(cls) -> PyImageGenerator: ...
     def generate(self, builder: PyImageGenerateBuilder, buffer_ptr: builtins.int) -> None: ...
+
+@typing.final
+class PySamplerOptions:
+    def __new__(cls, address_mode: builtins.str, filter: builtins.str) -> PySamplerOptions: ...
 

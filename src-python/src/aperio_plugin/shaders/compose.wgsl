@@ -1,8 +1,8 @@
 // 各レイヤーのメタ情報を格納する構造体
-// チャンネル数が固定になったため、x, y座標のみ定義します
 struct LayerParams {
-  x: i32, // レイヤーの左上のx座標
-  y: i32, // レイヤーの左上のy座標
+  x: i32,     // レイヤーの左上のx座標
+  y: i32,     // レイヤーの左上のy座標
+  scale: f32,  // レイヤーの拡大・縮小率
 };
 
 // --- リソースのバインディング定義 ---
@@ -10,6 +10,7 @@ struct LayerParams {
 // グループ0: テクスチャ関連
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(2) var linear_sampler: sampler;
 
 // グループ1: メタデータ
 @group(1) @binding(0) var<storage, read> layer_params_array: array<LayerParams>;
@@ -36,15 +37,20 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   for (var i: u32 = 0u; i < num_layers; i = i + 1u) {
     let params = layer_params_array[i];
     let layer_dims = textureDimensions(inputTex[i]);
+    let layer_dims_f = vec2<f32>(layer_dims);
+    if (params.scale <= 0.0) {
+      continue;
+    }
 
-    // 出力ピクセル座標から、このレイヤー上の対応する座標を計算
-    let layer_coord = output_coord - vec2<i32>(params.x, params.y);
+    // 出力ピクセル座標から、レイヤーテクスチャ上の対応する座標を計算
+    let src_coord_pixel = (vec2<f32>(output_coord) - vec2<f32>(f32(params.x), f32(params.y))) / params.scale;
 
-    // 計算した座標がレイヤーテクスチャの有効範囲内にある場合のみ処理を続行
-    if (layer_coord.x >= 0 && layer_coord.x < i32(layer_dims.x) &&
-        layer_coord.y >= 0 && layer_coord.y < i32(layer_dims.y)) {
+    if (src_coord_pixel.x >= 0.0 && src_coord_pixel.x < layer_dims_f.x &&
+        src_coord_pixel.y >= 0.0 && src_coord_pixel.y < layer_dims_f.y) {
 
-      let src_color = textureLoad(inputTex[i], layer_coord, 0);
+      // textureSampleを使うために座標を正規化
+      let src_coord_normalized = src_coord_pixel / layer_dims_f;
+      let src_color = textureSampleLevel(inputTex[i], linear_sampler, src_coord_normalized, 0.0);
 
       // --- アルファブレンディング (Over演算) ---
       // 現在の色 (destination color) の上に新しいレイヤーの色を重ねる
