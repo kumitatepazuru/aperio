@@ -1,14 +1,16 @@
-use crate::{app_config::read_config, util::get_local_data_dir, structs::{Dirs, FrameLayerStructure}};
-use napi::bindgen_prelude::Uint8Array;
+use crate::{
+    app_config::read_config,
+    structs::{Dirs, FrameLayerStructure},
+    util::get_local_data_dir,
+};
+use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use numpy::{PyArray1, PyArrayMethods};
-use pyo3::{
-    IntoPyObject, Py, PyAny, PyResult, Python, types::{PyAnyMethods}
-};
+use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
 mod app_config;
-mod util;
 mod python;
 mod structs;
+mod util;
 
 #[cfg(target_os = "linux")]
 fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
@@ -120,14 +122,17 @@ impl JsPlManager {
     }
 
     #[napi]
-    pub fn get_frame(&self, count: i32, frame_struct: Vec<FrameLayerStructure>) -> napi::Result<Uint8Array> {
+    pub fn get_frame(
+        &self,
+        #[napi(ts_arg_type = "Uint8Array")]
+        mut buffer: Uint8ArraySlice,
+        count: i32,
+        frame_struct: Vec<FrameLayerStructure>,
+    ) -> napi::Result<()> {
         let pl_manager = self
             .plmanager
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
-
-        // ゼロコピーのため事前にメモリを確保しておく
-        let mut frame_data: Vec<u8> = vec![0u8; 1920 * 1080 * 4]; // 仮に1920x1080x4のフレームサイズとする
 
         // ここでピクセルデータからGStreamerのバッファを作成する
         // PythonのPluginManagerを使ってフレームデータを取得
@@ -142,12 +147,14 @@ impl JsPlManager {
             let binding = binding.readonly();
             let python_frame_data: &[u8] = binding.as_slice()?;
             // frame_dataを事前に確保したbuffersにコピー
-            frame_data.copy_from_slice(python_frame_data);
+            unsafe {
+                buffer.as_mut().copy_from_slice(python_frame_data);
+            }
 
             Ok(())
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
-        Ok(Uint8Array::new(frame_data))
+        Ok(())
     }
 }

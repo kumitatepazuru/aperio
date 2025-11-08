@@ -40,8 +40,12 @@ contextBridge.exposeInMainWorld("frame", {
     window.postMessage({ type: "frame-port" }, "*", [p2]);
   },
   getFrame: (count: number, frameStruct: FrameLayerStructure[]) => {
-    const data = plManagerSingleton?.getFrame(count, frameStruct);
-    p1.postMessage(data);
+    // ArrayBufferをここで作ってgetFrameに参照渡しする
+    const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
+    const data = new Uint8Array(buffer);
+
+    plManagerSingleton?.getFrame(data, count, frameStruct);
+    p1.postMessage(buffer, [buffer]);
   },
 });
 

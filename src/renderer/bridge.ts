@@ -23,7 +23,10 @@ const Frame = class {
     });
   }
 
-  async get(frameCount: number, frameStruct: FrameLayerStructure[]): Promise<Uint8Array<ArrayBufferLike>> {
+  async get(
+    frameCount: number,
+    frameStruct: FrameLayerStructure[]
+  ): Promise<ArrayBuffer> {
     if (!this.port) {
       await this.init();
     }
@@ -32,8 +35,7 @@ const Frame = class {
       this.port?.addEventListener(
         "message",
         (e) => {
-          const data = e.data as Uint8Array<ArrayBufferLike>;
-          resolve(data);
+          resolve(e.data);
         },
         { once: true }
       );
