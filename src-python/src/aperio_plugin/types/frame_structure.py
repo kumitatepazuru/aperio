@@ -19,5 +19,6 @@ class LayerStructure(TypedDict):
     y: int  # レイヤーの左上隅のY座標
     scale: float  # レイヤーのスケール
     rotation: float  # レイヤーの回転角度（度単位）
+    alpha: float  # レイヤーの透明度（0.0〜1.0）
     obj: GenerateStructure  # ベースとなるオブジェクトプラグインの情報
     effects: list[GenerateStructure]

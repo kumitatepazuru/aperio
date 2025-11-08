@@ -64,7 +64,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
       // --- アルファブレンディング (Over演算) ---
       // 現在の色 (destination color) の上に新しいレイヤーの色を重ねる
       let dst_color = final_color;
-      let alpha = src_color.a;
+      let alpha = src_color.a * params.alpha;
 
       let blended_rgb = src_color.rgb * alpha + dst_color.rgb * (1.0 - alpha);
       let blended_a = src_color.a + dst_color.a * (1.0 - src_color.a);

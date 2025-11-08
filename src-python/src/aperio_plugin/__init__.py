@@ -278,11 +278,12 @@ class PluginManager:
                 rotation_rad = math.radians(layer["rotation"])
                 cos_theta = math.cos(rotation_rad)
                 sin_theta = math.sin(rotation_rad)
+                alpha = layer["alpha"]
                 rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
 
-                fmt = "<iif"  # x, y, scale (12 bytes)
-                fmt += "4x4f"  # rotation_matrix 2x2 (4 bytes with alignment)
-                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"], *rotation_matrix)
+                fmt = "<iiff"  # x, y, scale, alpha (4 bytes each)
+                fmt += "4f"  # rotation_matrix 2x2 (4 bytes with alignment)
+                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"], alpha, *rotation_matrix)
                 params.append(params_bytes)
 
             # GPU処理実行
