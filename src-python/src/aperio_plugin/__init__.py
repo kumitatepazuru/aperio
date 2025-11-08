@@ -281,8 +281,8 @@ class PluginManager:
                 alpha = layer["alpha"]
                 rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
 
-                fmt = "<iiff"  # x, y, scale, alpha (4 bytes each)
-                fmt += "4f"  # rotation_matrix 2x2 (4 bytes with alignment)
+                fmt = "<iiff"  # x, y, scale, alpha
+                fmt += "4f"  # rotation_matrix (2x2 floats)
                 params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"], alpha, *rotation_matrix)
                 params.append(params_bytes)
 

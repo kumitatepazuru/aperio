@@ -61,7 +61,7 @@ impl PySamplerOptions {
             "repeat" => wgpu::AddressMode::Repeat,
             "mirror_repeat" => wgpu::AddressMode::MirrorRepeat,
             "clamp_to_border" => wgpu::AddressMode::ClampToBorder,
-            _ => {  
+            _ => {
                 return Err(PyValueError::new_err(
                     "Invalid address_mode. Must be one of: clamp_to_edge, repeat, mirror_repeat, clamp_to_border",
                 ));
