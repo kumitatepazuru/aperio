@@ -365,6 +365,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "drm-fourcc"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0aafbcdb8afc29c1a7ee5fbe53b5d62f4565b35a042a662ca9fecd0b54dae6f4"
+
+[[package]]
 name = "dtor"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -667,7 +673,9 @@ name = "gpu_util"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ash",
  "bytemuck",
+ "drm-fourcc",
  "futures",
  "numpy",
  "pyo3",
@@ -675,6 +683,7 @@ dependencies = [
  "rayon",
  "tokio",
  "wgpu",
+ "wgpu-hal",
 ]
 
 [[package]]

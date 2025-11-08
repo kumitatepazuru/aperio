@@ -20,6 +20,10 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
 numpy = "0.27.0"
+# Linux only: as of kernel version 5.10.0
+drm-fourcc = "2.2"
+ash = { version = "0.38", features = ["linked"] }
+wgpu-hal = "0.18"
 
 [[bin]]
 name = "stub_gen"
