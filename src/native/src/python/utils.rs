@@ -5,7 +5,7 @@ use pyo3::ffi::*;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::Python;
 use std::ffi::{CStr, CString};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 use std::{env, fs};
@@ -20,7 +20,7 @@ pub fn get_base_args(appdata_dir: &str) -> Vec<&str> {
     vec!["--directory", appdata_dir, "--no-cache"]
 }
 
-fn file_extension(base_dir: &PathBuf, s: &str) -> PathBuf {
+fn file_extension(base_dir: &Path, s: &str) -> PathBuf {
     // windowsならexeをいれて返却
     if cfg!(target_os = "windows") {
         // PathBufにして合体、文字列にして返却
