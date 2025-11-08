@@ -3,6 +3,7 @@ struct LayerParams {
   x: i32,     // レイヤーの左上のx座標
   y: i32,     // レイヤーの左上のy座標
   scale: f32,  // レイヤーの拡大・縮小率
+  alpha: f32,  // レイヤーの透明度 (0.0〜1.0)
   rotation_matrix: mat2x2<f32>, // レイヤーの回転行列
 };
 
