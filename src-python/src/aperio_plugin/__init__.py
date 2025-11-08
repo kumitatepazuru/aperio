@@ -4,6 +4,7 @@ import os.path
 import shutil
 from concurrent.futures.thread import ThreadPoolExecutor
 import struct
+import time
 from typing import Callable
 import gpu_util
 
@@ -211,21 +212,18 @@ class PluginManager:
         self.__load_plugins()
         return True
 
-    def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int,
-                   height: int) -> np.ndarray:
+    def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
+                             width: int, height: int, buffer_ptr: int) -> None:
         """
-        指定されたフレーム構造に基づいてフレームを生成するメソッド。内部では高速化のためにUMatを使用している。
+        指定されたフレーム構造に基づいてフレームを生成するメソッド。
 
         Args:
-            frame_number (int): 生成するフレームの番号 (現在は未使用)
+            frame_number (int): 生成するフレームの番号
             frame_structure (list[LayerStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-
-        Returns:
-            生成されたフレームオブジェクト
+            buffer_ptr (int): 書き込み先バッファのポインタ
         """
-
         try:
             if not isinstance(frame_structure, list):
                 raise TypeError("frame_structure must be a list of LayerStructure")
@@ -238,7 +236,7 @@ class PluginManager:
             if len(frame_structure) == 0:
                 raise ValueError("frame_structure must contain at least one layer")
 
-            # 最終的なフレームを保持する配列を初期化 (RGB)
+            # レイヤーごとにフレームを生成して合成する
             layer_builders = []
             params = []
             for layer in frame_structure:
@@ -257,7 +255,7 @@ class PluginManager:
                     layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params,
                                       layer_frame.output_width, layer_frame.output_height)
 
-                # layer_frameに対してエフェクトを順に適用
+                # エフェクト適用
                 for effect in layer["effects"]:
                     if effect["name"] not in self.filter_plugins:
                         raise ValueError(f"Filter plugin {effect['name']} is not registered")
@@ -273,25 +271,24 @@ class PluginManager:
 
                 layer_builders.append(layer_builder)
 
-                # paramsをpackしなくてはいけない
+                # params準備
                 fmt = "<ii"  # x, y
                 params_bytes = struct.pack(fmt, layer["x"], layer["y"])
                 params.append(params_bytes)
 
-
-            # TODO: ブレンディングもプラグイン化できるように
+            # GPU処理実行
             builder = gpu_util.PyImageGenerateBuilder() \
                 .add_parallel_wgsl(layer_builders) \
                 .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
 
-            final_frame_data = self.generator.generate(builder)
+            # 直接バッファに書き込み
+            self.generator.generate(builder, buffer_ptr)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             raise RuntimeError(f"Failed to make frame: {e}")
 
-        return final_frame_data
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
         """

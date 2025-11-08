@@ -1,5 +1,5 @@
 use anyhow::Result;
-use numpy::{PyArray1, PyReadonlyArray1, ToPyArray};
+use numpy::{PyReadonlyArray1, ToPyArray};
 use pyo3::{prelude::*, types::*};
 use pyo3_stub_gen::{
     define_stub_info_gatherer,
@@ -198,17 +198,21 @@ impl PyImageGenerator {
         Ok(Self { inner, rt })
     }
 
-    pub fn generate<'py>(
+    pub fn generate(
         &self,
-        py: Python<'py>,
         builder: &PyImageGenerateBuilder,
-    ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        buffer_ptr: usize,
+    ) -> PyResult<()> {
         let result = self
             .rt
             .block_on(async { self.inner.generate(builder.inner.clone()).await })?;
 
-        let b = result.to_pyarray(py);
-        Ok(b)
+        // 直接メモリコピー
+        unsafe {
+            std::ptr::copy_nonoverlapping(result.as_ptr(), buffer_ptr as *mut u8, result.len());
+        }
+
+        Ok(())
     }
 }
 

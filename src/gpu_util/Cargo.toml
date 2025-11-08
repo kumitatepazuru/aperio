@@ -19,7 +19,7 @@ pyo3-stub-gen = "0.17.0"
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
-numpy = { workspace = true }
+numpy = "0.27.0"
 
 [[bin]]
 name = "stub_gen"

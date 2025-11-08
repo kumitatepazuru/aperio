@@ -2,8 +2,6 @@
 # ruff: noqa: E501, F401
 
 import builtins
-import numpy
-import numpy.typing
 import typing
 
 @typing.final
@@ -24,5 +22,5 @@ class PyImageGenerateBuilder:
 @typing.final
 class PyImageGenerator:
     def __new__(cls) -> PyImageGenerator: ...
-    def generate(self, builder: PyImageGenerateBuilder) -> numpy.typing.NDArray[numpy.uint8]: ...
+    def generate(self, builder: PyImageGenerateBuilder, buffer_ptr: builtins.int) -> None: ...
 

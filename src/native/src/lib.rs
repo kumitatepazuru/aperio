@@ -5,7 +5,6 @@ use crate::{
 };
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
-use numpy::{PyArray1, PyArrayMethods};
 use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
 mod app_config;
 mod python;
@@ -124,8 +123,7 @@ impl JsPlManager {
     #[napi]
     pub fn get_frame(
         &self,
-        #[napi(ts_arg_type = "Uint8Array")]
-        mut buffer: Uint8ArraySlice,
+        #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
         frame_struct: Vec<FrameLayerStructure>,
     ) -> napi::Result<()> {
@@ -134,22 +132,17 @@ impl JsPlManager {
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
 
-        // ここでピクセルデータからGStreamerのバッファを作成する
-        // PythonのPluginManagerを使ってフレームデータを取得
         Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);
             let frame_struct = frame_struct.into_pyobject(py)?;
 
-            let make_frame_func = pl_manager.getattr("make_frame")?;
-            let binding = make_frame_func
-                .call1((count, frame_struct, 1920, 1080))?
-                .cast_into::<PyArray1<u8>>()?;
-            let binding = binding.readonly();
-            let python_frame_data: &[u8] = binding.as_slice()?;
-            // frame_dataを事前に確保したbuffersにコピー
-            unsafe {
-                buffer.as_mut().copy_from_slice(python_frame_data);
-            }
+            let buffer_ptr = unsafe {
+                let buffer_slice = buffer.as_mut();
+                buffer_slice.as_mut_ptr() as usize
+            };
+
+            let func = pl_manager.getattr("make_frame")?;
+            func.call1((count, frame_struct, 1920, 1080, buffer_ptr))?;
 
             Ok(())
         })
