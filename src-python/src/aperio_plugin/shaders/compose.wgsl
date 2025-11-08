@@ -3,6 +3,7 @@ struct LayerParams {
   x: i32,     // レイヤーの左上のx座標
   y: i32,     // レイヤーの左上のy座標
   scale: f32,  // レイヤーの拡大・縮小率
+  rotation_matrix: mat2x2<f32>, // レイヤーの回転行列
 };
 
 // --- リソースのバインディング定義 ---
@@ -43,7 +44,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     // 出力ピクセル座標から、レイヤーテクスチャ上の対応する座標を計算
-    let src_coord_pixel = (vec2<f32>(output_coord) - vec2<f32>(f32(params.x), f32(params.y))) / params.scale;
+    let output_center = vec2<f32>(f32(params.x), f32(params.y));
+    let relative_coord = vec2<f32>(output_coord) - output_center;
+    
+    // 事前に計算された回転行列を適用
+    let rotated_coord = params.rotation_matrix * relative_coord;
+    // let rotated_coord = relative_coord;
+    
+    // スケールを適用
+    let src_coord_pixel = rotated_coord / params.scale;
 
     if (src_coord_pixel.x >= 0.0 && src_coord_pixel.x < layer_dims_f.x &&
         src_coord_pixel.y >= 0.0 && src_coord_pixel.y < layer_dims_f.y) {

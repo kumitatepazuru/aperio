@@ -1,5 +1,6 @@
 import glob
 import hashlib
+import math
 import os.path
 import shutil
 from concurrent.futures.thread import ThreadPoolExecutor
@@ -273,8 +274,15 @@ class PluginManager:
                 layer_builders.append(layer_builder)
 
                 # params準備
-                fmt = "<iif"  # x, y, scale
-                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"])
+                # 回転をラジアンに変換してから回転行列を計算
+                rotation_rad = math.radians(layer["rotation"])
+                cos_theta = math.cos(rotation_rad)
+                sin_theta = math.sin(rotation_rad)
+                rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
+
+                fmt = "<iif"  # x, y, scale (12 bytes)
+                fmt += "4x4f"  # rotation_matrix 2x2 (4 bytes with alignment)
+                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"], *rotation_matrix)
                 params.append(params_bytes)
 
             # GPU処理実行

@@ -6,10 +6,10 @@ import type { FrameLayerStructure } from "native";
 
 const frameStruct: FrameLayerStructure[] = [
   {
-    x: 0,
-    y: 0,
+    x: 500,
+    y: 500,
     scale: 3.0,
-    rotation: 0.0,
+    rotation: 40.0,
     obj: {
       name: "TestObject",
       parameters: {},
