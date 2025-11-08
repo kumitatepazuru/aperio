@@ -75,6 +75,7 @@ pub fn handle_wgsl_step(
         id: wgsl.id.clone(),
         input_texture_count: input_texture_views.len(),
         has_storage: params.is_some(),
+        has_sampler: wgsl.sampler.is_some(),
     };
     let cached_pipeline = generator.get_or_create_pipeline(&key, &wgsl.module)?;
 
@@ -92,6 +93,14 @@ pub fn handle_wgsl_step(
         binding: if input_texture_views.is_empty() { 0 } else { 1 },
         resource: wgpu::BindingResource::TextureView(&output_texture_view),
     });
+
+    // サンプラーのバインディング (存在する場合)
+    if let Some(sampler) = &wgsl.sampler {
+        bg_entries_group0.push(wgpu::BindGroupEntry {
+            binding: if input_texture_views.is_empty() { 1 } else { 2 },
+            resource: wgpu::BindingResource::Sampler(sampler.as_ref()),
+        });
+    }
 
     let bind_group_0 = generator
         .device
