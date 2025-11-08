@@ -1,6 +1,6 @@
 use anyhow::Result;
 use numpy::{PyReadonlyArray1, ToPyArray};
-use pyo3::{prelude::*, types::*};
+use pyo3::{exceptions::PyValueError, prelude::*, types::*};
 use pyo3_stub_gen::{
     define_stub_info_gatherer,
     derive::{gen_stub_pyclass, gen_stub_pymethods},
@@ -18,6 +18,12 @@ pub mod image_generate_builder;
 pub mod image_generator;
 
 // Pythonで動かすためのライブラリのラッパーを作る
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct PySamplerOptions {
+    pub inner: compiled_wgsl::SamplerOptions,
+}
+
 #[gen_stub_pyclass]
 #[pyclass]
 pub struct PyCompiledWgsl {
@@ -47,10 +53,53 @@ pub struct PyImageGenerator {
 
 #[gen_stub_pymethods]
 #[pymethods]
+impl PySamplerOptions {
+    #[new]
+    pub fn new(address_mode: &str, filter: &str) -> PyResult<Self> {
+        let address_mode = match address_mode {
+            "clamp_to_edge" => wgpu::AddressMode::ClampToEdge,
+            "repeat" => wgpu::AddressMode::Repeat,
+            "mirror_repeat" => wgpu::AddressMode::MirrorRepeat,
+            "clamp_to_border" => wgpu::AddressMode::ClampToBorder,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "Invalid address_mode. Must be one of: clamp_to_edge, repeat, mirror_repeat, clamp_to_border",
+                ));
+            }
+        };
+
+        let filter = match filter {
+            "nearest" => wgpu::FilterMode::Nearest,
+            "linear" => wgpu::FilterMode::Linear,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "Invalid filter. Must be one of: nearest, linear",
+                ));
+            }
+        };
+
+        Ok(Self {
+            inner: compiled_wgsl::SamplerOptions { address_mode, filter },
+        })
+    }
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
 impl PyCompiledWgsl {
     #[new]
-    pub fn new(id: &str, wgsl_code: &str, generator: &PyImageGenerator) -> Result<Self, PyErr> {
-        let inner = compiled_wgsl::CompiledWgsl::new(id, wgsl_code, &generator.inner.device)?;
+    pub fn new(
+        id: &str,
+        wgsl_code: &str,
+        generator: &PyImageGenerator,
+        sampler_options: Option<&PySamplerOptions>,
+    ) -> Result<Self, PyErr> {
+        let inner = compiled_wgsl::CompiledWgsl::new(
+            id,
+            wgsl_code,
+            &generator.inner.device,
+            sampler_options.map(|s| &s.inner),
+        )?;
 
         Ok(Self { inner })
     }
@@ -198,11 +247,7 @@ impl PyImageGenerator {
         Ok(Self { inner, rt })
     }
 
-    pub fn generate(
-        &self,
-        builder: &PyImageGenerateBuilder,
-        buffer_ptr: usize,
-    ) -> PyResult<()> {
+    pub fn generate(&self, builder: &PyImageGenerateBuilder, buffer_ptr: usize) -> PyResult<()> {
         let result = self
             .rt
             .block_on(async { self.inner.generate(builder.inner.clone()).await })?;
@@ -219,6 +264,7 @@ impl PyImageGenerator {
 #[pymodule]
 pub fn gpu_util(m: &Bound<PyModule>) -> PyResult<()> {
     println!("gpu_util: Initializing gpu_util module");
+    m.add_class::<PySamplerOptions>()?;
     m.add_class::<PyCompiledWgsl>()?;
     m.add_class::<PyCompiledFunc>()?;
     m.add_class::<PyImageGenerateBuilder>()?;

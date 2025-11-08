@@ -1,6 +1,6 @@
-from typing import Literal, TypedDict
+from typing import TypedDict
 
-class EffectStructure(TypedDict):
+class GenerateStructure(TypedDict):
     """
     エフェクト構造を表す辞書の型定義。
     """
@@ -13,7 +13,8 @@ class LayerStructure(TypedDict):
     """
     x: int
     y: int
-    channels: Literal[1, 3, 4]
-    obj_base: str
-    obj_parameters: dict
-    effects: list[EffectStructure]
+    scale: float
+    rotation: float
+    alpha: float
+    obj: GenerateStructure
+    effects: list[GenerateStructure]

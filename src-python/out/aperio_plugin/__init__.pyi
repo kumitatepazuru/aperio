@@ -1,4 +1,3 @@
-import numpy as np
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import FilterGeneratorBase, ObjectGeneratorBase
 from .types.frame_structure import LayerStructure as LayerStructure
@@ -76,18 +75,16 @@ class PluginManager:
         Returns:
             bool: プラグインが正常に追加または更新された場合はTrue、それ以外の場合はFalse
         """
-    def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int) -> np.ndarray:
+    def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> None:
         """
-        指定されたフレーム構造に基づいてフレームを生成するメソッド。内部では高速化のためにUMatを使用している。
+        指定されたフレーム構造に基づいてフレームを生成するメソッド。
 
         Args:
-            frame_number (int): 生成するフレームの番号 (現在は未使用)
+            frame_number (int): 生成するフレームの番号
             frame_structure (list[LayerStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-
-        Returns:
-            生成されたフレームオブジェクト
+            buffer_ptr (int): 書き込み先バッファのポインタ
         """
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
         """

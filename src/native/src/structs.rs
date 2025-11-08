@@ -32,6 +32,7 @@ pub struct FrameLayerStructure {
     pub y: i32,
     pub scale: f64,
     pub rotation: f64,
+    pub alpha: f64,
     pub obj: GenerateStructure,
     pub effects: Vec<GenerateStructure>,
 }

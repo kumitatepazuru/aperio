@@ -16,7 +16,7 @@ use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
-use wgpu::include_wgsl;
+use wgpu::{Features, include_wgsl};
 
 // WGSLの後処理シェーダー（f32 RGBA -> u32 RRGGBBAA）
 const POST_PROCESS_WGSL: wgpu::ShaderModuleDescriptor<'_> =
@@ -28,6 +28,7 @@ pub(crate) struct PipelineCacheKey {
     id: String,
     input_texture_count: usize,
     has_storage: bool,
+    has_sampler: bool,
 }
 
 // テクスチャキャッシュのキーとなる構造体
@@ -120,8 +121,10 @@ impl ImageGenerator {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("ImageGenerator Device"),
-                required_features: wgpu::Features::TEXTURE_BINDING_ARRAY
-                    | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING, // 配列テクスチャバインディングを有効化
+                required_features: Features::TEXTURE_BINDING_ARRAY
+                    | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
+                    | Features::ADDRESS_MODE_CLAMP_TO_BORDER
+                    | Features::FLOAT32_FILTERABLE,
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 1000, // 必要に応じて調整
                     max_storage_buffer_binding_size: 2147483647,       // 2GB
@@ -476,7 +479,7 @@ impl ImageGenerator {
                 binding: 0,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },
@@ -496,6 +499,16 @@ impl ImageGenerator {
             },
             count: None,
         });
+
+        // Binding 1 or 2: サンプラー (存在する場合)
+        if key.has_sampler {
+            bgl_entries_group0.push(wgpu::BindGroupLayoutEntry {
+                binding: if key.input_texture_count > 0 { 2 } else { 1 },
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            });
+        }
 
         let bind_group_layout_0 =
             self.device

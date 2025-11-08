@@ -32,7 +32,7 @@ class TestObject(ObjectGeneratorBase):
 
         current_dir = os.path.dirname(__file__)
         with open(os.path.join(current_dir, "test.wgsl"), "r") as f:
-            self.shader = PyCompiledWgsl("test", f.read(), generator)
+            self.shader = PyCompiledWgsl("test", f.read(), generator, None)
 
     def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn:
         ret, img = self.frame.read()

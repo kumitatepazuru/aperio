@@ -75,6 +75,7 @@ pub fn handle_wgsl_step(
         id: wgsl.id.clone(),
         input_texture_count: input_texture_views.len(),
         has_storage: params.is_some(),
+        has_sampler: wgsl.sampler.is_some(),
     };
     let cached_pipeline = generator.get_or_create_pipeline(&key, &wgsl.module)?;
 
@@ -92,6 +93,14 @@ pub fn handle_wgsl_step(
         binding: if input_texture_views.is_empty() { 0 } else { 1 },
         resource: wgpu::BindingResource::TextureView(&output_texture_view),
     });
+
+    // サンプラーのバインディング (存在する場合)
+    if let Some(sampler) = &wgsl.sampler {
+        bg_entries_group0.push(wgpu::BindGroupEntry {
+            binding: if input_texture_views.is_empty() { 1 } else { 2 },
+            resource: wgpu::BindingResource::Sampler(sampler.as_ref()),
+        });
+    }
 
     let bind_group_0 = generator
         .device
@@ -147,23 +156,3 @@ pub fn handle_wgsl_step(
     }];
     Ok((new_state, vec![encoder]))
 }
-
-// ユーザーのWGSLシェーダーの期待される形式:
-/*
-@group(0) @binding(0) var input_textures: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var output_texture: texture_storage_2d<rgba32float, write>;
-
-@compute @workgroup_size(16, 16, 1)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let output_size = textureDimensions(output_texture);
-    if (global_id.x >= output_size.x || global_id.y >= output_size.y) {
-        return;
-    }
-
-    // 例: 最初の入力テクスチャを読み込む
-    let pixel = textureLoad(input_textures[0], vec2<i32>(global_id.xy));
-
-    // 出力テクスチャに書き込む
-    textureStore(output_texture, global_id.xy, pixel);
-}
-*/
