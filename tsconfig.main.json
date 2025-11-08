@@ -9,7 +9,11 @@
     "types": ["node"],
     "esModuleInterop": true,
     "strict": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "native": ["dist/native/"]
+    }
   },
   "include": ["src/main", "src/preload"]
 }

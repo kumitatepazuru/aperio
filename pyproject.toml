@@ -1,0 +1,21 @@
+[project]
+name = "aperio"
+version = "0.1.0"
+description = "A Plugin-based Open Source Video Editor"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aperio-plugin-stubs",
+    "mypy>=1.18.2",
+    "numpy>=2.3.3",
+    "opencv-python>=4.11.0.86",
+    "requests>=2.32.5",
+]
+
+[tool.uv.workspace]
+members = [
+    "src-python",
+]
+
+[tool.uv.sources]
+aperio-plugin-stubs = { workspace = true }

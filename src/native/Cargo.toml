@@ -1,0 +1,26 @@
+[package]
+name = "aperio"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+napi = { version = "3.0.0", features = ["async", "serde-json"] }
+napi-derive = "3.0.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tokio-tungstenite = "0.28.0"
+toml_edit = "0.23.7"
+thiserror = "2.0.17"
+libc = "0.2.177"
+gpu_util = { path = "../gpu_util" }
+tokio = { workspace = true, features = ["macros", "sync"] }
+pyo3 = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+napi-build = "2"

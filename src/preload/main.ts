@@ -1,18 +1,56 @@
-import { contextBridge } from "electron";
-import { plus100 } from "../native/index.js";
+import { contextBridge, ipcRenderer } from "electron";
+import path from "path";
+import { FrameLayerStructure, PlManager } from "native";
 
-// native.plus100
-contextBridge.exposeInMainWorld("native", {
-  plus100: (input: number): number => {
-    return plus100(input);
+let plManagerSingleton: PlManager | null = null;
+
+const ch = new MessageChannel();
+const p1 = ch.port1;
+const p2 = ch.port2;
+p1.start();
+
+contextBridge.exposeInMainWorld("frame", {
+  init: async () => {
+    if (!plManagerSingleton) {
+      const userDataPath = await ipcRenderer.invoke("get-app-path", "userData");
+      const resourcesPath = await ipcRenderer.invoke("get-resources");
+      const pluginManagerPath = await ipcRenderer.invoke("get-plugin-manager");
+      const defaultPluginsPath = await ipcRenderer.invoke(
+        "get-default-plugins"
+      );
+      const distDir = await ipcRenderer.invoke("get-dist-dir");
+
+      console.log("Plugin Manager is being initialized");
+      console.log("User Data Path:", userDataPath);
+      console.log("Resources Path:", resourcesPath);
+      console.log("Plugin Manager Path:", pluginManagerPath);
+      console.log("Default Plugins Path:", defaultPluginsPath);
+      console.log("Dist Path:", distDir);
+      plManagerSingleton = new PlManager({
+        dataDir: userDataPath,
+        localDataDir: path.join(userDataPath, "local"),
+        resourceDir: resourcesPath,
+        pluginManagerDir: pluginManagerPath,
+        defaultPluginsDir: defaultPluginsPath,
+        distDir,
+      });
+      plManagerSingleton.initialize();
+    }
+
+    window.postMessage({ type: "frame-port" }, "*", [p2]);
+  },
+  getFrame: (count: number, frameStruct: FrameLayerStructure[]) => {
+    // ArrayBufferをここで作ってgetFrameに参照渡しする
+    const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
+    const data = new Uint8Array(buffer);
+
+    plManagerSingleton?.getFrame(data, count, frameStruct);
+    p1.postMessage(buffer, [buffer]);
   },
 });
 
-// 例: renderer 側で window.native.plus100() が使える
-declare global {
-  interface Window {
-    native: {
-      plus100: (input: number) => number;
-    };
-  }
-}
+contextBridge.exposeInMainWorld("path", {
+  getPath: (name: "userData" | "temp" | "exe") =>
+    ipcRenderer.invoke("get-app-path", name),
+  getResources: () => ipcRenderer.invoke("get-resources"),
+});
