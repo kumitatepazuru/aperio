@@ -1,32 +1,18 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import type { FrameLayerStructure } from "native";
 import useStore from "./store";
 import { useShallow } from "zustand/shallow";
 import { getFrame } from "./bridge";
-
-const frameStruct: FrameLayerStructure[] = [
-  {
-    x: 500,
-    y: 500,
-    scale: 3.0,
-    rotation: 40.0,
-    alpha: 0.8,
-    obj: {
-      name: "TestObject",
-      parameters: {},
-    },
-    effects: [],
-  },
-];
+import type { LayerStructure } from "native";
 
 const FrameRenderer = () => {
   // テクスチャとマテリアルへの参照
   const textureRef = useRef<THREE.DataTexture | null>(null);
   const [texture, setTexture] = useState<THREE.DataTexture | null>(null);
-  const { frameCount, setFrameCount, state } = useStore(
+  const { frameCount, setFrameCount, state, frame } = useStore(
     useShallow((state) => ({
+      frame: state.timelineLayers,
       frameCount: state.frameCount,
       setFrameCount: state.setFrameCount,
       state: state.viewerState,
@@ -35,6 +21,10 @@ const FrameRenderer = () => {
 
   useEffect(() => {
     (async () => {
+      const frameStruct: LayerStructure[] = frame.filter((layer) => {
+        return frameCount >= layer.from && frameCount <= layer.to;
+      }).sort((a, b) => a.layer - b.layer);
+
       if (!texture) {
         const data = await getFrame(0, frameStruct);
 
@@ -63,7 +53,7 @@ const FrameRenderer = () => {
         textureRef.current.needsUpdate = true;
       }
     })();
-  }, [frameCount, texture]);
+  }, [frame, frameCount, texture]);
 
   // 毎フレーム実行される処理
   useFrame(async () => {

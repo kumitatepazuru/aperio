@@ -1,4 +1,4 @@
-import type { FrameLayerStructure } from "native";
+import type { LayerStructure } from "native";
 
 let port: MessagePort;
 
@@ -24,7 +24,7 @@ await initFunc;
 
 const getFrame = async (
   frameCount: number,
-  frameStruct: FrameLayerStructure[]
+  frameStruct: LayerStructure[]
 ): Promise<ArrayBuffer> => {
   if (!port) {
     await initFunc;

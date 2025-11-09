@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import path from "path";
-import { FrameLayerStructure, PlManager } from "native";
+import { LayerStructure, PlManager } from "native";
 
 let plManagerSingleton: PlManager;
 
@@ -47,7 +47,7 @@ contextBridge.exposeInMainWorld("native", {
 });
 
 contextBridge.exposeInMainWorld("frame", {
-  getFrame: (count: number, frameStruct: FrameLayerStructure[]) => {
+  getFrame: (count: number, frameStruct: LayerStructure[]) => {
     // ArrayBufferをここで作ってgetFrameに参照渡しする
     const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
     const data = new Uint8Array(buffer);

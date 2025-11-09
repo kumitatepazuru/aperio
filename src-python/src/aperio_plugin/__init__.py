@@ -253,7 +253,8 @@ class PluginManager:
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
             if len(frame_structure) == 0:
-                raise ValueError("frame_structure must contain at least one layer")
+                # 空のフレーム構造の場合は何もしない
+                return
 
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []

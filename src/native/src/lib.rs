@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     app_config::read_config,
-    structs::{Dirs, FrameLayerStructure},
+    structs::{Dirs, LayerStructure},
     util::get_local_data_dir,
 };
 use napi::bindgen_prelude::Uint8ArraySlice;
@@ -127,7 +127,7 @@ impl JsPlManager {
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
-        frame_struct: Vec<FrameLayerStructure>,
+        frame_struct: Vec<LayerStructure>,
     ) -> napi::Result<()> {
         let pl_manager = self
             .plmanager

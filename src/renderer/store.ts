@@ -1,8 +1,9 @@
-import type { FrameLayerStructure } from "native";
+import type { LayerStructure } from "native";
 import { create } from "zustand";
 
-type TimelineLayerStructure = FrameLayerStructure & {
+type TimelineLayerStructure = LayerStructure & {
   id: string; // UUIDが期待される
+  layer: number; // レイヤー番号
   from: number; // 開始フレーム
   to: number; // 終了フレーム
 };
