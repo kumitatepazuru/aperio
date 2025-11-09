@@ -75,6 +75,13 @@ class PluginManager:
         Returns:
             bool: プラグインが正常に追加または更新された場合はTrue、それ以外の場合はFalse
         """
+    def get_plugin_names(self) -> list[dict[str, str]]:
+        """
+        登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
+
+        Returns:
+            list[dict[str, str]]: 登録されているプラグインのnameとdisplay_nameの対応表のリスト
+        """
     def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> None:
         """
         指定されたフレーム構造に基づいてフレームを生成するメソッド。

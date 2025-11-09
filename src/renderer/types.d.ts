@@ -2,8 +2,11 @@ import { FrameLayerStructure } from "native";
 
 declare global {
   interface Window {
+    native: {
+      init: () => Promise<void>;
+      getPluginNames: () => Record<string, string>[];
+    },
     frame: {
-      init: () => void;
       getFrame: (count: number, frameStruct: FrameLayerStructure[]) => Promise<Uint8Array<ArrayBufferLike>>;
     },
     path: {

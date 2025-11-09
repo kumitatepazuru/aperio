@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     app_config::read_config,
     structs::{Dirs, FrameLayerStructure},
@@ -149,5 +151,22 @@ impl JsPlManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
         Ok(())
+    }
+
+    #[napi]
+    pub fn get_plugin_names(&self) -> napi::Result<Vec<HashMap<String, String>>> {
+        let pl_manager = self
+            .plmanager
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+
+        let result = Python::attach(|py| -> PyResult<Vec<HashMap<String, String>>> {
+            let pl_manager = pl_manager.bind(py);
+            let names = pl_manager.call_method0("get_plugin_names")?;
+            Ok(names.extract()?)
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get plugin names: {:?}", e)))?;
+
+        Ok(result)
     }
 }

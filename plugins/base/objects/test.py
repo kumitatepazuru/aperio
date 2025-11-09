@@ -26,7 +26,7 @@ class TestObject(ObjectGeneratorBase):
         print(f"sys.path: {sys.path}")
         print("--------------------------")
 
-        self.name = "TestObject"
+        self.name = "base.test_object"
         self.display_name = "Test Object"
         self.description = "This is a test object that generates frames using OpenCV and GStreamer videotestsrc."
 

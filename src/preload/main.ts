@@ -2,14 +2,16 @@ import { contextBridge, ipcRenderer } from "electron";
 import path from "path";
 import { FrameLayerStructure, PlManager } from "native";
 
-let plManagerSingleton: PlManager | null = null;
+let plManagerSingleton: PlManager;
 
 const ch = new MessageChannel();
 const p1 = ch.port1;
 const p2 = ch.port2;
 p1.start();
 
-contextBridge.exposeInMainWorld("frame", {
+// TODO: 何らかの理由によりinitがされてなかったときのエラー処理
+
+contextBridge.exposeInMainWorld("native", {
   init: async () => {
     if (!plManagerSingleton) {
       const userDataPath = await ipcRenderer.invoke("get-app-path", "userData");
@@ -39,6 +41,12 @@ contextBridge.exposeInMainWorld("frame", {
 
     window.postMessage({ type: "frame-port" }, "*", [p2]);
   },
+  getPluginNames: (): Record<string, string>[] => {
+    return plManagerSingleton?.getPluginNames() || [];
+  }
+});
+
+contextBridge.exposeInMainWorld("frame", {
   getFrame: (count: number, frameStruct: FrameLayerStructure[]) => {
     // ArrayBufferをここで作ってgetFrameに参照渡しする
     const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
