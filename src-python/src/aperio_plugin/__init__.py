@@ -213,6 +213,23 @@ class PluginManager:
 
         self.__load_plugins()
         return True
+    
+    def get_plugin_names(self) -> list[dict[str, str]]:
+        """
+        登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
+
+        Returns:
+            list[dict[str, str]]: 登録されているプラグインのnameとdisplay_nameの対応表のリスト
+        """
+        result = []
+        for plugin in self.plugins.values():
+            result.append({plugin.name: plugin.display_name})
+        for obj_plugin in self.object_plugins.values():
+            result.append({obj_plugin.name: obj_plugin.display_name})
+        for filter_plugin in self.filter_plugins.values():
+            result.append({filter_plugin.name: filter_plugin.display_name})
+        
+        return result
 
     def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
                              width: int, height: int, buffer_ptr: int) -> None:
@@ -236,7 +253,8 @@ class PluginManager:
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
             if len(frame_structure) == 0:
-                raise ValueError("frame_structure must contain at least one layer")
+                # 空のフレーム構造の場合は何もしない
+                return
 
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []

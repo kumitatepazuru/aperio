@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::{
     app_config::read_config,
-    structs::{Dirs, FrameLayerStructure},
+    structs::{Dirs, LayerStructure},
     util::get_local_data_dir,
 };
 use napi::bindgen_prelude::Uint8ArraySlice;
@@ -125,7 +127,7 @@ impl JsPlManager {
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
-        frame_struct: Vec<FrameLayerStructure>,
+        frame_struct: Vec<LayerStructure>,
     ) -> napi::Result<()> {
         let pl_manager = self
             .plmanager
@@ -149,5 +151,22 @@ impl JsPlManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
         Ok(())
+    }
+
+    #[napi]
+    pub fn get_plugin_names(&self) -> napi::Result<Vec<HashMap<String, String>>> {
+        let pl_manager = self
+            .plmanager
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+
+        let result = Python::attach(|py| -> PyResult<Vec<HashMap<String, String>>> {
+            let pl_manager = pl_manager.bind(py);
+            let names = pl_manager.call_method0("get_plugin_names")?;
+            Ok(names.extract()?)
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get plugin names: {:?}", e)))?;
+
+        Ok(result)
     }
 }

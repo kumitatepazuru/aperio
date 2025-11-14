@@ -27,7 +27,7 @@ pub struct GenerateStructure {
 
 #[napi(object)]
 #[derive(IntoPyObject)]
-pub struct FrameLayerStructure {
+pub struct LayerStructure {
     pub x: i32,
     pub y: i32,
     pub scale: f64,
