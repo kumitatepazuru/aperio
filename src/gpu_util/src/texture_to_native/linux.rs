@@ -3,20 +3,27 @@ use drm_fourcc::{DrmFourcc, DrmModifier};
 use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use wgpu::Texture;
+use anyhow::{Context, Result, bail};
 
-#[derive(Debug, Clone)]
-pub struct DmaBufPlane {
+pub struct SharedTexturePlane {
     pub fd: RawFd,
     pub stride: u32,
     pub offset: u32,
     pub size: u32,
 }
 
-#[derive(Debug, Clone)]
-pub struct DmaBufInfo {
-    pub planes: Vec<DmaBufPlane>,
+pub struct SharedTextureHandleNativePixmap {
+    pub planes: Vec<SharedTexturePlane>,
+}
+
+pub struct SharedTextureHandle {
+    pub native_pixmap: SharedTextureHandleNativePixmap,
+}
+
+pub struct SharedTextureInfo {
+    pub handle: SharedTextureHandle,
     pub modifier: DrmModifier,
-    pub format: DrmFourcc,
+    pub pixel_format: DrmFourcc,
     pub width: u32,
     pub height: u32,
 }
@@ -31,7 +38,9 @@ struct VulkanDeviceInfo {
 /// This function retrieves the file descriptors, strides, offsets, sizes and modifier
 /// for each plane of the texture's underlying dmabuf.
 #[cfg(target_os = "linux")]
-pub fn texture_to_dmabuf_info(texture: &Texture) -> Result<DmaBufInfo, Box<dyn std::error::Error>> {
+pub fn texture_to_dmabuf_info(
+    texture: &Texture,
+) -> Result<SharedTextureInfo> {
     unsafe {
         // Get Vulkan image handle and format from wgpu texture
         let (vk_image, vk_format) = get_vulkan_image_from_texture(texture)?;
@@ -55,7 +64,7 @@ pub fn texture_to_dmabuf_info(texture: &Texture) -> Result<DmaBufInfo, Box<dyn s
 /// Get actual Vulkan image handle from wgpu texture (RGBA f32 only)
 unsafe fn get_vulkan_image_from_texture(
     texture: &Texture,
-) -> Result<(vk::Image, vk::Format), Box<dyn std::error::Error>> {
+) -> Result<(vk::Image, vk::Format)> {
     // RGBA f32テクスチャ専用の実装
     // wgpu HALから実際のVulkanイメージハンドルを取得
 
@@ -85,7 +94,7 @@ unsafe fn get_vulkan_image_from_texture(
 /// Create a new Vulkan image for RGBA f32 texture as fallback
 unsafe fn create_vulkan_image_for_rgba_f32(
     texture: &Texture,
-) -> Result<(vk::Image, vk::Format), Box<dyn std::error::Error>> {
+) -> Result<(vk::Image, vk::Format)> {
     // フォールバック：RGBA f32テクスチャ用の新しいVulkanイメージを作成
     let device_info = get_vulkan_device_info()?;
 
@@ -120,7 +129,7 @@ unsafe fn create_vulkan_image_for_rgba_f32(
     let vk_image = device_info
         .device
         .create_image(&image_create_info, None)
-        .map_err(|e| format!("Failed to create Vulkan image for RGBA f32: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create Vulkan image for RGBA f32: {}", e))?;
 
     // メモリを割り当ててバインド
     let device_memory = allocate_and_bind_image_memory(
@@ -142,7 +151,7 @@ unsafe fn allocate_and_bind_image_memory(
     physical_device: vk::PhysicalDevice,
     instance: &Instance,
     image: vk::Image,
-) -> Result<vk::DeviceMemory, Box<dyn std::error::Error>> {
+) -> Result<vk::DeviceMemory> {
     // メモリ要件を取得
     let memory_req = device.get_image_memory_requirements(image);
 
@@ -164,12 +173,12 @@ unsafe fn allocate_and_bind_image_memory(
     // メモリを割り当て
     let device_memory = device
         .allocate_memory(&memory_allocate_info, None)
-        .map_err(|e| format!("Failed to allocate device memory for RGBA f32: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to allocate device memory for RGBA f32: {}", e))?;
 
     // イメージにメモリをバインド
     device
         .bind_image_memory(image, device_memory, 0)
-        .map_err(|e| format!("Failed to bind memory to RGBA f32 image: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to bind memory to RGBA f32 image: {}", e))?;
 
     Ok(device_memory)
 }
@@ -184,7 +193,7 @@ unsafe fn get_vulkan_dmabuf_info(
     format: vk::Format,
     width: u32,
     height: u32,
-) -> Result<DmaBufInfo, Box<dyn std::error::Error>> {
+) -> Result<SharedTextureInfo> {
     // Load external memory FD extension
     let external_memory_fd = ash::khr::external_memory_fd::Device::new(instance, device);
 
@@ -198,7 +207,7 @@ unsafe fn get_vulkan_dmabuf_info(
 
     let fd = external_memory_fd
         .get_memory_fd(&fd_info)
-        .map_err(|e| format!("Failed to get dmabuf fd: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to get dmabuf fd: {}", e))?;
 
     // Get DRM format modifier
     let modifier = get_image_drm_modifier(instance, device, image)?;
@@ -216,17 +225,19 @@ unsafe fn get_vulkan_dmabuf_info(
     let layout = device.get_image_subresource_layout(image, subresource);
     let stride = layout.row_pitch as u32;
 
-    let planes = vec![DmaBufPlane {
+    let planes = vec![SharedTexturePlane {
         fd,
         stride,
         offset: layout.offset as u32,
         size: layout.size as u32,
     }];
 
-    Ok(DmaBufInfo {
-        planes,
+    Ok(SharedTextureInfo {
+        handle: SharedTextureHandle {
+            native_pixmap: SharedTextureHandleNativePixmap { planes },
+        },
         modifier,
-        format: drm_format,
+        pixel_format: drm_format,
         width,
         height,
     })
@@ -238,7 +249,7 @@ unsafe fn get_image_device_memory(
     physical_device: vk::PhysicalDevice,
     instance: &Instance,
     image: vk::Image,
-) -> Result<vk::DeviceMemory, Box<dyn std::error::Error>> {
+) -> Result<vk::DeviceMemory> {
     // Get memory requirements for the image
     let memory_req = device.get_image_memory_requirements(image);
 
@@ -258,12 +269,12 @@ unsafe fn get_image_device_memory(
 
     let device_memory = device
         .allocate_memory(&memory_allocate_info, None)
-        .map_err(|e| format!("Failed to allocate device memory: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to allocate device memory: {}", e))?;
 
     // Bind memory to image
     device
         .bind_image_memory(image, device_memory, 0)
-        .map_err(|e| format!("Failed to bind memory to image: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to bind memory to image: {}", e))?;
 
     Ok(device_memory)
 }
@@ -274,7 +285,7 @@ fn find_memory_type_index(
     instance: &Instance,
     memory_type_bits: u32,
     required_properties: vk::MemoryPropertyFlags,
-) -> Result<u32, Box<dyn std::error::Error>> {
+) -> Result<u32> {
     unsafe {
         let memory_properties = instance.get_physical_device_memory_properties(physical_device);
 
@@ -299,7 +310,7 @@ fn find_memory_type_index(
             }
         }
 
-        Err("No suitable memory type found with external memory support".into())
+        bail!("No suitable memory type found with external memory support");
     }
 }
 
@@ -308,7 +319,7 @@ unsafe fn get_external_memory_properties(
     _instance: &Instance,
     _physical_device: vk::PhysicalDevice,
     _memory_type_index: u32,
-) -> Result<vk::ExternalMemoryProperties, Box<dyn std::error::Error>> {
+) -> Result<vk::ExternalMemoryProperties> {
     // 簡潔な実装：常にdmabufエクスポートをサポートすると仮定
     // 実際のハードウェアサポートはランタイムで確認される
 
@@ -325,7 +336,7 @@ unsafe fn get_image_drm_modifier(
     instance: &Instance,
     device: &Device,
     image: vk::Image,
-) -> Result<DrmModifier, Box<dyn std::error::Error>> {
+) -> Result<DrmModifier> {
     // Load DRM format modifier extension
     let drm_format_modifier = ash::ext::image_drm_format_modifier::Device::new(instance, device);
 
@@ -334,13 +345,13 @@ unsafe fn get_image_drm_modifier(
     // Get DRM format modifier for the image
     drm_format_modifier
         .get_image_drm_format_modifier_properties(image, &mut modifier_props)
-        .map_err(|e| format!("Failed to get DRM format modifier: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to get DRM format modifier: {}", e))?;
 
     Ok(DrmModifier::from(modifier_props.drm_format_modifier))
 }
 
 /// Convert Vulkan format to DRM fourcc format
-fn vulkan_format_to_drm(format: vk::Format) -> Result<DrmFourcc, Box<dyn std::error::Error>> {
+fn vulkan_format_to_drm(format: vk::Format) -> Result<DrmFourcc> {
     let drm_format = match format {
         // RGBA f32専用の実装なので主にこれを使用
         vk::Format::R32G32B32A32_SFLOAT => {
@@ -359,14 +370,14 @@ fn vulkan_format_to_drm(format: vk::Format) -> Result<DrmFourcc, Box<dyn std::er
         // 16-bit formats - 利用可能なフォーマットのみ使用
         vk::Format::R16G16B16A16_SFLOAT => DrmFourcc::Abgr8888, // フォールバック
         vk::Format::R16G16B16A16_UNORM => DrmFourcc::Abgr8888,  // フォールバック
-        _ => return Err(format!("Unsupported Vulkan format for dmabuf: {:?}", format).into()),
+        _ => bail!("Unsupported Vulkan format for dmabuf: {:?}", format),
     };
 
     Ok(drm_format)
 }
 
 /// Get Vulkan device information from wgpu context
-fn get_vulkan_device_info() -> Result<VulkanDeviceInfo, Box<dyn std::error::Error>> {
+fn get_vulkan_device_info() -> Result<VulkanDeviceInfo> {
     unsafe {
         let entry = Entry::load()?;
 
@@ -393,7 +404,7 @@ fn get_vulkan_device_info() -> Result<VulkanDeviceInfo, Box<dyn std::error::Erro
         // Get first available physical device that supports external memory
         let physical_devices = instance.enumerate_physical_devices()?;
         if physical_devices.is_empty() {
-            return Err("No Vulkan physical devices found".into());
+            bail!("No Vulkan physical devices found");
         }
 
         let mut suitable_physical_device = None;
@@ -414,7 +425,7 @@ fn get_vulkan_device_info() -> Result<VulkanDeviceInfo, Box<dyn std::error::Erro
         }
 
         let (physical_device, graphics_queue_family) = suitable_physical_device
-            .ok_or("No suitable physical device found with graphics queue support")?;
+            .context("No suitable physical device found with graphics queue support")?;
 
         // Create logical device with necessary extensions
         let device_extensions = [
