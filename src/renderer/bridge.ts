@@ -19,7 +19,7 @@ const Frame = class {
 
       window.addEventListener("message", listenerFunc);
 
-      window.frame.init();
+      window.frame.sendPort();
     });
   }
 
@@ -40,7 +40,7 @@ const Frame = class {
         { once: true }
       );
 
-      window.frame.getFrame(frameCount, frameStruct);
+      window.frame.getFrameBuf(frameCount, frameStruct);
     });
   }
 };

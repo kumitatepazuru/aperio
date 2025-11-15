@@ -2,6 +2,8 @@ import { app, BrowserWindow, IpcMainInvokeEvent, ipcMain } from "electron";
 import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
+import { NativeModule } from "./nativeModule";
+import { FrameLayerStructure } from "native";
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
@@ -11,10 +13,7 @@ app.commandLine.appendSwitch("enable-unsafe-webgpu");
 
 let win: BrowserWindow | null = null;
 
-function getAppPath(_: IpcMainInvokeEvent, name: "userData" | "temp" | "exe") {
-  return app.getPath(name);
-}
-
+// TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
 function getResources() {
   return isDev
     ? path.join(app.getAppPath(), "resources", `${getOs()}-${getArch()}`)
@@ -39,14 +38,42 @@ function getDistDir() {
     : path.join(process.resourcesPath, "app.asar.unpacked", "dist");
 }
 
-async function createWindow() {
-  // TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
-  ipcMain.handle("get-app-path", getAppPath);
-  ipcMain.handle("get-resources", getResources);
-  ipcMain.handle("get-plugin-manager", getPluginManager);
-  ipcMain.handle("get-default-plugins", getDefaultPlugins);
-  ipcMain.handle("get-dist-dir", getDistDir);
+const nativeModule = new NativeModule({
+  dataDir: app.getPath("userData"),
+  localDataDir: path.join(app.getPath("userData"), "local"),
+  resourceDir: getResources(),
+  pluginManagerDir: getPluginManager(),
+  defaultPluginsDir: getDefaultPlugins(),
+  distDir: getDistDir(),
+});
 
+ipcMain.handle("send-port", (event) => {
+  nativeModule.sendPort(event.sender);
+});
+
+ipcMain.handle(
+  "get-frame-buf",
+  (
+    _: IpcMainInvokeEvent,
+    count: number,
+    frameStruct: FrameLayerStructure[]
+  ) => {
+    nativeModule.getFrameBuf(count, frameStruct);
+  }
+);
+
+// ipcMain.handle(
+//   "get-frame-shared-texture",
+//   (
+//     _: IpcMainInvokeEvent,
+//     count: number,
+//     frameStruct: FrameLayerStructure[]
+//   ) => {
+//     nativeModule.getFrameSharedTexture(count, frameStruct);
+//   }
+// );
+
+async function createWindow() {
   win = new BrowserWindow({
     width: 1100,
     height: 720,
