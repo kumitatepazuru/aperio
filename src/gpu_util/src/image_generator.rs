@@ -10,13 +10,14 @@ use crate::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
         parallel_process::handle_parallel_step, wgsl_process::handle_wgsl_step,
     },
+    texture_to_native::linux::{texture_to_dmabuf_info, SharedTextureInfo},
 };
 use anyhow::{bail, Context, Result};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
-use wgpu::{Features, include_wgsl};
+use wgpu::{include_wgsl, Features};
 
 // WGSLの後処理シェーダー（f32 RGBA -> u32 RRGGBBAA）
 const POST_PROCESS_WGSL: wgpu::ShaderModuleDescriptor<'_> =
@@ -68,6 +69,11 @@ pub enum StepOutput {
         width: u32,
         height: u32,
     },
+}
+
+pub enum GenerateOutput {
+    SharedTexture(SharedTextureInfo),
+    CpuData(Vec<u8>),
 }
 
 /// パイプラインの中間状態。
@@ -433,7 +439,11 @@ impl ImageGenerator {
     }
 
     /// ImageGenerateBuilderで構築されたパイプラインを実行し、画像を生成します。
-    pub async fn generate(&self, builder: ImageGenerateBuilder) -> Result<Vec<u8>> {
+    pub async fn generate(
+        &self,
+        builder: ImageGenerateBuilder,
+        is_buf: bool,
+    ) -> Result<GenerateOutput> {
         let (final_state_vec, encoders) = self.execute_pipeline(&builder.steps, Vec::new()).await?;
 
         self.queue.submit(encoders.into_iter().map(|e| e.finish()));
@@ -446,7 +456,23 @@ impl ImageGenerator {
             );
         }
 
-        handle_final_process(self, final_state_vec).await
+        // Linuxの場合sharedTextureを使ったbyte配列取得を行う
+        if !is_buf {
+            if let StepOutput::Gpu { texture, .. } = &final_state_vec[0] {
+                if cfg!(target_os = "linux") {
+                    // texture is an Arc<wgpu::Texture>; clone the Arc to pass ownership
+                    return Ok(GenerateOutput::SharedTexture(texture_to_dmabuf_info(
+                        &texture,
+                    )?));
+                }
+            }
+        } else {
+            return Ok(GenerateOutput::CpuData(
+                handle_final_process(self, final_state_vec).await?,
+            ));
+        }
+
+        bail!("Final output is not a GPU texture or unsupported OS.");
     }
 
     // --- パイプラインを取得または生成するためのヘルパーメソッドを追加 ---

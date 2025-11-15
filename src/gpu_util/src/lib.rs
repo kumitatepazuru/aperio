@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use numpy::{PyReadonlyArray1, ToPyArray};
 use pyo3::{exceptions::PyValueError, prelude::*, types::*};
 use pyo3_stub_gen::{
@@ -10,6 +10,7 @@ use tokio::runtime::Runtime;
 use crate::{
     compiled_func::{CpuFunction, CpuInputImage, CpuOutput},
     image_generate_builder::ImageGenerateBuilder,
+    image_generator::GenerateOutput,
 };
 
 pub mod compiled_func;
@@ -52,6 +53,12 @@ pub struct PyImageGenerator {
     rt: Runtime,
 }
 
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct PyGenerateOutput {
+    pub inner: Option<image_generator::GenerateOutput>,
+}
+
 #[gen_stub_pymethods]
 #[pymethods]
 impl PySamplerOptions {
@@ -62,7 +69,7 @@ impl PySamplerOptions {
             "repeat" => wgpu::AddressMode::Repeat,
             "mirror_repeat" => wgpu::AddressMode::MirrorRepeat,
             "clamp_to_border" => wgpu::AddressMode::ClampToBorder,
-            _ => {  
+            _ => {
                 return Err(PyValueError::new_err(
                     "Invalid address_mode. Must be one of: clamp_to_edge, repeat, mirror_repeat, clamp_to_border",
                 ));
@@ -80,7 +87,10 @@ impl PySamplerOptions {
         };
 
         Ok(Self {
-            inner: compiled_wgsl::SamplerOptions { address_mode, filter },
+            inner: compiled_wgsl::SamplerOptions {
+                address_mode,
+                filter,
+            },
         })
     }
 }
@@ -248,17 +258,38 @@ impl PyImageGenerator {
         Ok(Self { inner, rt })
     }
 
-    pub fn generate(&self, builder: &PyImageGenerateBuilder, buffer_ptr: usize) -> PyResult<()> {
+    pub fn generate_buf(
+        &self,
+        builder: &PyImageGenerateBuilder,
+        buffer_ptr: usize,
+    ) -> Result<PyGenerateOutput> {
         let result = self
             .rt
-            .block_on(async { self.inner.generate(builder.inner.clone()).await })?;
+            .block_on(async { self.inner.generate(builder.inner.clone(), true).await })?;
 
         // 直接メモリコピー
         unsafe {
-            std::ptr::copy_nonoverlapping(result.as_ptr(), buffer_ptr as *mut u8, result.len());
+            match result {
+                GenerateOutput::CpuData(data) => {
+                    std::ptr::copy_nonoverlapping(data.as_ptr(), buffer_ptr as *mut u8, data.len());
+                }
+                _ => {
+                    bail!("Unexpected output type");
+                }
+            }
         }
 
-        Ok(())
+        Ok(PyGenerateOutput { inner: None })
+    }
+
+    pub fn generate_texture(&self, builder: &PyImageGenerateBuilder) -> Result<PyGenerateOutput> {
+        let result = self
+            .rt
+            .block_on(async { self.inner.generate(builder.inner.clone(), false).await })?;
+
+        Ok(PyGenerateOutput {
+            inner: Some(result),
+        })
     }
 }
 
