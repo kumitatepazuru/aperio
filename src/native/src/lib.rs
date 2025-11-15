@@ -1,13 +1,17 @@
 use crate::{
-    app_config::read_config,
-    structs::{Dirs, FrameLayerStructure},
-    util::get_local_data_dir,
+    app_config::read_config, shared_texture::NodeOffscreenSharedTextureInfo, structs::{Dirs, FrameLayerStructure}, util::get_local_data_dir
 };
+use gpu_util::image_generator::GenerateOutput;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
-use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
+use pyo3::{
+    exceptions::PyRuntimeError, types::PyAnyMethods, IntoPyObject, Py, PyAny, PyErr, PyResult,
+    Python,
+};
+use wrapper::PyGenerateOutput;
 mod app_config;
 mod python;
+mod shared_texture;
 mod structs;
 mod util;
 
@@ -121,7 +125,7 @@ impl JsPlManager {
     }
 
     #[napi]
-    pub fn get_frame(
+    pub fn get_frame_buf(
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
@@ -142,12 +146,52 @@ impl JsPlManager {
             };
 
             let func = pl_manager.getattr("make_frame")?;
-            func.call1((count, frame_struct, 1920, 1080, buffer_ptr))?;
+            func.call1((count, frame_struct, 1920, 1080, true, buffer_ptr))?;
 
             Ok(())
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
         Ok(())
+    }
+
+    #[napi]
+    pub fn get_frame_texture(
+        &self,
+        count: i32,
+        frame_struct: Vec<FrameLayerStructure>,
+    ) -> napi::Result<NodeOffscreenSharedTextureInfo> {
+        let pl_manager = self
+            .plmanager
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+
+        let output = Python::attach(|py| -> PyResult<NodeOffscreenSharedTextureInfo> {
+            let pl_manager = pl_manager.bind(py);
+            let frame_struct = frame_struct.into_pyobject(py)?;
+
+            let func = pl_manager.getattr("make_frame")?;
+            let result = func
+                .call1((count, frame_struct, 1920, 1080, false))?
+                .cast::<PyGenerateOutput>()?
+                .borrow();
+            match &result.inner {
+                Some(inner) => {
+                    match inner {
+                        GenerateOutput::CpuData(_) => {
+                            // TODO: bufferがきたらどうするか考える
+                            todo!("Handle CpuData output");
+                        }
+                        GenerateOutput::SharedTexture(texture) => {
+                            Ok(NodeOffscreenSharedTextureInfo::from(texture))
+                        }
+                    }
+                }
+                None => Err(PyErr::new::<PyRuntimeError, _>("No output from make_frame")),
+            }
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
+
+        Ok(output)
     }
 }

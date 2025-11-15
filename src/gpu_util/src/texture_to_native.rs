@@ -25,7 +25,7 @@ pub struct SharedTextureHandle {
     pub io_surface: None, // TODO
 }
 
-pub struct OffscreenSharedTexture {
+pub struct OffscreenSharedTextureInfo {
     pub handle: SharedTextureHandle,
     pub pixel_format: DrmFourcc,
     pub width: u32,

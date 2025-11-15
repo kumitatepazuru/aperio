@@ -5,7 +5,7 @@ use std::ffi::CString;
 use wgpu::Texture;
 
 #[cfg(target_os = "linux")]
-use crate::texture_to_native::OffscreenSharedTexture;
+use crate::texture_to_native::OffscreenSharedTextureInfo;
 use crate::texture_to_native::{
     SharedTextureHandle, SharedTextureHandleNativePixmap, SharedTexturePlane,
 };
@@ -20,7 +20,7 @@ struct VulkanDeviceInfo {
 /// This function retrieves the file descriptors, strides, offsets, sizes and modifier
 /// for each plane of the texture's underlying dmabuf.
 #[cfg(target_os = "linux")]
-pub fn texture_to_dmabuf_info(texture: &Texture) -> Result<OffscreenSharedTexture> {
+pub fn texture_to_dmabuf_info(texture: &Texture) -> Result<OffscreenSharedTextureInfo> {
     unsafe {
         // Get Vulkan image handle and format from wgpu texture
         let (vk_image, vk_format) = get_vulkan_image_from_texture(texture)?;
@@ -169,7 +169,7 @@ unsafe fn get_vulkan_dmabuf_info(
     format: vk::Format,
     width: u32,
     height: u32,
-) -> Result<OffscreenSharedTexture> {
+) -> Result<OffscreenSharedTextureInfo> {
     // Load external memory FD extension
     let external_memory_fd = ash::khr::external_memory_fd::Device::new(instance, device);
 
@@ -208,7 +208,7 @@ unsafe fn get_vulkan_dmabuf_info(
         size: layout.size as u32,
     }];
 
-    Ok(OffscreenSharedTexture {
+    Ok(OffscreenSharedTextureInfo {
         handle: SharedTextureHandle {
             native_pixmap: SharedTextureHandleNativePixmap { planes, modifier },
         },

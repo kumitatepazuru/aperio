@@ -9,7 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 gpu_util = { path = "../gpu_util" }
-pyo3 = { workspace = true, features = ["anyhow"]}
+pyo3 = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 anyhow = { workspace = true }
 wgpu = { workspace = true }

@@ -9,9 +9,11 @@ version = "0.1.0"
 
 [workspace.dependencies]
 wgpu = "27.0.1"
-pyo3 = { version = "0.27.0" }
+pyo3 = { version = "0.27.0", features = ["anyhow"] }
 tokio = "1.48.0"
 anyhow = { version = "1.0.100", features = ["backtrace"] }
+# Linux only: as of kernel version 5.10.0
+drm-fourcc = "2.2"
 
 [profile.release]
 lto = true

@@ -52,6 +52,7 @@ name = "aperio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "drm-fourcc",
  "gpu_util",
  "libc",
  "napi",

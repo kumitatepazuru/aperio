@@ -10,7 +10,7 @@ use crate::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
         parallel_process::handle_parallel_step, wgsl_process::handle_wgsl_step,
     },
-    texture_to_native::{OffscreenSharedTexture, linux::texture_to_dmabuf_info},
+    texture_to_native::{linux::texture_to_dmabuf_info, OffscreenSharedTextureInfo},
 };
 use anyhow::{bail, Context, Result};
 use std::{
@@ -72,7 +72,7 @@ pub enum StepOutput {
 }
 
 pub enum GenerateOutput {
-    SharedTexture(OffscreenSharedTexture),
+    SharedTexture(OffscreenSharedTextureInfo),
     CpuData(Vec<u8>),
 }
 

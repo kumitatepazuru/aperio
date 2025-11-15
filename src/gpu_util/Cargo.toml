@@ -14,7 +14,6 @@ rayon = "1.11.0"
 bytemuck = "1.24.0"
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 anyhow = { workspace = true }
-# Linux only: as of kernel version 5.10.0
-drm-fourcc = "2.2"
+drm-fourcc = { workspace = true }
 ash = { version = "0.38", features = ["linked"] }
 wgpu-hal = "27.0.4"
