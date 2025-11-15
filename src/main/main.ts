@@ -7,6 +7,7 @@ const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
 
 const isDev = !app.isPackaged;
+app.commandLine.appendSwitch("enable-unsafe-webgpu");
 
 let win: BrowserWindow | null = null;
 

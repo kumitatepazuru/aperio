@@ -215,7 +215,7 @@ class PluginManager:
         return True
 
     def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, buffer_ptr: int) -> None:
+                             width: int, height: int, is_buf: bool, buffer_ptr: int | None = None) -> gpu_util.PyGenerateOutput:
         """
         指定されたフレーム構造に基づいてフレームを生成するメソッド。
 
@@ -237,6 +237,8 @@ class PluginManager:
                 raise ValueError("width and height must be positive integers")
             if len(frame_structure) == 0:
                 raise ValueError("frame_structure must contain at least one layer")
+            if is_buf and buffer_ptr is None:
+                raise ValueError("buffer_ptr must be provided when is_buf is True")
 
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
@@ -291,12 +293,17 @@ class PluginManager:
                 .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
 
             # 直接バッファに書き込み
-            self.generator.generate(builder, buffer_ptr)
+            if is_buf and buffer_ptr is not None:
+                result = self.generator.generate_buf(builder, buffer_ptr)
+            else:
+                result = self.generator.generate_texture(builder)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             raise RuntimeError(f"Failed to make frame: {e}")
+        
+        return result
 
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
