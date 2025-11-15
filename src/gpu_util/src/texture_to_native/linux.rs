@@ -1,32 +1,14 @@
+use anyhow::{bail, Context, Result};
 use ash::{vk, Device, Entry, Instance};
 use drm_fourcc::{DrmFourcc, DrmModifier};
 use std::ffi::CString;
-use std::os::unix::io::RawFd;
 use wgpu::Texture;
-use anyhow::{Context, Result, bail};
 
-pub struct SharedTexturePlane {
-    pub fd: RawFd,
-    pub stride: u32,
-    pub offset: u32,
-    pub size: u32,
-}
-
-pub struct SharedTextureHandleNativePixmap {
-    pub planes: Vec<SharedTexturePlane>,
-}
-
-pub struct SharedTextureHandle {
-    pub native_pixmap: SharedTextureHandleNativePixmap,
-}
-
-pub struct SharedTextureInfo {
-    pub handle: SharedTextureHandle,
-    pub modifier: DrmModifier,
-    pub pixel_format: DrmFourcc,
-    pub width: u32,
-    pub height: u32,
-}
+#[cfg(target_os = "linux")]
+use crate::texture_to_native::OffscreenSharedTexture;
+use crate::texture_to_native::{
+    SharedTextureHandle, SharedTextureHandleNativePixmap, SharedTexturePlane,
+};
 
 struct VulkanDeviceInfo {
     instance: Instance,
@@ -38,9 +20,7 @@ struct VulkanDeviceInfo {
 /// This function retrieves the file descriptors, strides, offsets, sizes and modifier
 /// for each plane of the texture's underlying dmabuf.
 #[cfg(target_os = "linux")]
-pub fn texture_to_dmabuf_info(
-    texture: &Texture,
-) -> Result<SharedTextureInfo> {
+pub fn texture_to_dmabuf_info(texture: &Texture) -> Result<OffscreenSharedTexture> {
     unsafe {
         // Get Vulkan image handle and format from wgpu texture
         let (vk_image, vk_format) = get_vulkan_image_from_texture(texture)?;
@@ -62,9 +42,7 @@ pub fn texture_to_dmabuf_info(
 }
 
 /// Get actual Vulkan image handle from wgpu texture (RGBA f32 only)
-unsafe fn get_vulkan_image_from_texture(
-    texture: &Texture,
-) -> Result<(vk::Image, vk::Format)> {
+unsafe fn get_vulkan_image_from_texture(texture: &Texture) -> Result<(vk::Image, vk::Format)> {
     // RGBA f32テクスチャ専用の実装
     // wgpu HALから実際のVulkanイメージハンドルを取得
 
@@ -92,9 +70,7 @@ unsafe fn get_vulkan_image_from_texture(
 }
 
 /// Create a new Vulkan image for RGBA f32 texture as fallback
-unsafe fn create_vulkan_image_for_rgba_f32(
-    texture: &Texture,
-) -> Result<(vk::Image, vk::Format)> {
+unsafe fn create_vulkan_image_for_rgba_f32(texture: &Texture) -> Result<(vk::Image, vk::Format)> {
     // フォールバック：RGBA f32テクスチャ用の新しいVulkanイメージを作成
     let device_info = get_vulkan_device_info()?;
 
@@ -193,7 +169,7 @@ unsafe fn get_vulkan_dmabuf_info(
     format: vk::Format,
     width: u32,
     height: u32,
-) -> Result<SharedTextureInfo> {
+) -> Result<OffscreenSharedTexture> {
     // Load external memory FD extension
     let external_memory_fd = ash::khr::external_memory_fd::Device::new(instance, device);
 
@@ -232,11 +208,10 @@ unsafe fn get_vulkan_dmabuf_info(
         size: layout.size as u32,
     }];
 
-    Ok(SharedTextureInfo {
+    Ok(OffscreenSharedTexture {
         handle: SharedTextureHandle {
-            native_pixmap: SharedTextureHandleNativePixmap { planes },
+            native_pixmap: SharedTextureHandleNativePixmap { planes, modifier },
         },
-        modifier,
         pixel_format: drm_format,
         width,
         height,
