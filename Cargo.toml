@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/gpu_util", "src/native"]
+members = ["src/gpu_util", "src/native", "src/wrapper"]
 resolver = "2"
 
 [workspace.package]
@@ -8,6 +8,7 @@ edition = "2021"
 version = "0.1.0"
 
 [workspace.dependencies]
+wgpu = "27.0.1"
 pyo3 = { version = "0.27.0" }
 tokio = "1.48.0"
 anyhow = { version = "1.0.100", features = ["backtrace"] }

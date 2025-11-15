@@ -85,7 +85,7 @@ pub(crate) type ProcessingState = Vec<StepOutput>;
 /// 画像生成パイプラインを実行するクラス。
 #[derive(Clone)]
 pub struct ImageGenerator {
-    pub(crate) device: Arc<wgpu::Device>,
+    pub device: Arc<wgpu::Device>,
     pub(crate) queue: Arc<wgpu::Queue>,
     // 後処理用のパイプラインと関連リソース
     pub(crate) post_process_pipeline: Arc<wgpu::ComputePipeline>,

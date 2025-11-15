@@ -1,0 +1,24 @@
+[package]
+name = "wrapper"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+gpu_util = { path = "../gpu_util" }
+pyo3 = { workspace = true, features = ["anyhow"]}
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+anyhow = { workspace = true }
+wgpu = { workspace = true }
+numpy = "0.27.0"
+# PyO3側でstubが生成できるようになるまでの代替として利用
+# https://pyo3.rs/latest/type-stub.html
+# 追跡issue: https://github.com/PyO3/pyo3/issues/5137
+pyo3-stub-gen = "0.17.0"
+
+[[bin]]
+name = "stub_gen"
+doc = false

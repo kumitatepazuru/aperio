@@ -8,23 +8,13 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wgpu = "27.0.1"
+wgpu = { workspace = true }
 futures = "0.3.31"
 rayon = "1.11.0"
 bytemuck = "1.24.0"
-# PyO3側でstubが生成できるようになるまでの代替として利用
-# https://pyo3.rs/latest/type-stub.html
-# 追跡issue: https://github.com/PyO3/pyo3/issues/5137
-pyo3-stub-gen = "0.17.0"
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
-numpy = "0.27.0"
 # Linux only: as of kernel version 5.10.0
 drm-fourcc = "2.2"
 ash = { version = "0.38", features = ["linked"] }
-wgpu-hal = "0.18"
-
-[[bin]]
-name = "stub_gen"
-doc = false
+wgpu-hal = "27.0.4"
