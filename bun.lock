@@ -25,7 +25,7 @@
         "@vitejs/plugin-react": "^5.0.4",
         "babel-plugin-react-compiler": "^19.1.0-rc.3",
         "cross-env": "^10.1.0",
-        "electron": "npm:electron-nightly@41.0.0-nightly.20251106",
+        "electron": "npm:electron-nightly@41.0.0-nightly.20251113",
         "electron-builder": "^26.0.12",
         "eslint": "^9.36.0",
         "eslint-plugin-react-hooks": "^5.2.0",
@@ -698,7 +698,7 @@
 
     "ejs": ["ejs@3.1.10", "", { "dependencies": { "jake": "^10.8.5" }, "bin": { "ejs": "bin/cli.js" } }, "sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA=="],
 
-    "electron": ["electron-nightly@41.0.0-nightly.20251106", "", { "dependencies": { "@electron/get": "^2.0.0", "@types/node": "^24.9.0", "extract-zip": "^2.0.1" }, "bin": { "electron": "cli.js" } }, "sha512-gP6BH86NiIBM4OkOOlqyz4SoAfcbUoCT3gAGgs9ay3+j6sPywIVSavWVYtfn17KgZmvP82v8j1C1Z+KPXVZRHA=="],
+    "electron": ["electron-nightly@41.0.0-nightly.20251113", "", { "dependencies": { "@electron/get": "^2.0.0", "@types/node": "^24.9.0", "extract-zip": "^2.0.1" }, "bin": { "electron": "cli.js" } }, "sha512-PZ7ViroFRqg7kx8BFabtE2S2I3mJsblwfdTezNIyidaiwr9vGIp+jAw9b+co8tp/X72VWEVpU/MN5KYkT4uU9w=="],
 
     "electron-builder": ["electron-builder@26.0.12", "", { "dependencies": { "app-builder-lib": "26.0.12", "builder-util": "26.0.11", "builder-util-runtime": "9.3.1", "chalk": "^4.1.2", "dmg-builder": "26.0.12", "fs-extra": "^10.1.0", "is-ci": "^3.0.0", "lazy-val": "^1.0.5", "simple-update-notifier": "2.0.0", "yargs": "^17.6.2" }, "bin": { "electron-builder": "cli.js", "install-app-deps": "install-app-deps.js" } }, "sha512-cD1kz5g2sgPTMFHjLxfMjUK5JABq3//J4jPswi93tOPFz6btzXYtK5NrDt717NRbukCUDOrrvmYVOWERlqoiXA=="],
 

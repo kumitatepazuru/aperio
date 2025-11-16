@@ -23,7 +23,7 @@
     "gpu:build": "uvx maturin build -m src/gpu_util/Cargo.toml",
     "gpu:release": "uvx maturin build -m src/gpu_util/Cargo.toml --release",
     "gpu:stub": "cargo run --bin stub_gen",
-    "gpu:stubgen": "run-s gpu:stub && mkdir -p src-python/out/gpu_util && mv src/gpu_util/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
+    "gpu:stubgen": "run-s gpu:stub && mkdir -p src-python/out/gpu_util && mv src/wrapper/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",
@@ -47,7 +47,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "babel-plugin-react-compiler": "^19.1.0-rc.3",
     "cross-env": "^10.1.0",
-    "electron": "npm:electron-nightly@41.0.0-nightly.20251106",
+    "electron": "npm:electron-nightly@41.0.0-nightly.20251113",
     "electron-builder": "^26.0.12",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
