@@ -1,4 +1,4 @@
-import { MessageChannelMain, MessagePortMain } from "electron";
+import { MessageChannelMain, MessagePortMain, sharedTexture } from "electron";
 import { Dirs, FrameLayerStructure, PlManager } from "native";
 
 export class NativeModule {
@@ -38,19 +38,26 @@ export class NativeModule {
     this.p1.postMessage(buffer);
   }
 
-  // getFrameSharedTexture(count: number, frameStruct: FrameLayerStructure[]) {
-  //   const textureInfo = this.plManagerSingleton.getFrameTexture(
-  //     count,
-  //     frameStruct
-  //   );
-  //   if (!textureInfo) {
-  //     throw new Error("Failed to get shared texture");
-  //   }
+  getFrameSharedTexture(
+    count: number,
+    frameStruct: FrameLayerStructure[],
+    frame: Electron.WebContents
+  ) {
+    const textureInfo = this.plManagerSingleton.getFrameTexture(
+      count,
+      frameStruct
+    );
+    if (!textureInfo) {
+      throw new Error("Failed to get shared texture");
+    }
 
-  //   sharedTexture.importSharedTexture({
-  //     textureInfo,
-  //   });
+    const imported = sharedTexture.importSharedTexture({
+      textureInfo,
+    });
 
-  //   sharedTexture.sendSharedTexture({});
-  // }
+    sharedTexture.sendSharedTexture({
+      frame: frame.mainFrame,
+      importedSharedTexture: imported,
+    });
+  }
 }

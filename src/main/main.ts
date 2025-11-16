@@ -10,6 +10,7 @@ const dirName = path.dirname(fileName);
 
 const isDev = !app.isPackaged;
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
+app.commandLine.appendSwitch("enable-features", "Vulkan");
 
 let win: BrowserWindow | null = null;
 
@@ -62,16 +63,12 @@ ipcMain.handle(
   }
 );
 
-// ipcMain.handle(
-//   "get-frame-shared-texture",
-//   (
-//     _: IpcMainInvokeEvent,
-//     count: number,
-//     frameStruct: FrameLayerStructure[]
-//   ) => {
-//     nativeModule.getFrameSharedTexture(count, frameStruct);
-//   }
-// );
+ipcMain.handle(
+  "get-frame-shared-texture",
+  (event, count: number, frameStruct: FrameLayerStructure[]) => {
+    nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
+  }
+);
 
 async function createWindow() {
   win = new BrowserWindow({
@@ -89,6 +86,7 @@ async function createWindow() {
   if (isDev) {
     // Vite の dev サーバに接続
     const url = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
+    // const url = "chrome://gpu";
     await win.loadURL(url);
     win.webContents.openDevTools({ mode: "detach" });
   } else {

@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import Frame from "./bridge";
+import Frame from "../bridge";
 import type { FrameLayerStructure } from "native";
 
 const frameStruct: FrameLayerStructure[] = [
@@ -18,7 +18,7 @@ const frameStruct: FrameLayerStructure[] = [
   },
 ];
 
-const FrameRenderer = () => {
+const FrameBufferRenderer = () => {
   // テクスチャとマテリアルへの参照
   const textureRef = useRef<THREE.DataTexture | null>(null);
   const frame = useMemo(() => new Frame(), []);
@@ -84,4 +84,4 @@ const FrameRenderer = () => {
   );
 };
 
-export default FrameRenderer;
+export default FrameBufferRenderer;
