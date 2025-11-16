@@ -17,3 +17,4 @@ anyhow = { workspace = true }
 drm-fourcc = { workspace = true }
 ash = { version = "0.38", features = ["linked"] }
 wgpu-hal = "27.0.4"
+wgpu-types = "27.0.1"

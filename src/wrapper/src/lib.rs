@@ -295,6 +295,7 @@ pub fn gpu_util(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyCompiledFunc>()?;
     m.add_class::<PyImageGenerateBuilder>()?;
     m.add_class::<PyImageGenerator>()?;
+    m.add_class::<PyGenerateOutput>()?;
     Ok(())
 }
 

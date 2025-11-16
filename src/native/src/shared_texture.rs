@@ -52,6 +52,7 @@ pub struct Metadata {
 
 #[napi(object)]
 pub struct SharedTexturePlane {
+    #[napi(ts_type = "number")]
     pub fd: RawFd,
     pub stride: u32,
     pub offset: u32,
@@ -109,11 +110,15 @@ impl From<&OffscreenSharedTextureInfo> for NodeOffscreenSharedTextureInfo {
                     .native_pixmap
                     .planes
                     .iter()
-                    .map(|plane| SharedTexturePlane {
-                        fd: plane.fd,
-                        stride: plane.stride,
-                        offset: plane.offset,
-                        size: plane.size,
+                    .enumerate()
+                    .map(|(i, plane)| {
+                        SharedTexturePlane {
+                            fd: plane.fd,
+                            stride: 7680, // 1920 * 4
+                            // stride: plane.stride,
+                            offset: plane.offset,
+                            size: plane.size,
+                        }
                     })
                     .collect(),
                 // https://github.com/electron/electron/pull/47317/files#diff-2b1bd8f20800c083271c8cd2bba6095cec7b50c97b11dd5035c21ca8ad600f73R543
@@ -129,18 +134,19 @@ impl From<&OffscreenSharedTextureInfo> for NodeOffscreenSharedTextureInfo {
         let handle = SharedTextureHandle { io_surface: None }; // TODO
 
         let pixel_format = match value.pixel_format {
-            DrmFourcc::Abgr8888 => "rgba",
+            DrmFourcc::Abgr8888 => "rgba", // AB24?
             DrmFourcc::Argb8888 => "bgra",
             DrmFourcc::Xbgr8888 => "rgba",
             DrmFourcc::Xrgb8888 => "bgra",
-            DrmFourcc::Abgr16161616f => "rgba16f",
+            DrmFourcc::Abgr16161616f => "rgbaf16",
             _ => panic!("Unsupported pixel format: {:?}", value.pixel_format),
         }
         .to_string();
 
         Self {
             widget_type: "frame".to_string(),
-            pixel_format,
+            // pixel_format,
+            pixel_format: "rgbaf16".to_string(),
             coded_size: Size {
                 width: value.width,
                 height: value.height,
