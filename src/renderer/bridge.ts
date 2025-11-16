@@ -23,7 +23,7 @@ const Frame = class {
     });
   }
 
-  async get(
+  async getBuf(
     frameCount: number,
     frameStruct: FrameLayerStructure[]
   ): Promise<ArrayBuffer> {

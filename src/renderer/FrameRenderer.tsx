@@ -52,7 +52,7 @@ const FrameRenderer = () => {
 
   useEffect(() => {
     (async () => {
-      const data = await frame.get(0, frameStruct);
+      const data = await frame.getBuf(0, frameStruct);
 
       setFrameData(new Uint8Array(data));
     })();
@@ -62,7 +62,7 @@ const FrameRenderer = () => {
   useFrame(async () => {
     // テクスチャのデータを新しいデータで更新
     if (textureRef.current) {
-      const data = await frame.get(countRef.current, frameStruct);
+      const data = await frame.getBuf(countRef.current, frameStruct);
       textureRef.current.image.data.set(new Uint8Array(data));
       // needsUpdateをtrueにすることで、GPUにテクスチャデータが再アップロードされます。
       textureRef.current.needsUpdate = true;
