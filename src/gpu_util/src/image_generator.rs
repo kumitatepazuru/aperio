@@ -127,7 +127,7 @@ impl ImageGenerator {
                     | Features::FLOAT32_FILTERABLE,
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 1000, // 必要に応じて調整
-                    max_storage_buffer_binding_size: 2147483647,       // 2GB
+                    max_storage_buffer_binding_size: 134217728,       // 128MB TODO: 環境によって数値が大幅に違うため自動調整がされるように
                     ..wgpu::Limits::defaults()
                 },
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
