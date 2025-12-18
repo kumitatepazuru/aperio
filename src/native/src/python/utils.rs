@@ -69,6 +69,17 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
                 .context("Failed to convert python bin path to str")?,
         )?;
 
+        let mut config: PyPreConfig = std::mem::zeroed();
+        PyPreConfig_InitIsolatedConfig(&mut config);
+        config.utf8_mode = 1;
+        let err = Py_PreInitialize(&mut config);
+        if PyStatus_Exception(err) != 0 {
+            bail!(
+                "Failed to pre-initialize embedded Python interpreter\nmsg: {:?}",
+                CStr::from_ptr(err.err_msg)
+            );
+        }
+
         let mut config: PyConfig = std::mem::zeroed();
         PyConfig_InitIsolatedConfig(&mut config);
         PyConfig_SetBytesString(&mut config, &mut config.home, python_path.as_ptr());
@@ -300,7 +311,7 @@ pub fn sync_packages(dir: &Dirs) -> Result<String> {
     ];
     args.extend(get_base_args(appdata_dir));
 
-    let result = run_uv(dir, args)?;
+    run_uv(dir, args)?;
     println!("Sync packages success");
 
     // pylock.tomlをもとにuv pip syncでパッケージを同期
