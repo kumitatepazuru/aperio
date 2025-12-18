@@ -1,5 +1,5 @@
 import { defineConfig } from "rolldown";
-import { esmExternalRequirePlugin } from "rolldown/experimental";
+import { esmExternalRequirePlugin } from "rolldown/plugins";
 
 export default defineConfig({
   platform: "node",
