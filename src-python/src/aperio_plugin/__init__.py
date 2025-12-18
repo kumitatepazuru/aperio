@@ -185,7 +185,7 @@ class PluginManager:
             print(f"Plugin directory {plugin_dir} does not exist.")
             return False
 
-        plugin_name = plugin_dir.split("/")[-1]
+        plugin_name = os.path.basename(plugin_dir)
         if plugin_name in self.plugins:
             # 既に登録されている場合は__init__.pyのハッシュ値を比較して、異なる場合のみ更新する
             # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
