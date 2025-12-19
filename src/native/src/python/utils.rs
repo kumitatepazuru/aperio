@@ -48,18 +48,41 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
     // PYTHONPATHとPYTHONHOMEの設定
     let local_data_dir = get_local_data_dir(dir)?; // 環境ファイルがある
     let python_path = local_data_dir.join("python"); // pythonがある
-    let bin_path = file_extension(&python_path.join("bin"), "python"); // pythonの実行ファイルがある
-    env::set_var("UV_PROJECT_ENVIRONMENT", &python_path);
+                                                     // linux/macならbin/python、windowsならpython.exe
+    let bin_path = if cfg!(target_os = "windows") {
+        file_extension(&python_path, "python") // pythonの実行ファイルがある
+    } else {
+        file_extension(&python_path.join("bin"), "python") // pythonの実行ファイルがある
+    };
 
     unsafe {
+        env::set_var("UV_PROJECT_ENVIRONMENT", &python_path);
+
+        let python_path = CString::new(
+            python_path
+                .to_str()
+                .context("Failed to convert python path to str")?,
+        )?;
         let bin_path = CString::new(
             bin_path
                 .to_str()
                 .context("Failed to convert python bin path to str")?,
         )?;
 
+        let mut config: PyPreConfig = std::mem::zeroed();
+        PyPreConfig_InitIsolatedConfig(&mut config);
+        config.utf8_mode = 1;
+        let err = Py_PreInitialize(&mut config);
+        if PyStatus_Exception(err) != 0 {
+            bail!(
+                "Failed to pre-initialize embedded Python interpreter\nmsg: {:?}",
+                CStr::from_ptr(err.err_msg)
+            );
+        }
+
         let mut config: PyConfig = std::mem::zeroed();
         PyConfig_InitIsolatedConfig(&mut config);
+        PyConfig_SetBytesString(&mut config, &mut config.home, python_path.as_ptr());
         PyConfig_SetBytesString(&mut config, &mut config.executable, bin_path.as_ptr());
 
         let err = Py_InitializeFromConfig(&mut config);
@@ -78,7 +101,11 @@ pub fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
     // appdataのdir pathを取得
     let appdata_dir = get_local_data_dir(dir)?;
     // python/bin/python(.exe)のpathを取得
-    let python_path = file_extension(&appdata_dir.join("python").join("bin"), "python");
+    let python_path = if cfg!(target_os = "windows") {
+        file_extension(&appdata_dir.join("python"), "python")
+    } else {
+        file_extension(&appdata_dir.join("python").join("bin"), "python")
+    };
     println!("Checking for Python at path: {:?}", python_path);
 
     // pythonが存在するか確認
@@ -151,8 +178,10 @@ pub fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
         python_dir
             .to_str()
             .context("Failed to convert python path to str")?,
+        "--no-sync",
     ]);
     args.extend(get_base_args(appdata_dir));
+    println!("args: {:?}", args);
 
     run_uv(dir, args)?;
     Ok(())
@@ -257,12 +286,45 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
 
 pub fn sync_packages(dir: &Dirs) -> Result<String> {
     let appdata_dir = get_local_data_dir(dir)?;
+    let python_dir = appdata_dir.join("python");
+    let lock_file = appdata_dir.join("pylock.toml");
     let appdata_dir = appdata_dir
         .to_str()
         .context("Failed to convert appdata path to str")?;
+    let python_dir = python_dir
+        .to_str()
+        .context("Failed to convert python path to str")?;
+    let lock_file = lock_file
+        .to_str()
+        .context("Failed to convert lock file path to str")?;
 
-    let mut args = vec!["sync"];
+    // pylock.tomlを生成
+    let mut args = vec![
+        "export",
+        "--python",
+        python_dir,
+        "--format",
+        "pylock.toml",
+        "--no-header",
+        "-o",
+        lock_file,
+    ];
     args.extend(get_base_args(appdata_dir));
+
+    run_uv(dir, args)?;
+    println!("Sync packages success");
+
+    // pylock.tomlをもとにuv pip syncでパッケージを同期
+    let mut args = vec![
+        "pip",
+        "sync",
+        "--no-python-downloads",
+        "--python",
+        python_dir,
+        "--break-system-packages",
+    ];
+    args.extend(get_base_args(appdata_dir));
+    args.extend([lock_file]);
 
     Ok(run_uv(dir, args)?)
 }
