@@ -1,7 +1,7 @@
 import "./App.css";
 import { Canvas } from "@react-three/fiber";
-import FrameRenderer from "./FrameRenderer";
 import { CameraControls, Grid, StatsGl } from "@react-three/drei";
+import FrameTextureRenderer from "./frameRenderer/FrameTextureRenderer";
 
 function App() {
   return (
@@ -11,7 +11,7 @@ function App() {
           <StatsGl className="stats" />
           <Grid infiniteGrid />
           <CameraControls />
-          <FrameRenderer />
+          <FrameTextureRenderer />
         </Canvas>
       </div>
     </div>

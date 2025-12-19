@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import Frame from "./bridge";
+import Frame from "../bridge";
 import type { FrameLayerStructure } from "native";
 
 const frameStruct: FrameLayerStructure[] = [
@@ -10,7 +10,6 @@ const frameStruct: FrameLayerStructure[] = [
     y: 500,
     scale: 3.0,
     rotation: 40.0,
-    alpha: 0.8,
     obj: {
       name: "TestObject",
       parameters: {},
@@ -19,7 +18,7 @@ const frameStruct: FrameLayerStructure[] = [
   },
 ];
 
-const FrameRenderer = () => {
+const FrameBufferRenderer = () => {
   // テクスチャとマテリアルへの参照
   const textureRef = useRef<THREE.DataTexture | null>(null);
   const frame = useMemo(() => new Frame(), []);
@@ -53,7 +52,7 @@ const FrameRenderer = () => {
 
   useEffect(() => {
     (async () => {
-      const data = await frame.get(0, frameStruct);
+      const data = await frame.getBuf(0, frameStruct);
 
       setFrameData(new Uint8Array(data));
     })();
@@ -63,7 +62,7 @@ const FrameRenderer = () => {
   useFrame(async () => {
     // テクスチャのデータを新しいデータで更新
     if (textureRef.current) {
-      const data = await frame.get(countRef.current, frameStruct);
+      const data = await frame.getBuf(countRef.current, frameStruct);
       textureRef.current.image.data.set(new Uint8Array(data));
       // needsUpdateをtrueにすることで、GPUにテクスチャデータが再アップロードされます。
       textureRef.current.needsUpdate = true;
@@ -85,4 +84,4 @@ const FrameRenderer = () => {
   );
 };
 
-export default FrameRenderer;
+export default FrameBufferRenderer;

@@ -19,11 +19,11 @@ const Frame = class {
 
       window.addEventListener("message", listenerFunc);
 
-      window.frame.init();
+      window.frame.sendPort();
     });
   }
 
-  async get(
+  async getBuf(
     frameCount: number,
     frameStruct: FrameLayerStructure[]
   ): Promise<ArrayBuffer> {
@@ -40,7 +40,7 @@ const Frame = class {
         { once: true }
       );
 
-      window.frame.getFrame(frameCount, frameStruct);
+      window.frame.getFrameBuf(frameCount, frameStruct);
     });
   }
 };
