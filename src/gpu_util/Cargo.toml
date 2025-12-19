@@ -8,7 +8,8 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wgpu = "27.0.1"
+wgpu = { version = "27.0.1" }
+ash = "0.38"
 futures = "0.3.31"
 rayon = "1.11.0"
 bytemuck = "1.24.0"
