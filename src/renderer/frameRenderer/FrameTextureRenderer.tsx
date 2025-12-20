@@ -9,6 +9,7 @@ const frameStruct: FrameLayerStructure[] = [
     y: 500,
     scale: 3.0,
     rotation: 40.0,
+    alpha: 1.0,
     obj: {
       name: "TestObject",
       parameters: {},
