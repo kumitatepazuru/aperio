@@ -12,6 +12,7 @@ const isDev = !app.isPackaged;
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
 app.commandLine.appendSwitch("enable-features", "Vulkan");
 
+let osrWin: BrowserWindow | null = null;
 let win: BrowserWindow | null = null;
 
 // TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
@@ -65,12 +66,28 @@ ipcMain.handle(
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  (event, count: number, frameStruct: FrameLayerStructure[]) => {
-    nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
+  async (event, count: number, frameStruct: FrameLayerStructure[]) => {
+    await nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
   }
 );
 
 async function createWindow() {
+  osrWin = new BrowserWindow({
+    width: 1920,
+    height: 1080,
+    show: true, // debug
+    webPreferences: {
+      offscreen: {
+        useSharedTexture: true,
+      },
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  nativeModule.setOsrWebContents(osrWin.webContents);
+  osrWin.loadURL("about:blank"); // TODO: 任意のURL
+
   win = new BrowserWindow({
     width: 1100,
     height: 720,
