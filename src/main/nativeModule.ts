@@ -1,17 +1,23 @@
 import {
   MessageChannelMain,
   MessagePortMain,
+  OffscreenSharedTexture,
   sharedTexture,
   WebContentsPaintEventParams,
 } from "electron";
-import { Dirs, FrameLayerStructure, NodeOffscreenSharedTextureInfo, PlManager } from "native";
+import {
+  Dirs,
+  FrameLayerStructure,
+  NodeOffscreenSharedTextureInfo,
+  PlManager,
+} from "native";
 
 export class NativeModule {
   plManagerSingleton: PlManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
   buffer: SharedArrayBuffer;
-  osrWc?: Electron.WebContents;
+  eventStack: ((texture: OffscreenSharedTexture) => void)[] = [];
 
   constructor(dirs: Dirs) {
     const { port1, port2 } = new MessageChannelMain();
@@ -33,30 +39,17 @@ export class NativeModule {
   }
 
   setOsrWebContents(wc: Electron.WebContents) {
-    this.osrWc = wc;
-    // this.osrWc.stopPainting(); // 最初は止めておく
-  }
-
-  requestOneFrame(): Promise<WebContentsPaintEventParams> {
-    return new Promise((resolve, reject) => {
-      if (!this.osrWc) {
-        reject(new Error("OSR WebContents is not set"));
-        return;
+    wc.on("paint", (e: WebContentsPaintEventParams) => {
+      if (this.eventStack.length > 0 && e.texture) {
+        const cb = this.eventStack.shift();
+        cb?.(e.texture);
       }
 
-      const onPaint = (event: WebContentsPaintEventParams) => {
-        console.log("Paint event received");
-        // すぐ止める（以降 push が来ない）
-        this.osrWc?.stopPainting();
-
-        resolve(event);
-      };
-
-      this.osrWc.on("paint", onPaint);
-
-      // this.osrWc.startPainting(); // 描画再開
-      // this.osrWc.invalidate(); // 再描画要求（次の paint を起こす）
+      e.texture?.release();
     });
+    // this.osrWc.stopPainting(); // 最初は止めておく
+    // this.osrWc.startPainting(); // 描画再開
+    // this.osrWc.invalidate(); // 再描画要求（次の paint を起こす）
   }
 
   sendPort(webContents: Electron.WebContents) {
@@ -77,26 +70,26 @@ export class NativeModule {
     frameStruct: FrameLayerStructure[],
     frame: Electron.WebContents
   ) {
-    const baseTexture = await this.requestOneFrame(); // TODO: フレーム生成処理と並列化して高速化
-    const textureInfo = baseTexture.texture?.textureInfo;
-    console.log("getFrameSharedTexture:", baseTexture);
-    if (!textureInfo) {
-      throw new Error("Failed to get base shared texture");
-    }
-    this.plManagerSingleton.getFrameTexture(
-      count,
-      frameStruct,
-      textureInfo as NodeOffscreenSharedTextureInfo
-    );
+    this.eventStack.push(async (baseTexture) => {
+      const textureInfo = baseTexture.textureInfo;
+      console.log("getFrameSharedTexture:", baseTexture);
+      if (!textureInfo) {
+        throw new Error("Failed to get base shared texture");
+      }
+      this.plManagerSingleton.getFrameTexture(
+        count,
+        frameStruct,
+        textureInfo as NodeOffscreenSharedTextureInfo
+      );
 
-    const imported = sharedTexture.importSharedTexture({
-      textureInfo,
-    });
-    baseTexture.texture?.release();
+      const imported = sharedTexture.importSharedTexture({
+        textureInfo,
+      });
 
-    sharedTexture.sendSharedTexture({
-      frame: frame.mainFrame,
-      importedSharedTexture: imported,
+      sharedTexture.sendSharedTexture({
+        frame: frame.mainFrame,
+        importedSharedTexture: imported,
+      });
     });
   }
 }

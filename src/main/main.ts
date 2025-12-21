@@ -81,12 +81,12 @@ async function createWindow() {
         useSharedTexture: true,
       },
       contextIsolation: true,
-      nodeIntegration: false,
+      nodeIntegration: true,
       sandbox: false,
     },
   });
   nativeModule.setOsrWebContents(osrWin.webContents);
-  osrWin.loadURL("about:blank"); // TODO: 任意のURL
+  osrWin.loadURL("https://www.google.com/"); // TODO: 任意のURL
 
   win = new BrowserWindow({
     width: 1100,
