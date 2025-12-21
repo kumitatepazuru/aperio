@@ -676,6 +676,7 @@ dependencies = [
  "rayon",
  "tokio",
  "wgpu",
+ "windows",
 ]
 
 [[package]]

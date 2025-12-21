@@ -5,14 +5,17 @@ pub mod parallel_process;
 pub mod wgsl_process;
 
 #[cfg(target_os = "linux")]
-use crate::texture_to_native::linux::SharedTextureHandle;
+use crate::texture_to_native::linux::*;
+
+#[cfg(target_os = "windows")]
+use crate::texture_to_native::windows::*;
 
 use crate::{
     image_generate_builder::{ImageGenerateBuilder, PipelineStep},
     image_generator::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
         parallel_process::handle_parallel_step, wgsl_process::handle_wgsl_step,
-    }, texture_to_native::linux::attach_texture_to_shared_texture
+    },
 };
 use anyhow::{bail, Context, Result};
 use std::{
@@ -518,15 +521,13 @@ impl ImageGenerator {
     pub async fn generate_shared_texture(
         &self,
         builder: ImageGenerateBuilder,
-        texture_handle: &SharedTextureHandle
+        texture_handle: &SharedTextureHandle,
     ) -> Result<()> {
         let final_state_vec = self.generate(builder).await?;
 
         if let StepOutput::Gpu { texture, .. } = &final_state_vec[0] {
-            if cfg!(target_os = "linux") {
-                attach_texture_to_shared_texture(texture_handle, texture, self)?;
-                return Ok(());
-            }
+            attach_texture_to_shared_texture(texture_handle, texture, self)?;
+            return Ok(());
         }
 
         bail!("Final output is not a GPU texture or unsupported OS.");

@@ -14,6 +14,8 @@ use crate::{
 
 #[cfg(target_os = "linux")]
 use crate::texture_to_native::linux::SharedTextureHandle;
+#[cfg(target_os = "windows")]
+use crate::texture_to_native::windows::SharedTextureHandle;
 
 pub mod compiled_func;
 pub mod compiled_wgsl;

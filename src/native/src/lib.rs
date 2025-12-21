@@ -4,7 +4,12 @@ use crate::{
     structs::{Dirs, FrameLayerStructure},
     util::get_local_data_dir,
 };
-use gpu_util::{PySharedTextureHandle, texture_to_native::linux::SharedTextureHandle};
+#[cfg(target_os = "linux")]
+use gpu_util::texture_to_native::linux::SharedTextureHandle;
+#[cfg(target_os = "windows")]
+use gpu_util::texture_to_native::windows::SharedTextureHandle;
+
+use gpu_util::PySharedTextureHandle;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
