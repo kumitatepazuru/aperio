@@ -133,11 +133,11 @@ impl ImageGenerator {
                 required_features: Features::TEXTURE_BINDING_ARRAY
                     | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
                     | Features::ADDRESS_MODE_CLAMP_TO_BORDER
-                    | Features::FLOAT32_FILTERABLE
-                    | Features::SHADER_F16,
+                    | Features::FLOAT32_FILTERABLE,
+                    // | Features::SHADER_F16, // https://github.com/gpuweb/gpuweb/issues/5006 Qualcomm GPU搭載デバイスではSHADER_F16が使えない問題があるらしい
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 1000, // 必要に応じて調整
-                    max_storage_buffer_binding_size: 2147483647,       // 2GB
+                    max_storage_buffer_binding_size: 134217728,       // 128MB TODO: 環境によって数値が大きく異なるため動的変更ができるようにする
                     ..wgpu::Limits::defaults()
                 },
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
