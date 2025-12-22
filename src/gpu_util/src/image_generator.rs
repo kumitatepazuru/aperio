@@ -122,7 +122,11 @@ pub struct ImageGenerator {
 impl ImageGenerator {
     /// 新しいImageGeneratorインスタンスを非同期で作成します。
     pub async fn new() -> Result<Self> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::DX12, // TODO: OSによって変更する
+            flags: wgpu::InstanceFlags::advanced_debugging(),
+            ..Default::default()
+        });
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
@@ -134,10 +138,10 @@ impl ImageGenerator {
                     | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
                     | Features::ADDRESS_MODE_CLAMP_TO_BORDER
                     | Features::FLOAT32_FILTERABLE,
-                    // | Features::SHADER_F16, // https://github.com/gpuweb/gpuweb/issues/5006 Qualcomm GPU搭載デバイスではSHADER_F16が使えない問題があるらしい
+                // | Features::SHADER_F16, // https://github.com/gpuweb/gpuweb/issues/5006 Qualcomm GPU搭載デバイスではSHADER_F16が使えない問題があるらしい
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 1000, // 必要に応じて調整
-                    max_storage_buffer_binding_size: 134217728,       // 128MB TODO: 環境によって数値が大きく異なるため動的変更ができるようにする
+                    max_storage_buffer_binding_size: 134217728, // 128MB TODO: 環境によって数値が大きく異なるため動的変更ができるようにする
                     ..wgpu::Limits::defaults()
                 },
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -146,7 +150,9 @@ impl ImageGenerator {
             })
             .await
             .context("Failed to create device")?;
-
+        device.set_device_lost_callback(|reason, msg| {
+            eprintln!("DEVICE LOST: {reason:?} msg={msg}");
+        });
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 

@@ -50,14 +50,15 @@ const FrameTextureRenderer = () => {
 
     // ここで sharedTexture の受信設定を行う
     window.frame.setReceiver(async (textureInfo) => {
+      console.log("Received shared texture in renderer");
       if (!ctx) return;
-      
+
       const videoFrame = textureInfo.importedSharedTexture.getVideoFrame();
       textureInfo.importedSharedTexture.release();
       ctx.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
       videoFrame.close();
 
-      // texture.needsUpdate = true;
+      texture.needsUpdate = true;
     });
   }, [canvas]);
 

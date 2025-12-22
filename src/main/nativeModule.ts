@@ -17,7 +17,7 @@ export class NativeModule {
   p1: MessagePortMain;
   p2: MessagePortMain;
   buffer: SharedArrayBuffer;
-  eventStack: ((texture: OffscreenSharedTexture) => void)[] = [];
+  eventStack: ((texture: OffscreenSharedTexture) => Promise<void>)[] = [];
 
   constructor(dirs: Dirs) {
     const { port1, port2 } = new MessageChannelMain();
@@ -39,13 +39,15 @@ export class NativeModule {
   }
 
   setOsrWebContents(wc: Electron.WebContents) {
-    wc.on("paint", (e: WebContentsPaintEventParams) => {
-      if (this.eventStack.length > 0 && e.texture) {
-        const cb = this.eventStack.shift();
-        cb?.(e.texture);
+    wc.on("paint", async (e: WebContentsPaintEventParams) => {
+      try {
+        if (this.eventStack.length > 0 && e.texture) {
+          const cb = this.eventStack.shift();
+          await cb?.(e.texture);
+        }
+      } finally {
+        e.texture?.release();
       }
-
-      e.texture?.release();
     });
     // this.osrWc.stopPainting(); // 最初は止めておく
     // this.osrWc.startPainting(); // 描画再開
@@ -72,7 +74,6 @@ export class NativeModule {
   ) {
     this.eventStack.push(async (baseTexture) => {
       const textureInfo = baseTexture.textureInfo;
-      console.log("getFrameSharedTexture:", baseTexture);
       if (!textureInfo) {
         throw new Error("Failed to get base shared texture");
       }

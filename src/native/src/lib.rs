@@ -107,6 +107,8 @@ pub struct JsPlManager {
 impl JsPlManager {
     #[napi(constructor)]
     pub fn new(dirs: Dirs) -> Self {
+        env_logger::init();
+
         Self {
             plmanager: None,
             dirs,
@@ -171,6 +173,12 @@ impl JsPlManager {
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
         let content_size = base_texture.coded_size;
+        // rgbaf16ではない場合はエラー
+        if base_texture.pixel_format != "rgbaf16" {
+            return Err(napi::Error::from_reason(
+                "Base texture pixel format must be 'rgbaf16'".to_string(),
+            ));
+        }
 
         let output = Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);

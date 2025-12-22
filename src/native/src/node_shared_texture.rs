@@ -47,15 +47,6 @@ pub struct Rectangle {
     pub height: u32,
 }
 
-// https://chromium.googlesource.com/chromium/src/+/refs/heads/main/media/base/video_frame_metadata.h
-#[napi(object)]
-pub struct Metadata {
-    pub capture_update_rect: Option<Rectangle>,
-    pub region_capture_rect: Option<Rectangle>,
-    pub source_size: Option<Rectangle>,
-    pub frame_count: Option<u32>,
-}
-
 #[napi(object)]
 #[cfg(target_os = "linux")]
 pub struct NodeSharedTexturePlane {
@@ -104,7 +95,6 @@ pub struct NodeOffscreenSharedTextureInfo {
     pub visible_rect: Rectangle,
     pub content_rect: Rectangle,
     pub timestamp: u32,
-    pub metadata: Option<Metadata>,
     pub handle: NodeSharedTextureHandle,
 }
 

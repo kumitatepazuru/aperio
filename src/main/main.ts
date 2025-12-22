@@ -79,6 +79,7 @@ async function createWindow() {
     webPreferences: {
       offscreen: {
         useSharedTexture: true,
+        sharedTexturePixelFormat: "rgbaf16",
       },
       contextIsolation: true,
       nodeIntegration: true,

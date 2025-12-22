@@ -49,8 +49,58 @@ pub fn attach_texture_to_shared_texture(
     let destination_texture =
         create_texture_from_shared_handle(shared_handle, generator, width, height)?;
 
-    // f32_to_f16パイプラインを使ってsource_textureをdestination_textureに書き込む
-    execute_f32_to_f16_pipeline(source_texture, &destination_texture, generator)?;
+    // 中間テクスチャを作成 (rgba16float)
+    let intermediate_texture = generator.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Intermediate Rgba16Float Texture"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba16Float,
+        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+
+    // f32_to_f16パイプラインを使ってsource_textureを中間テクスチャに書き込む
+    execute_f32_to_f16_pipeline(source_texture, &intermediate_texture, generator)?;
+
+    // 中間テクスチャからdestination_textureにコピー
+    let mut encoder = generator
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Copy Texture Command Encoder"),
+        });
+
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &intermediate_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyTextureInfo {
+            texture: &destination_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    generator.queue.submit(std::iter::once(encoder.finish()));
+
+    generator.device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    })?;
 
     Ok(())
 }
