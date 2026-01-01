@@ -1,6 +1,6 @@
 use std::os::fd::RawFd;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use ash::vk;
 
 use crate::image_generator::ImageGenerator;
@@ -21,18 +21,30 @@ pub struct SharedTexturePlane {
     pub size: u32,
 }
 
+fn dup_fd(fd: i32) -> Result<i32> {
+    // dup() は newfd を返す。失敗時は -1
+    let newfd = unsafe { libc::dup(fd) };
+    if newfd < 0 {
+        return Err(std::io::Error::last_os_error())
+            .context("dup(fd) failed")
+            .map_err(Into::into);
+    }
+    Ok(newfd)
+}
+
 /// SharedTextureHandleのdmabufをVulkanを使いwgpu::Textureに変換し、
-/// ImageGeneratorにあるf32_to_f16のパイプラインを使ってSharedTextureHandleのTextureにwgpu::Textureを書き込む
+/// ImageGeneratorにあるf32_to_f16またはf32_to_bgraのパイプラインを使ってSharedTextureHandleのTextureにwgpu::Textureを書き込む
 ///
 /// # Arguments
 /// * `shared_handle` - dmabufのハンドル情報を含むSharedTextureHandle
 /// * `source_texture` - 書き込み元のwgpu::Texture (f32フォーマット)
-/// * `generator` - f32_to_f16パイプラインを持つImageGenerator
+/// * `generator` - ImageGenerator
 ///
 /// # Safety
 /// この関数はVulkanのunsafeなAPIを使用します。
 pub fn attach_texture_to_shared_texture(
     shared_handle: &SharedTextureHandle,
+    format: String,
     source_texture: &wgpu::Texture,
     generator: &ImageGenerator,
 ) -> Result<()> {
@@ -41,10 +53,17 @@ pub fn attach_texture_to_shared_texture(
     let height = source_texture.height();
 
     // dmabufからwgpuテクスチャを作成
-    let destination_texture = create_texture_from_dmabuf(shared_handle, generator, width, height)?;
+    let destination_texture =
+        create_texture_from_dmabuf(shared_handle, generator, &format, width, height)?;
 
-    // f32_to_f16パイプラインを使ってsource_textureをdestination_textureに書き込む
-    execute_f32_to_f16_pipeline(source_texture, &destination_texture, generator)?;
+    // 少なくとも、Linux x11 + Vulkan + NVIDIA GPUの場合、rgbaf16が未対応のようなのでformatを見てf16かu8かを判定する
+    // f32_to_f16またはf32_to_bgraパイプラインを使ってsource_textureをdestination_textureに書き込む
+    execute_f32_to_shared_texture_pipeline(
+        source_texture,
+        &destination_texture,
+        &format,
+        generator,
+    )?;
 
     Ok(())
 }
@@ -53,6 +72,7 @@ pub fn attach_texture_to_shared_texture(
 fn create_texture_from_dmabuf(
     shared_handle: &SharedTextureHandle,
     generator: &ImageGenerator,
+    shared_handle_format: &String,
     width: u32,
     height: u32,
 ) -> Result<wgpu::Texture> {
@@ -94,9 +114,20 @@ fn create_texture_from_dmabuf(
         let external_memory_info = vk::ExternalMemoryImageCreateInfo::default()
             .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
 
+        let vk_format = match shared_handle_format.as_str() {
+            "rgbaf16" => vk::Format::R16G16B16A16_SFLOAT,
+            "bgra" => vk::Format::R8G8B8A8_UNORM,
+            _ => {
+                bail!(
+                    "Unsupported shared texture format: {}",
+                    shared_handle_format
+                );
+            }
+        };
+
         let image_create_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
-            .format(vk::Format::R16G16B16A16_SFLOAT) // RGBA16Float
+            .format(vk_format)
             .extent(vk::Extent3D {
                 width,
                 height,
@@ -126,9 +157,10 @@ fn create_texture_from_dmabuf(
         let mem_requirements = raw_device.get_image_memory_requirements(image);
 
         // dmabufからメモリをインポート
+        let imported_fd = dup_fd(planes[0].fd)?;
         let import_memory_fd_info = vk::ImportMemoryFdInfoKHR::default()
             .handle_type(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT)
-            .fd(planes[0].fd);
+            .fd(imported_fd);
 
         let memory_allocate_info = vk::MemoryAllocateInfo::default()
             .allocation_size(mem_requirements.size)
@@ -154,6 +186,17 @@ fn create_texture_from_dmabuf(
             .bind_image_memory(image, memory, 0)
             .context("Failed to bind image memory")?;
 
+        let tex_format = match shared_handle_format.as_str() {
+            "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
+            "bgra" => wgpu::TextureFormat::Rgba8Unorm,
+            _ => {
+                bail!(
+                    "Unsupported shared texture format: {}",
+                    shared_handle_format
+                );
+            }
+        };
+
         // wgpu-halのTextureDescを作成
         let hal_texture_desc = wgpu::hal::TextureDescriptor {
             label: Some("Shared Texture from dmabuf"),
@@ -165,7 +208,7 @@ fn create_texture_from_dmabuf(
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
+            format: tex_format,
             usage: wgpu::TextureUses::STORAGE_READ_WRITE | wgpu::TextureUses::COPY_DST,
             memory_flags: wgpu::hal::MemoryFlags::empty(),
             view_formats: vec![],
@@ -178,8 +221,8 @@ fn create_texture_from_dmabuf(
         let drop_callback: wgpu::hal::DropCallback = Box::new(move || {
             // 注意: このクロージャはテクスチャがドロップされた時に呼ばれる
             // 安全にリソースを解放する
-            raw_device_clone.free_memory(memory, None);
             raw_device_clone.destroy_image(image, None);
+            raw_device_clone.free_memory(memory, None);
         });
 
         let hal_texture =
@@ -203,7 +246,7 @@ fn create_texture_from_dmabuf(
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba16Float,
+                    format: tex_format,
                     usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_DST,
                     view_formats: &[],
                 },
@@ -235,10 +278,11 @@ unsafe fn find_memory_type_index(
     None
 }
 
-/// f32_to_f16パイプラインを実行してsource_textureをdestination_textureに書き込む
-fn execute_f32_to_f16_pipeline(
+/// f32_to_shared_textureパイプラインを実行してsource_textureをdestination_textureに書き込む
+fn execute_f32_to_shared_texture_pipeline(
     source_texture: &wgpu::Texture,
     destination_texture: &wgpu::Texture,
+    destination_format: &String,
     generator: &ImageGenerator,
 ) -> Result<()> {
     // source_textureからサイズを取得
@@ -248,12 +292,23 @@ fn execute_f32_to_f16_pipeline(
     let source_view = source_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let destination_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+    let pipeline = match destination_format.as_str() {
+        "rgbaf16" => &generator.f32_to_f16_pipeline,
+        "bgra" => &generator.f32_to_bgra_pipeline,
+        _ => {
+            bail!(
+                "Unsupported destination texture format for f32_to_shared_texture: {}",
+                destination_format
+            );
+        }
+    };
+
     // BindGroupを作成
     let bind_group = generator
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("f32_to_f16 Bind Group"),
-            layout: &generator.f32_to_f16_bind_group_layout,
+            label: Some("f32_to_shared_tex Bind Group"),
+            layout: &pipeline.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -270,25 +325,30 @@ fn execute_f32_to_f16_pipeline(
     let mut encoder = generator
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("f32_to_f16 Command Encoder"),
+            label: Some("f32_to_shared_tex Command Encoder"),
         });
 
     {
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("f32_to_f16 Compute Pass"),
+            label: Some("f32_to_shared_tex Compute Pass"),
             timestamp_writes: None,
         });
 
-        compute_pass.set_pipeline(&generator.f32_to_f16_pipeline);
+        compute_pass.set_pipeline(&pipeline.pipeline);
         compute_pass.set_bind_group(0, &bind_group, &[]);
 
-        // ワークグループサイズは16x16 (f32_to_f16.wgslに合わせる)
+        // ワークグループサイズは16x16 (wgslに合わせる)
         let workgroup_count_x = (width + 15) / 16;
         let workgroup_count_y = (height + 15) / 16;
         compute_pass.dispatch_workgroups(workgroup_count_x, workgroup_count_y, 1);
     }
 
     generator.queue.submit(std::iter::once(encoder.finish()));
+
+    generator.device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    })?;
 
     Ok(())
 }
