@@ -22,7 +22,7 @@ pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
 numpy = "0.27.0"
 
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.178"
 
 [[bin]]
