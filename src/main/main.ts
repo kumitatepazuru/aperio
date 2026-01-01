@@ -5,11 +5,13 @@ import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
 import { FrameLayerStructure } from "native";
 
+// TODO: 動的な変更(エラーが起きたら変更など)
+const TEX_FORMAT: "bgra" | "rgba" | "rgbaf16" = "bgra";
+
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
 
 const isDev = !app.isPackaged;
-app.commandLine.appendSwitch("enable-unsafe-webgpu");
 app.commandLine.appendSwitch("enable-features", "Vulkan");
 
 let osrWin: BrowserWindow | null = null;
@@ -67,7 +69,12 @@ ipcMain.handle(
 ipcMain.handle(
   "get-frame-shared-texture",
   async (event, count: number, frameStruct: FrameLayerStructure[]) => {
-    await nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
+    await nativeModule.getFrameSharedTexture(
+      count,
+      frameStruct,
+      TEX_FORMAT,
+      event.sender
+    );
   }
 );
 
@@ -79,6 +86,7 @@ async function createWindow() {
     webPreferences: {
       offscreen: {
         useSharedTexture: true,
+        sharedTexturePixelFormat: "argb",
       },
       contextIsolation: true,
       nodeIntegration: false,
@@ -86,7 +94,7 @@ async function createWindow() {
     },
   });
   nativeModule.setOsrWebContents(osrWin.webContents);
-  osrWin.loadURL("about:blank"); // TODO: 任意のURL
+  osrWin.loadURL("https://www.google.com/"); // TODO: 任意のURL
 
   win = new BrowserWindow({
     width: 1100,
