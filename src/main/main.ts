@@ -12,7 +12,9 @@ const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
 
 const isDev = !app.isPackaged;
-app.commandLine.appendSwitch("enable-features", "Vulkan");
+// app.commandLine.appendSwitch("enable-features", "VaapiVideoDecoder,VaapiIgnoreDriverChecks,Vulkan,DefaultANGLEVulkan,VulkanFromANGLE");
+app.commandLine.appendSwitch("enable-unsafe-webgpu");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
 
 let osrWin: BrowserWindow | null = null;
 let win: BrowserWindow | null = null;
@@ -94,7 +96,7 @@ async function createWindow() {
     },
   });
   nativeModule.setOsrWebContents(osrWin.webContents);
-  osrWin.loadURL("https://www.google.com/"); // TODO: 任意のURL
+  osrWin.loadURL("https://webglsamples.org/aquarium/aquarium.html"); // TODO: 任意のURL
 
   win = new BrowserWindow({
     width: 1100,

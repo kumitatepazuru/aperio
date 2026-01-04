@@ -40,7 +40,6 @@ export class NativeModule {
 
   setOsrWebContents(wc: Electron.WebContents) {
     wc.on("paint", async (e: WebContentsPaintEventParams) => {
-      // console.log(e.texture?.textureInfo);
       try {
         if (this.eventStack.length > 0 && e.texture) {
           const cb = this.eventStack.shift();
@@ -50,9 +49,6 @@ export class NativeModule {
         e.texture?.release();
       }
     });
-    // this.osrWc.stopPainting(); // 最初は止めておく
-    // this.osrWc.startPainting(); // 描画再開
-    // this.osrWc.invalidate(); // 再描画要求（次の paint を起こす）
   }
 
   sendPort(webContents: Electron.WebContents) {
@@ -89,11 +85,12 @@ export class NativeModule {
       const imported = sharedTexture.importSharedTexture({
         textureInfo,
       });
-
-      sharedTexture.sendSharedTexture({
+      await sharedTexture.sendSharedTexture({
         frame: frame.mainFrame,
         importedSharedTexture: imported,
       });
+
+      imported.release();
     });
   }
 }
