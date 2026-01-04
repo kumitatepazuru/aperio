@@ -87,17 +87,10 @@ fn create_texture_from_dmabuf(
         .parse()
         .context("Failed to parse modifier")?;
 
-    // planeのレイアウト情報を事前に計算
-    let plane_layouts: Vec<vk::SubresourceLayout> = planes
-        .iter()
-        .map(|p| vk::SubresourceLayout {
-            offset: p.offset as u64,
-            size: p.size as u64,
-            row_pitch: p.stride as u64,
-            array_pitch: 0,
-            depth_pitch: 0,
-        })
-        .collect();
+    // DRM_FORMAT_MOD_INVALID または LINEAR の場合は通常の LINEAR tiling を使用
+    const DRM_FORMAT_MOD_INVALID: u64 = 0x00ffffffffffffff;
+    const DRM_FORMAT_MOD_LINEAR: u64 = 0;
+    let use_linear_tiling = modifier == DRM_FORMAT_MOD_INVALID || modifier == DRM_FORMAT_MOD_LINEAR;
 
     // Vulkan HAL経由でdmabufをインポート
     unsafe {
@@ -105,11 +98,6 @@ fn create_texture_from_dmabuf(
             .device
             .as_hal::<wgpu::hal::api::Vulkan>()
             .context("Failed to get Vulkan device")?;
-
-        // VkExternalMemoryImageCreateInfo を使用してdmabuf対応のイメージを作成
-        let drm_format_modifier_info = vk::ImageDrmFormatModifierExplicitCreateInfoEXT::default()
-            .drm_format_modifier(modifier)
-            .plane_layouts(&plane_layouts);
 
         let external_memory_info = vk::ExternalMemoryImageCreateInfo::default()
             .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
@@ -125,33 +113,74 @@ fn create_texture_from_dmabuf(
             }
         };
 
-        let image_create_info = vk::ImageCreateInfo::default()
-            .image_type(vk::ImageType::TYPE_2D)
-            .format(vk_format)
-            .extent(vk::Extent3D {
-                width,
-                height,
-                depth: 1,
-            })
-            .mip_levels(1)
-            .array_layers(1)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
-            .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .initial_layout(vk::ImageLayout::UNDEFINED);
-
-        // p_nextチェーンを構築
-        let drm_info = drm_format_modifier_info;
-        let mut ext_mem_info = external_memory_info;
-        ext_mem_info.p_next = &drm_info as *const _ as *const std::ffi::c_void;
-        let mut img_create_info = image_create_info;
-        img_create_info.p_next = &ext_mem_info as *const _ as *const std::ffi::c_void;
-
         let raw_device = device_guard.raw_device();
-        let image = raw_device
-            .create_image(&img_create_info, None)
-            .context("Failed to create Vulkan image")?;
+
+        // LINEAR の場合は DRM modifier を使わず通常の LINEAR tiling を使用
+        let image = if use_linear_tiling {
+            let image_create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk_format)
+                .extent(vk::Extent3D {
+                    width,
+                    height,
+                    depth: 1,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .tiling(vk::ImageTiling::LINEAR)
+                .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .initial_layout(vk::ImageLayout::PREINITIALIZED);
+
+            let mut img_create_info = image_create_info;
+            img_create_info.p_next = &external_memory_info as *const _ as *const std::ffi::c_void;
+
+            raw_device
+                .create_image(&img_create_info, None)
+                .context("Failed to create Vulkan image with LINEAR tiling")?
+        } else {
+            // 非LINEAR modifier の場合は DRM format modifier を使用
+            let plane_layout = vk::SubresourceLayout {
+                offset: 0,
+                size: planes[0].size as u64,
+                row_pitch: planes[0].stride as u64,
+                array_pitch: 0,
+                depth_pitch: 0,
+            };
+            let plane_layouts = [plane_layout];
+
+            let drm_format_modifier_info =
+                vk::ImageDrmFormatModifierExplicitCreateInfoEXT::default()
+                    .drm_format_modifier(modifier)
+                    .plane_layouts(&plane_layouts);
+
+            let image_create_info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk_format)
+                .extent(vk::Extent3D {
+                    width,
+                    height,
+                    depth: 1,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
+                .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .initial_layout(vk::ImageLayout::UNDEFINED);
+
+            let drm_info = drm_format_modifier_info;
+            let mut ext_mem_info = external_memory_info;
+            ext_mem_info.p_next = &drm_info as *const _ as *const std::ffi::c_void;
+            let mut img_create_info = image_create_info;
+            img_create_info.p_next = &ext_mem_info as *const _ as *const std::ffi::c_void;
+
+            raw_device
+                .create_image(&img_create_info, None)
+                .context("Failed to create Vulkan image with DRM modifier")?
+        };
 
         // メモリ要件を取得
         let mem_requirements = raw_device.get_image_memory_requirements(image);
