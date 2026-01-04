@@ -1,8 +1,9 @@
-import { useFrame } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import Frame from "../bridge";
 import type { FrameLayerStructure } from "native";
+import { StatsGl, Grid, CameraControls } from "@react-three/drei";
 
 const frameStruct: FrameLayerStructure[] = [
   {
@@ -19,7 +20,7 @@ const frameStruct: FrameLayerStructure[] = [
   },
 ];
 
-const FrameBufferRenderer = () => {
+const Render = () => {
   // テクスチャとマテリアルへの参照
   const textureRef = useRef<THREE.DataTexture | null>(null);
   const frame = useMemo(() => new Frame(), []);
@@ -84,5 +85,14 @@ const FrameBufferRenderer = () => {
     )
   );
 };
+
+const FrameBufferRenderer = () => (
+  <Canvas flat linear>
+    <StatsGl className="stats" />
+    <Grid infiniteGrid />
+    <CameraControls />
+    <Render />
+  </Canvas>
+);
 
 export default FrameBufferRenderer;
