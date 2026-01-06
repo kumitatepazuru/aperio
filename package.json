@@ -26,13 +26,10 @@
     "gpu:stubgen": "run-s gpu:stub && bun run scripts/pmkdir.ts src-python/out/gpu_util && mv src/gpu_util/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.6",
-    "@react-three/fiber": "^9.4.0",
     "@tailwindcss/vite": "^4.1.16",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "tailwindcss": "^4.1.16",
-    "three": "^0.180.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
@@ -43,7 +40,6 @@
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
-    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.0.4",
     "babel-plugin-react-compiler": "^19.1.0-rc.3",
     "cross-env": "^10.1.0",
