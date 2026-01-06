@@ -15,6 +15,7 @@ class TestObject(ObjectGeneratorBase):
     """
 
     frame = cv2.VideoCapture("videotestsrc ! videoconvert ! appsink")  # GStreamerのテストソースを利用
+    frame.set(cv2.CAP_PROP_FPS, 240)
 
     def __init__(self, generator: PyImageGenerator):
         super().__init__(generator)

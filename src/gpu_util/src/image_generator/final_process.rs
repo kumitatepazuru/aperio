@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use crate::image_generator::{ImageGenerator, ProcessingState, StepOutput};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use futures::channel::oneshot;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -56,7 +56,7 @@ pub async fn handle_final_process(
                 .device
                 .create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Post Process Bind Group"),
-                    layout: &generator.post_process_bind_group_layout,
+                    layout: &generator.post_process_pipeline.bind_group_layout,
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
@@ -79,7 +79,7 @@ pub async fn handle_final_process(
             // 3. コンピュートパスを実行して、テクスチャ->u32バッファ変換を行う
             {
                 let mut cpass = encoder.begin_compute_pass(&Default::default());
-                cpass.set_pipeline(&generator.post_process_pipeline);
+                cpass.set_pipeline(&generator.post_process_pipeline.pipeline);
                 cpass.set_bind_group(0, &bind_group, &[]);
                 // ディスパッチサイズは最終的な画像の解像度に基づく
                 cpass.dispatch_workgroups((width + 15) / 16, (height + 15) / 16, 1);

@@ -8,7 +8,8 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wgpu = "27.0.1"
+wgpu = { version = "27.0.1" }
+ash = "0.38"
 futures = "0.3.31"
 rayon = "1.11.0"
 bytemuck = "1.24.0"
@@ -20,6 +21,9 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
 numpy = "0.27.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.178"
 
 [[bin]]
 name = "stub_gen"

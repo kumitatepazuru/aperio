@@ -181,7 +181,6 @@ pub fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
         "--no-sync",
     ]);
     args.extend(get_base_args(appdata_dir));
-    println!("args: {:?}", args);
 
     run_uv(dir, args)?;
     Ok(())
@@ -261,6 +260,7 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
     fs::rename(cpython_dir, appdata_path.join("python")).ok();
 
     // resources/wheelディレクトリの中からopencv-python-headlessのwhlファイルを探す
+    // TODO: インタープリタのバージョン不一致によってすぐ再インストールされることがあるため、別関数に移動させる
     let wheel_dir = PathBuf::from_str(&dir.resource_dir)?.join("wheels");
     let wheel_path = fs::read_dir(wheel_dir)?
         .filter_map(|entry| entry.ok())

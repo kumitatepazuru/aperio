@@ -1,17 +1,21 @@
 import { FrameLayerStructure } from "native";
+import { sharedTexture } from "electron";
 
 declare global {
   interface Window {
     frame: {
-      init: () => void;
-      getFrame: (count: number, frameStruct: FrameLayerStructure[]) => Promise<Uint8Array<ArrayBufferLike>>;
-    },
-    path: {
-      getPath: (name: "userData" | "temp" | "exe") => Promise<string>;
-      getResources: () => Promise<string>;
-      getPluginManager: () => Promise<string>;
-      getDefaultPlugins: () => Promise<string>;
-      getDistDir: () => Promise<string>;
+      sendPort: () => Promise<void>;
+      getFrameBuf: (
+        count: number,
+        frameStruct: FrameLayerStructure[]
+      ) => Promise<void>;
+      setReceiver: (
+        cb: Parameters<typeof sharedTexture.setSharedTextureReceiver>[0]
+      ) => void;
+      getFrameSharedTexture: (
+        count: number,
+        frameStruct: FrameLayerStructure[]
+      ) => Promise<void>;
     };
   }
 }

@@ -2,18 +2,24 @@ import { app, BrowserWindow, IpcMainInvokeEvent, ipcMain } from "electron";
 import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
+import { NativeModule } from "./nativeModule";
+import { FrameLayerStructure } from "native";
+
+// TODO: 動的な変更(エラーが起きたら変更など)
+const TEX_FORMAT: "bgra" | "rgba" | "rgbaf16" = "bgra";
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
 
 const isDev = !app.isPackaged;
+// TODO: 環境によってフラグを調整するように
+app.commandLine.appendSwitch("enable-unsafe-webgpu");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
 
+let osrWin: BrowserWindow | null = null;
 let win: BrowserWindow | null = null;
 
-function getAppPath(_: IpcMainInvokeEvent, name: "userData" | "temp" | "exe") {
-  return app.getPath(name);
-}
-
+// TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
 function getResources() {
   return isDev
     ? path.join(app.getAppPath(), "resources", `${getOs()}-${getArch()}`)
@@ -38,13 +44,59 @@ function getDistDir() {
     : path.join(process.resourcesPath, "app.asar.unpacked", "dist");
 }
 
+const nativeModule = new NativeModule({
+  dataDir: app.getPath("userData"),
+  localDataDir: path.join(app.getPath("userData"), "local"),
+  resourceDir: getResources(),
+  pluginManagerDir: getPluginManager(),
+  defaultPluginsDir: getDefaultPlugins(),
+  distDir: getDistDir(),
+});
+
+ipcMain.handle("send-port", (event) => {
+  nativeModule.sendPort(event.sender);
+});
+
+ipcMain.handle(
+  "get-frame-buf",
+  (
+    _: IpcMainInvokeEvent,
+    count: number,
+    frameStruct: FrameLayerStructure[]
+  ) => {
+    nativeModule.getFrameBuf(count, frameStruct);
+  }
+);
+
+ipcMain.handle(
+  "get-frame-shared-texture",
+  async (event, count: number, frameStruct: FrameLayerStructure[]) => {
+    await nativeModule.getFrameSharedTexture(
+      count,
+      frameStruct,
+      TEX_FORMAT,
+      event.sender
+    );
+  }
+);
+
 async function createWindow() {
-  // TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
-  ipcMain.handle("get-app-path", getAppPath);
-  ipcMain.handle("get-resources", getResources);
-  ipcMain.handle("get-plugin-manager", getPluginManager);
-  ipcMain.handle("get-default-plugins", getDefaultPlugins);
-  ipcMain.handle("get-dist-dir", getDistDir);
+  osrWin = new BrowserWindow({
+    width: 1920,
+    height: 1080,
+    show: true, // debug
+    webPreferences: {
+      offscreen: {
+        useSharedTexture: true,
+        sharedTexturePixelFormat: "argb", // TODO: linuxだったらargb、windowsだったらrgbaf16にする argbはbgraとして返却される。
+      },
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  nativeModule.setOsrWebContents(osrWin.webContents);
+  osrWin.loadURL("https://webglsamples.org/aquarium/aquarium.html"); // TODO: OSR用のベースページを用意
 
   win = new BrowserWindow({
     width: 1100,

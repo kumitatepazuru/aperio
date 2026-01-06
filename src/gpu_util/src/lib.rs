@@ -12,10 +12,15 @@ use crate::{
     image_generate_builder::ImageGenerateBuilder,
 };
 
+#[cfg(target_os = "linux")]
+use crate::texture_to_native::linux::SharedTextureHandle;
+
+pub mod common_pipeline;
 pub mod compiled_func;
 pub mod compiled_wgsl;
 pub mod image_generate_builder;
 pub mod image_generator;
+pub mod texture_to_native;
 
 // Pythonで動かすためのライブラリのラッパーを作る
 #[gen_stub_pyclass]
@@ -35,6 +40,12 @@ pub struct PyCompiledWgsl {
 pub struct PyCompiledFunc {
     _id: String,
     pub inner: compiled_func::CompiledFunc,
+}
+
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct PySharedTextureHandle {
+    pub inner: SharedTextureHandle,
 }
 
 #[gen_stub_pyclass]
@@ -79,7 +90,10 @@ impl PySamplerOptions {
         };
 
         Ok(Self {
-            inner: compiled_wgsl::SamplerOptions { address_mode, filter },
+            inner: compiled_wgsl::SamplerOptions {
+                address_mode,
+                filter,
+            },
         })
     }
 }
@@ -160,6 +174,12 @@ impl PyCompiledFunc {
             _id: id.to_string(),
             inner,
         })
+    }
+}
+
+impl PySharedTextureHandle {
+    pub fn new(handle: SharedTextureHandle) -> Self {
+        Self { inner: handle }
     }
 }
 
@@ -247,15 +267,34 @@ impl PyImageGenerator {
         Ok(Self { inner, rt })
     }
 
-    pub fn generate(&self, builder: &PyImageGenerateBuilder, buffer_ptr: usize) -> PyResult<()> {
+    pub fn generate_buf(
+        &self,
+        builder: &PyImageGenerateBuilder,
+        buffer_ptr: usize,
+    ) -> PyResult<()> {
         let result = self
             .rt
-            .block_on(async { self.inner.generate(builder.inner.clone()).await })?;
+            .block_on(async { self.inner.generate_buf(builder.inner.clone()).await })?;
 
         // 直接メモリコピー
         unsafe {
             std::ptr::copy_nonoverlapping(result.as_ptr(), buffer_ptr as *mut u8, result.len());
         }
+
+        Ok(())
+    }
+
+    pub fn generate_shared_texture(
+        &self,
+        builder: &PyImageGenerateBuilder,
+        texture_handle: &PySharedTextureHandle,
+        format: String,
+    ) -> PyResult<()> {
+        self.rt.block_on(async {
+            self.inner
+                .generate_shared_texture(builder.inner.clone(), &texture_handle.inner, format)
+                .await
+        })?;
 
         Ok(())
     }
@@ -269,6 +308,7 @@ pub fn gpu_util(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyCompiledFunc>()?;
     m.add_class::<PyImageGenerateBuilder>()?;
     m.add_class::<PyImageGenerator>()?;
+    m.add_class::<PySharedTextureHandle>()?;
     Ok(())
 }
 

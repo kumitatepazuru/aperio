@@ -4,23 +4,31 @@ pub mod final_process;
 pub mod parallel_process;
 pub mod wgsl_process;
 
+#[cfg(target_os = "linux")]
+use crate::texture_to_native::linux::SharedTextureHandle;
+
 use crate::{
+    common_pipeline::CommonPipeline,
     image_generate_builder::{ImageGenerateBuilder, PipelineStep},
     image_generator::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
         parallel_process::handle_parallel_step, wgsl_process::handle_wgsl_step,
     },
+    texture_to_native::linux::attach_texture_to_shared_texture,
 };
 use anyhow::{bail, Context, Result};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
-use wgpu::{Features, include_wgsl};
+use wgpu::{include_wgsl, Features};
 
 // WGSLの後処理シェーダー（f32 RGBA -> u32 RRGGBBAA）
 const POST_PROCESS_WGSL: wgpu::ShaderModuleDescriptor<'_> =
     include_wgsl!("shaders/post_process.wgsl");
+const F32_TO_F16_WGSL: wgpu::ShaderModuleDescriptor<'_> = include_wgsl!("shaders/f32_to_f16.wgsl");
+const F32_TO_BGRA_WGSL: wgpu::ShaderModuleDescriptor<'_> =
+    include_wgsl!("shaders/f32_to_bgra.wgsl");
 
 // パイプラインキャッシュのキーとなる構造体
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
@@ -79,11 +87,12 @@ pub(crate) type ProcessingState = Vec<StepOutput>;
 /// 画像生成パイプラインを実行するクラス。
 #[derive(Clone)]
 pub struct ImageGenerator {
-    pub(crate) device: Arc<wgpu::Device>,
+    pub device: Arc<wgpu::Device>,
     pub(crate) queue: Arc<wgpu::Queue>,
     // 後処理用のパイプラインと関連リソース
-    pub(crate) post_process_pipeline: Arc<wgpu::ComputePipeline>,
-    pub(crate) post_process_bind_group_layout: Arc<wgpu::BindGroupLayout>,
+    pub(crate) post_process_pipeline: CommonPipeline,
+    pub(crate) f32_to_f16_pipeline: CommonPipeline,
+    pub(crate) f32_to_bgra_pipeline: CommonPipeline,
 
     // --- パイプラインキャッシュシステム用のフィールド ---
     // 本体。キーとパイプラインオブジェクトを格納
@@ -125,9 +134,10 @@ impl ImageGenerator {
                     | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
                     | Features::ADDRESS_MODE_CLAMP_TO_BORDER
                     | Features::FLOAT32_FILTERABLE,
+                // | Features::SHADER_F16, // AMDやQualcommではなぜかunsupportedになる(動作はする) TODO: 対応方法を調査
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 1000, // 必要に応じて調整
-                    max_storage_buffer_binding_size: 134217728,       // 128MB TODO: 環境によって数値が大幅に違うため自動調整がされるように
+                    max_storage_buffer_binding_size: 2147483647, // 2GB TODO: 動的調節されるように
                     ..wgpu::Limits::defaults()
                 },
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -140,61 +150,105 @@ impl ImageGenerator {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
-        // --- 後処理パイプラインの事前コンパイル ---
-        let post_process_shader = device.create_shader_module(POST_PROCESS_WGSL);
-
-        let post_process_bind_group_layout = Arc::new(device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                label: Some("Post Process Bind Group Layout"),
-                entries: &[
-                    // @group(0) @binding(0) var input_texture: texture_2d<f32>;
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+        // --- bufferでの後処理パイプラインの事前コンパイル ---
+        let post_process_pipeline = CommonPipeline::new(
+            device.as_ref(),
+            POST_PROCESS_WGSL,
+            &[
+                // @group(0) @binding(0) var input_texture: texture_2d<f32>;
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    // @group(0) @binding(1) var<storage, read_write> output_pixels: array<u32>;
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None, // サイズは実行時に決まるためNone
-                        },
-                        count: None,
+                    count: None,
+                },
+                // @group(0) @binding(1) var<storage, read_write> output_pixels: array<u32>;
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None, // サイズは実行時に決まるためNone
                     },
-                ],
-            },
-        ));
+                    count: None,
+                },
+            ],
+            "Post Process",
+        );
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Post Process Pipeline Layout"),
-            bind_group_layouts: &[&post_process_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        // --- native textureでのf32からf16の後処理パイプラインの事前コンパイル ---
+        let f32_to_f16_pipeline = CommonPipeline::new(
+            device.as_ref(),
+            F32_TO_F16_WGSL,
+            &[
+                // @group(0) @binding(0) var input_texture: texture_2d<f32>;
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // @group(0) @binding(1) var<storage, read_write> output_texture: texture_2d<u16>;
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba16Float,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
+            "Native Texture Post Process",
+        );
 
-        let post_process_pipeline = Arc::new(device.create_compute_pipeline(
-            &wgpu::ComputePipelineDescriptor {
-                label: Some("Post Process Pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &post_process_shader,
-                entry_point: Some("main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None, // TODO: キャッシュを実装
-            },
-        ));
+        // --- native textureでのf32からbgra8unormの後処理パイプラインの事前コンパイル ---
+        let f32_to_bgra_pipeline = CommonPipeline::new(
+            device.as_ref(),
+            F32_TO_BGRA_WGSL,
+            &[
+                // @group(0) @binding(0) var input_texture: texture_2d<f32>;
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // @group(0) @binding(1) var<storage, read_write> output_texture: texture_2d<u8>;
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
+            "BGRA Texture Post Process",
+        );
 
         Ok(Self {
             device,
             queue,
             post_process_pipeline,
-            post_process_bind_group_layout,
+            f32_to_f16_pipeline,
+            f32_to_bgra_pipeline,
 
             // キャッシュフィールドの初期化
             pipeline_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -432,8 +486,12 @@ impl ImageGenerator {
         Ok((state, all_encoders))
     }
 
-    /// ImageGenerateBuilderで構築されたパイプラインを実行し、画像を生成します。
-    pub async fn generate(&self, builder: ImageGenerateBuilder) -> Result<Vec<u8>> {
+    /// ImageGenerateBuilderで構築されたパイプラインを実行し、画像を生成する。
+    ///
+    /// このメソッドは内部実装用のヘルパーとして意図的に非公開にしており、
+    /// 外部からは `generate_buf` または `generate_shared_texture` を通してのみ  
+    /// 画像生成機能を利用できるようにしている。
+    async fn generate(&self, builder: ImageGenerateBuilder) -> Result<Vec<StepOutput>> {
         let (final_state_vec, encoders) = self.execute_pipeline(&builder.steps, Vec::new()).await?;
 
         self.queue.submit(encoders.into_iter().map(|e| e.finish()));
@@ -446,7 +504,32 @@ impl ImageGenerator {
             );
         }
 
-        handle_final_process(self, final_state_vec).await
+        Ok(final_state_vec)
+    }
+
+    pub async fn generate_buf(&self, builder: ImageGenerateBuilder) -> Result<Vec<u8>> {
+        let final_state_vec = self.generate(builder).await?;
+
+        Ok(handle_final_process(self, final_state_vec).await?)
+    }
+
+    pub async fn generate_shared_texture(
+        &self,
+        builder: ImageGenerateBuilder,
+        texture_handle: &SharedTextureHandle,
+        format: String,
+    ) -> Result<()> {
+        let final_state_vec = self.generate(builder).await?;
+
+        if let StepOutput::Gpu { texture, .. } = &final_state_vec[0] {
+            #[cfg(target_os = "linux")]
+            {
+                attach_texture_to_shared_texture(texture_handle, format, texture, self)?;
+                return Ok(());
+            }
+        }
+
+        bail!("Final output is not a GPU texture or unsupported OS.");
     }
 
     // --- パイプラインを取得または生成するためのヘルパーメソッドを追加 ---

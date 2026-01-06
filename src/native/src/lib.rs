@@ -1,12 +1,15 @@
 use crate::{
     app_config::read_config,
+    node_shared_texture::NodeOffscreenSharedTextureInfo,
     structs::{Dirs, FrameLayerStructure},
     util::get_local_data_dir,
 };
+use gpu_util::{PySharedTextureHandle, texture_to_native::linux::SharedTextureHandle};
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
 mod app_config;
+mod node_shared_texture;
 mod python;
 mod structs;
 mod util;
@@ -121,7 +124,7 @@ impl JsPlManager {
     }
 
     #[napi]
-    pub fn get_frame(
+    pub fn get_frame_buf(
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
@@ -141,7 +144,7 @@ impl JsPlManager {
                 buffer_slice.as_mut_ptr() as usize
             };
 
-            let func = pl_manager.getattr("make_frame")?;
+            let func = pl_manager.getattr("make_frame_buf")?;
             func.call1((count, frame_struct, 1920, 1080, buffer_ptr))?;
 
             Ok(())
@@ -149,5 +152,42 @@ impl JsPlManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
         Ok(())
+    }
+
+    #[napi]
+    pub fn get_frame_texture(
+        &self,
+        count: i32,
+        frame_struct: Vec<FrameLayerStructure>,
+        base_texture: NodeOffscreenSharedTextureInfo,
+        format: String,
+    ) -> napi::Result<()> {
+        let pl_manager = self
+            .plmanager
+            .as_ref()
+            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+        let content_size = base_texture.coded_size;
+
+        let output = Python::attach(|py| -> PyResult<()> {
+            let pl_manager = pl_manager.bind(py);
+            let frame_struct = frame_struct.into_pyobject(py)?;
+            let base_texture: SharedTextureHandle = base_texture.handle.into();
+            let base_texture = PySharedTextureHandle::new(base_texture);
+
+            let func = pl_manager.getattr("make_frame_shared_texture")?;
+            func.call1((
+                count,
+                frame_struct,
+                content_size.width,
+                content_size.height,
+                base_texture,
+                format,
+            ))?;
+
+            Ok(())
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
+
+        Ok(output)
     }
 }
