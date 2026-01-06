@@ -5,7 +5,8 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
 
 use crate::{
-    image_generator::ImageGenerator, texture_to_native::post_pipeline::execute_f32_to_f16_pipeline,
+    image_generator::ImageGenerator,
+    texture_to_native::post_pipeline::execute_f32_to_shared_texture_pipeline,
 };
 
 pub struct SharedTextureHandle {
@@ -38,6 +39,7 @@ fn bytes_to_handle(bytes: &[u8]) -> Result<HANDLE> {
 /// この関数はD3D12のunsafeなAPIを使用します。
 pub fn attach_texture_to_shared_texture(
     shared_handle: &SharedTextureHandle,
+    format: String,
     source_texture: &wgpu::Texture,
     generator: &ImageGenerator,
 ) -> Result<()> {
@@ -45,13 +47,20 @@ pub fn attach_texture_to_shared_texture(
     let width = source_texture.width();
     let height = source_texture.height();
 
+    // formatからテクスチャフォーマットを決定
+    let tex_format = match format.as_str() {
+        "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
+        "bgra" => wgpu::TextureFormat::Rgba8Unorm, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
+        _ => anyhow::bail!("Unsupported shared texture format: {}", format),
+    };
+
     // NTハンドルからwgpuテクスチャを作成
     let destination_texture =
-        create_texture_from_shared_handle(shared_handle, generator, width, height)?;
+        create_texture_from_shared_handle(shared_handle, generator, &format, width, height)?;
 
-    // 中間テクスチャを作成 (rgba16float)
+    // 中間テクスチャを作成
     let intermediate_texture = generator.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Intermediate Rgba16Float Texture"),
+        label: Some("Intermediate Texture"),
         size: wgpu::Extent3d {
             width,
             height,
@@ -60,13 +69,18 @@ pub fn attach_texture_to_shared_texture(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
+        format: tex_format,
         usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
 
-    // f32_to_f16パイプラインを使ってsource_textureを中間テクスチャに書き込む
-    execute_f32_to_f16_pipeline(source_texture, &intermediate_texture, generator)?;
+    // f32_to_f16またはf32_to_bgraパイプラインを使ってsource_textureを中間テクスチャに書き込む
+    execute_f32_to_shared_texture_pipeline(
+        source_texture,
+        &intermediate_texture,
+        &format,
+        generator,
+    )?;
 
     // 中間テクスチャからdestination_textureにコピー
     let mut encoder = generator
@@ -109,11 +123,22 @@ pub fn attach_texture_to_shared_texture(
 fn create_texture_from_shared_handle(
     shared_handle: &SharedTextureHandle,
     generator: &ImageGenerator,
+    shared_handle_format: &String,
     width: u32,
     height: u32,
 ) -> Result<wgpu::Texture> {
     // bytesからHANDLEに変換
     let handle = bytes_to_handle(&shared_handle.nt_handle)?;
+
+    // formatからテクスチャフォーマットを決定
+    let tex_format = match shared_handle_format.as_str() {
+        "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
+        "bgra" => wgpu::TextureFormat::Rgba8Unorm, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
+        _ => anyhow::bail!(
+            "Unsupported shared texture format: {}",
+            shared_handle_format
+        ),
+    };
 
     unsafe {
         // D3D12 HALへのアクセスを取得
@@ -140,7 +165,7 @@ fn create_texture_from_shared_handle(
         // ID3D12Resourceからwgpu-hal Textureを作成
         let hal_texture = wgpu::hal::dx12::Device::texture_from_raw(
             d3d12_resource,
-            wgpu::TextureFormat::Rgba16Float,
+            tex_format,
             wgpu::TextureDimension::D2,
             wgpu::Extent3d {
                 width,
@@ -166,7 +191,7 @@ fn create_texture_from_shared_handle(
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba16Float,
+                    format: tex_format,
                     usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_DST,
                     view_formats: &[],
                 },

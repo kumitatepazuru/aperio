@@ -17,6 +17,7 @@ use crate::texture_to_native::linux::SharedTextureHandle;
 #[cfg(target_os = "windows")]
 use crate::texture_to_native::windows::SharedTextureHandle;
 
+pub mod common_pipeline;
 pub mod compiled_func;
 pub mod compiled_wgsl;
 pub mod image_generate_builder;
@@ -289,10 +290,11 @@ impl PyImageGenerator {
         &self,
         builder: &PyImageGenerateBuilder,
         texture_handle: &PySharedTextureHandle,
+        format: String,
     ) -> PyResult<()> {
         self.rt.block_on(async {
             self.inner
-                .generate_shared_texture(builder.inner.clone(), &texture_handle.inner)
+                .generate_shared_texture(builder.inner.clone(), &texture_handle.inner, format)
                 .await
         })?;
 

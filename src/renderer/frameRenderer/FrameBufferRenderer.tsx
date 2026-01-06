@@ -1,4 +1,5 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
+import Frame from "../bridge";
 import type { FrameLayerStructure } from "native";
 
 const frameStruct: FrameLayerStructure[] = [
@@ -16,7 +17,7 @@ const frameStruct: FrameLayerStructure[] = [
   },
 ];
 
-// VideoFrameをcanvasに描画するためのシェーダー
+// RGBAバッファをテクスチャとして描画するためのシェーダー
 const vertexShaderCode = /* wgsl */ `
 struct VertexOutput {
   @builtin(position) position: vec4f,
@@ -25,7 +26,7 @@ struct VertexOutput {
 
 @vertex
 fn main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-  // フルスクリーン三角形（2つの三角形で四角形を描画）
+  // フルスクリーン四角形（2つの三角形で描画）
   var positions = array<vec2f, 6>(
     vec2f(-1.0, -1.0),
     vec2f( 1.0, -1.0),
@@ -35,6 +36,7 @@ fn main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     vec2f( 1.0,  1.0),
   );
   
+  // Y座標を反転（flipY相当）
   var texCoords = array<vec2f, 6>(
     vec2f(0.0, 1.0),
     vec2f(1.0, 1.0),
@@ -52,14 +54,17 @@ fn main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 `;
 
 const fragmentShaderCode = /* wgsl */ `
-@group(0) @binding(0) var externalTexture: texture_external;
+@group(0) @binding(0) var frameTexture: texture_2d<f32>;
 @group(0) @binding(1) var texSampler: sampler;
 
 @fragment
 fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
-  return textureSampleBaseClampToEdge(externalTexture, texSampler, texCoord);
+  return textureSample(frameTexture, texSampler, texCoord);
 }
 `;
+
+const FRAME_WIDTH = 1920;
+const FRAME_HEIGHT = 1080;
 
 interface WebGPUResources {
   device: GPUDevice;
@@ -67,14 +72,16 @@ interface WebGPUResources {
   pipeline: GPURenderPipeline;
   sampler: GPUSampler;
   bindGroupLayout: GPUBindGroupLayout;
+  texture: GPUTexture;
 }
 
-const FrameTextureRenderer = () => {
+const FrameBufferRenderer = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const resourcesRef = useRef<WebGPUResources | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const isRunningRef = useRef(false);
   const countRef = useRef(0);
+  const frame = useMemo(() => new Frame(), []);
 
   // WebGPUリソースの初期化
   const initWebGPU = useCallback(async (): Promise<WebGPUResources | null> => {
@@ -117,10 +124,19 @@ const FrameTextureRenderer = () => {
       code: fragmentShaderCode,
     });
 
-    // サンプラーの作成
+    // サンプラーの作成（NearestFilter相当）
     const sampler = device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
+      magFilter: "nearest",
+      minFilter: "nearest",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
+
+    // フレームデータ用テクスチャの作成
+    const texture = device.createTexture({
+      size: { width: FRAME_WIDTH, height: FRAME_HEIGHT },
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
 
     // バインドグループレイアウトの作成
@@ -129,7 +145,7 @@ const FrameTextureRenderer = () => {
         {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
-          externalTexture: {},
+          texture: { sampleType: "float" },
         },
         {
           binding: 1,
@@ -167,18 +183,26 @@ const FrameTextureRenderer = () => {
       pipeline,
       sampler,
       bindGroupLayout,
+      texture,
     };
   }, []);
 
-  // VideoFrameを描画する関数
-  const renderVideoFrame = useCallback(
-    (videoFrame: VideoFrame, resources: WebGPUResources) => {
-      const { device, context, pipeline, sampler, bindGroupLayout } = resources;
+  // テクスチャデータを更新して描画する関数
+  const updateAndRender = useCallback(
+    (data: Uint8Array<ArrayBuffer>, resources: WebGPUResources) => {
+      const { device, context, pipeline, sampler, bindGroupLayout, texture } =
+        resources;
 
-      // external textureのインポート
-      const externalTexture = device.importExternalTexture({
-        source: videoFrame,
-      });
+      // テクスチャデータの更新
+      device.queue.writeTexture(
+        { texture },
+        data.buffer,
+        {
+          bytesPerRow: FRAME_WIDTH * 4,
+          rowsPerImage: FRAME_HEIGHT,
+        },
+        { width: FRAME_WIDTH, height: FRAME_HEIGHT }
+      );
 
       // バインドグループの作成
       const bindGroup = device.createBindGroup({
@@ -186,7 +210,7 @@ const FrameTextureRenderer = () => {
         entries: [
           {
             binding: 0,
-            resource: externalTexture,
+            resource: texture.createView(),
           },
           {
             binding: 1,
@@ -195,10 +219,10 @@ const FrameTextureRenderer = () => {
         ],
       });
 
-      // // コマンドエンコーダーの作成
+      // コマンドエンコーダーの作成
       const commandEncoder = device.createCommandEncoder();
 
-      // // レンダーパスの開始
+      // レンダーパスの開始
       const renderPass = commandEncoder.beginRenderPass({
         colorAttachments: [
           {
@@ -226,8 +250,12 @@ const FrameTextureRenderer = () => {
     if (!isRunningRef.current || !resourcesRef.current) return;
 
     try {
-      // getFrameSharedTextureを呼び出し
-      await window.frame.getFrameSharedTexture(countRef.current, frameStruct);
+      // フレームデータを取得
+      const data = await frame.getBuf(countRef.current, frameStruct);
+      const uint8Data = new Uint8Array(data);
+
+      // 描画
+      updateAndRender(uint8Data, resourcesRef.current);
       countRef.current += 1;
     } catch (error) {
       console.error("Error getting frame:", error);
@@ -237,7 +265,7 @@ const FrameTextureRenderer = () => {
     if (isRunningRef.current) {
       animationFrameRef.current = requestAnimationFrame(frameLoop);
     }
-  }, []);
+  }, [frame, updateAndRender]);
 
   useEffect(() => {
     let mounted = true;
@@ -248,25 +276,6 @@ const FrameTextureRenderer = () => {
       if (!mounted || !resources) return;
 
       resourcesRef.current = resources;
-
-      // レシーバーの設定
-      window.frame.setReceiver(async (textureInfo) => {
-        if (!mounted || !resourcesRef.current) return;
-
-        try {
-          // VideoFrameを取得
-          const videoFrame = textureInfo.importedSharedTexture.getVideoFrame();
-          textureInfo.importedSharedTexture.release();
-
-          // 描画
-          renderVideoFrame(videoFrame, resourcesRef.current);
-
-          // VideoFrameを速やかにclose
-          videoFrame.close();
-        } catch (error) {
-          console.error("Error processing texture:", error);
-        }
-      });
 
       // フレームループの開始
       isRunningRef.current = true;
@@ -283,20 +292,21 @@ const FrameTextureRenderer = () => {
       }
       // WebGPUリソースのクリーンアップ
       if (resourcesRef.current) {
+        resourcesRef.current.texture.destroy();
         resourcesRef.current.device.destroy();
         resourcesRef.current = null;
       }
     };
-  }, [initWebGPU, renderVideoFrame, frameLoop]);
+  }, [initWebGPU, frameLoop]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={1920}
-      height={1080}
+      width={FRAME_WIDTH}
+      height={FRAME_HEIGHT}
       style={{ width: "100%", height: "100%" }}
     />
   );
 };
 
-export default FrameTextureRenderer;
+export default FrameBufferRenderer;

@@ -49,9 +49,6 @@ export class NativeModule {
         e.texture?.release();
       }
     });
-    // this.osrWc.stopPainting(); // 最初は止めておく
-    // this.osrWc.startPainting(); // 描画再開
-    // this.osrWc.invalidate(); // 再描画要求（次の paint を起こす）
   }
 
   sendPort(webContents: Electron.WebContents) {
@@ -70,6 +67,7 @@ export class NativeModule {
   async getFrameSharedTexture(
     count: number,
     frameStruct: FrameLayerStructure[],
+    format: string,
     frame: Electron.WebContents
   ) {
     this.eventStack.push(async (baseTexture) => {
@@ -80,17 +78,19 @@ export class NativeModule {
       this.plManagerSingleton.getFrameTexture(
         count,
         frameStruct,
-        textureInfo as NodeOffscreenSharedTextureInfo
+        textureInfo as NodeOffscreenSharedTextureInfo,
+        format
       );
 
       const imported = sharedTexture.importSharedTexture({
         textureInfo,
       });
-
-      sharedTexture.sendSharedTexture({
+      await sharedTexture.sendSharedTexture({
         frame: frame.mainFrame,
         importedSharedTexture: imported,
       });
+
+      imported.release();
     });
   }
 }

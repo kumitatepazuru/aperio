@@ -185,7 +185,7 @@ class PluginManager:
             print(f"Plugin directory {plugin_dir} does not exist.")
             return False
 
-        plugin_name = plugin_dir.split("/")[-1]
+        plugin_name = os.path.basename(plugin_dir)
         if plugin_name in self.plugins:
             # 既に登録されている場合は__init__.pyのハッシュ値を比較して、異なる場合のみ更新する
             # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
@@ -214,7 +214,7 @@ class PluginManager:
         self.__load_plugins()
         return True
 
-    def __make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
+    def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
                              width: int, height: int) -> gpu_util.PyImageGenerateBuilder:
         """
         指定されたフレーム構造に基づいてフレームを生成するメソッド。
@@ -308,12 +308,12 @@ class PluginManager:
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
         """
-        builder = self.__make_frame(frame_number, frame_structure, width, height)
+        builder = self._make_frame(frame_number, frame_structure, width, height)
 
         self.generator.generate_buf(builder, buffer_ptr)
 
     def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle) -> None:
+                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: str) -> None:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -323,10 +323,11 @@ class PluginManager:
             width (int): フレームの幅
             height (int): フレームの高さ
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
+            format (str): 共有テクスチャのフォーマット
         """
-        builder = self.__make_frame(frame_number, frame_structure, width, height)
+        builder = self._make_frame(frame_number, frame_structure, width, height)
 
-        self.generator.generate_shared_texture(builder, texture_handle)
+        self.generator.generate_shared_texture(builder, texture_handle, format)
 
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):

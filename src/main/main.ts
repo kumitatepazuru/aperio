@@ -5,12 +5,16 @@ import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
 import { FrameLayerStructure } from "native";
 
+// TODO: 動的な変更(エラーが起きたら変更など)
+const TEX_FORMAT: "bgra" | "rgba" | "rgbaf16" = "bgra";
+
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
 
 const isDev = !app.isPackaged;
+// TODO: 環境によってフラグを調整するように
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
-app.commandLine.appendSwitch("enable-features", "Vulkan");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
 
 let osrWin: BrowserWindow | null = null;
 let win: BrowserWindow | null = null;
@@ -67,7 +71,12 @@ ipcMain.handle(
 ipcMain.handle(
   "get-frame-shared-texture",
   async (event, count: number, frameStruct: FrameLayerStructure[]) => {
-    await nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
+    await nativeModule.getFrameSharedTexture(
+      count,
+      frameStruct,
+      TEX_FORMAT,
+      event.sender
+    );
   }
 );
 
@@ -79,7 +88,7 @@ async function createWindow() {
     webPreferences: {
       offscreen: {
         useSharedTexture: true,
-        sharedTexturePixelFormat: "rgbaf16",
+        sharedTexturePixelFormat: "argb", // TODO: linuxだったらargb、windowsだったらrgbaf16にする argbはbgraとして返却される。
       },
       contextIsolation: true,
       nodeIntegration: true,
@@ -87,7 +96,7 @@ async function createWindow() {
     },
   });
   nativeModule.setOsrWebContents(osrWin.webContents);
-  osrWin.loadURL("https://www.google.com/"); // TODO: 任意のURL
+  osrWin.loadURL("https://webglsamples.org/aquarium/aquarium.html"); // TODO: OSR用のベースページを用意
 
   win = new BrowserWindow({
     width: 1100,
@@ -104,7 +113,6 @@ async function createWindow() {
   if (isDev) {
     // Vite の dev サーバに接続
     const url = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
-    // const url = "chrome://gpu";
     await win.loadURL(url);
     win.webContents.openDevTools({ mode: "detach" });
   } else {

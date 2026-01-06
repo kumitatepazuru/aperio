@@ -167,6 +167,7 @@ impl JsPlManager {
         count: i32,
         frame_struct: Vec<FrameLayerStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
+        format: String,
     ) -> napi::Result<()> {
         let pl_manager = self
             .plmanager
@@ -193,6 +194,7 @@ impl JsPlManager {
                 content_size.width,
                 content_size.height,
                 base_texture,
+                format,
             ))?;
 
             Ok(())
