@@ -260,7 +260,7 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
     fs::rename(cpython_dir, appdata_path.join("python")).ok();
 
     // resources/wheelディレクトリの中からopencv-python-headlessのwhlファイルを探す
-    // TODO: move into other function because the interpriter may incorrect version and reinstall immidiately.
+    // TODO: インタープリタのバージョン不一致によってすぐ再インストールされることがあるため、別関数に移動させる
     let wheel_dir = PathBuf::from_str(&dir.resource_dir)?.join("wheels");
     let wheel_path = fs::read_dir(wheel_dir)?
         .filter_map(|entry| entry.ok())

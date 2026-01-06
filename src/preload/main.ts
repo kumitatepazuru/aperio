@@ -21,7 +21,6 @@ contextBridge.exposeInMainWorld("frame", {
   setReceiver: (cb: SharedTextureReceiverParam) => {
     sharedTexture.setSharedTextureReceiver(cb);
   },
-  subtle: sharedTexture.subtle,
   getFrameSharedTexture: async (
     count: number,
     frameStruct: FrameLayerStructure[]

@@ -12,7 +12,7 @@ const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
 
 const isDev = !app.isPackaged;
-// app.commandLine.appendSwitch("enable-features", "VaapiVideoDecoder,VaapiIgnoreDriverChecks,Vulkan,DefaultANGLEVulkan,VulkanFromANGLE");
+// TODO: 環境によってフラグを調整するように
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 
@@ -88,7 +88,7 @@ async function createWindow() {
     webPreferences: {
       offscreen: {
         useSharedTexture: true,
-        sharedTexturePixelFormat: "argb",
+        sharedTexturePixelFormat: "argb", // TODO: linuxだったらargb、windowsだったらrgbaf16にする argbはbgraとして返却される。
       },
       contextIsolation: true,
       nodeIntegration: false,
@@ -96,7 +96,7 @@ async function createWindow() {
     },
   });
   nativeModule.setOsrWebContents(osrWin.webContents);
-  osrWin.loadURL("https://webglsamples.org/aquarium/aquarium.html"); // TODO: 任意のURL
+  osrWin.loadURL("https://webglsamples.org/aquarium/aquarium.html"); // TODO: OSR用のベースページを用意
 
   win = new BrowserWindow({
     width: 1100,
@@ -113,7 +113,6 @@ async function createWindow() {
   if (isDev) {
     // Vite の dev サーバに接続
     const url = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
-    // const url = "chrome://gpu";
     await win.loadURL(url);
     win.webContents.openDevTools({ mode: "detach" });
   } else {

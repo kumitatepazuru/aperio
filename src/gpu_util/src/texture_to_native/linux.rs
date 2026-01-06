@@ -104,7 +104,7 @@ fn create_texture_from_dmabuf(
 
         let vk_format = match shared_handle_format.as_str() {
             "rgbaf16" => vk::Format::R16G16B16A16_SFLOAT,
-            "bgra" => vk::Format::R8G8B8A8_UNORM,
+            "bgra" => vk::Format::R8G8B8A8_UNORM, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
             _ => {
                 bail!(
                     "Unsupported shared texture format: {}",
@@ -217,7 +217,7 @@ fn create_texture_from_dmabuf(
 
         let tex_format = match shared_handle_format.as_str() {
             "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
-            "bgra" => wgpu::TextureFormat::Rgba8Unorm,
+            "bgra" => wgpu::TextureFormat::Rgba8Unorm, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
             _ => {
                 bail!(
                     "Unsupported shared texture format: {}",

@@ -134,10 +134,10 @@ impl ImageGenerator {
                     | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
                     | Features::ADDRESS_MODE_CLAMP_TO_BORDER
                     | Features::FLOAT32_FILTERABLE,
-                    // | Features::SHADER_F16, // AMDやQualcommではなぜかunsupportedになる
+                // | Features::SHADER_F16, // AMDやQualcommではなぜかunsupportedになる(動作はする) TODO: 対応方法を調査
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 1000, // 必要に応じて調整
-                    max_storage_buffer_binding_size: 2147483647,       // 2GB
+                    max_storage_buffer_binding_size: 2147483647, // 2GB TODO: 動的調節されるように
                     ..wgpu::Limits::defaults()
                 },
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -486,7 +486,11 @@ impl ImageGenerator {
         Ok((state, all_encoders))
     }
 
-    /// ImageGenerateBuilderで構築されたパイプラインを実行し、画像を生成します。
+    /// ImageGenerateBuilderで構築されたパイプラインを実行し、画像を生成する。
+    ///
+    /// このメソッドは内部実装用のヘルパーとして意図的に非公開にしており、
+    /// 外部からは `generate_buf` または `generate_shared_texture` を通してのみ  
+    /// 画像生成機能を利用できるようにしている。
     async fn generate(&self, builder: ImageGenerateBuilder) -> Result<Vec<StepOutput>> {
         let (final_state_vec, encoders) = self.execute_pipeline(&builder.steps, Vec::new()).await?;
 
@@ -518,7 +522,8 @@ impl ImageGenerator {
         let final_state_vec = self.generate(builder).await?;
 
         if let StepOutput::Gpu { texture, .. } = &final_state_vec[0] {
-            if cfg!(target_os = "linux") {
+            #[cfg(target_os = "linux")]
+            {
                 attach_texture_to_shared_texture(texture_handle, format, texture, self)?;
                 return Ok(());
             }
