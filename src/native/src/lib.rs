@@ -174,10 +174,10 @@ impl JsPlManager {
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
         let content_size = base_texture.coded_size;
-        // rgbaf16ではない場合はエラー
-        if base_texture.pixel_format != "rgbaf16" {
+        // rgbaf16またはbgraではない場合はエラー
+        if base_texture.pixel_format != "rgbaf16" && base_texture.pixel_format != "bgra" {
             return Err(napi::Error::from_reason(
-                "Base texture pixel format must be 'rgbaf16'".to_string(),
+                "Base texture pixel format must be 'rgbaf16' or 'bgra'".to_string(),
             ));
         }
 

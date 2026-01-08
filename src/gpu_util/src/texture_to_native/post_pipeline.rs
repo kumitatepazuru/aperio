@@ -1,69 +1,60 @@
 use crate::image_generator::ImageGenerator;
-use anyhow::{Result, bail};
+use anyhow::Result;
 
-/// f32_to_shared_textureパイプラインを実行してsource_textureをdestination_textureに書き込む
-pub fn execute_f32_to_shared_texture_pipeline(
+/// Render passを使ってsource_textureをdestination_textureに書き込む
+/// Windows/Linux共通の処理
+pub fn blit_texture_with_render_pass(
     source_texture: &wgpu::Texture,
     destination_texture: &wgpu::Texture,
-    destination_format: &String,
     generator: &ImageGenerator,
 ) -> Result<()> {
-    // source_textureからサイズを取得
-    let width = source_texture.width();
-    let height = source_texture.height();
+    // source textureのビューを作成
+    let src_view = source_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let dst_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    let source_view = source_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let destination_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let pipeline = match destination_format.as_str() {
-        "rgbaf16" => &generator.f32_to_f16_pipeline,
-        "bgra" => &generator.f32_to_bgra_pipeline,
-        _ => {
-            bail!(
-                "Unsupported destination texture format for f32_to_shared_texture: {}",
-                destination_format
-            );
-        }
-    };
-
-    // BindGroupを作成
     let bind_group = generator
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("f32_to_shared_tex Bind Group"),
-            layout: &pipeline.bind_group_layout,
+            label: Some("Blit Source->Destination BindGroup"),
+            layout: &generator.blit_f32_pipeline.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&source_view),
+                    resource: wgpu::BindingResource::TextureView(&src_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&destination_view),
+                    resource: wgpu::BindingResource::Sampler(&generator.blit_sampler),
                 },
             ],
         });
 
-    // CommandEncoderを作成してComputePassを実行
     let mut encoder = generator
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("f32_to_shared_tex Command Encoder"),
+            label: Some("Blit Source->Destination Command Encoder"),
         });
 
     {
-        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("f32_to_shared_tex Compute Pass"),
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Blit Source->Destination RenderPass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &dst_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            occlusion_query_set: None,
             timestamp_writes: None,
         });
 
-        compute_pass.set_pipeline(&pipeline.pipeline);
-        compute_pass.set_bind_group(0, &bind_group, &[]);
-
-        // ワークグループサイズは16x16 (wgslに合わせる)
-        let workgroup_count_x = (width + 15) / 16;
-        let workgroup_count_y = (height + 15) / 16;
-        compute_pass.dispatch_workgroups(workgroup_count_x, workgroup_count_y, 1);
+        render_pass.set_pipeline(&generator.blit_f32_pipeline.pipeline);
+        render_pass.set_bind_group(0, &bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
     }
 
     generator.queue.submit(std::iter::once(encoder.finish()));

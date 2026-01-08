@@ -4,7 +4,8 @@ use anyhow::{bail, Context, Result};
 use ash::vk;
 
 use crate::{
-    image_generator::ImageGenerator, texture_to_native::post_pipeline::execute_f32_to_shared_texture_pipeline,
+    image_generator::ImageGenerator,
+    texture_to_native::post_pipeline::blit_texture_with_render_pass,
 };
 
 pub struct SharedTextureHandle {
@@ -58,14 +59,13 @@ pub fn attach_texture_to_shared_texture(
     let destination_texture =
         create_texture_from_dmabuf(shared_handle, generator, &format, width, height)?;
 
-    // 少なくとも、Linux x11 + Vulkan + NVIDIA GPUの場合、rgbaf16が未対応のようなのでformatを見てf16かu8かを判定する
-    // f32_to_f16またはf32_to_bgraパイプラインを使ってsource_textureをdestination_textureに書き込む
-    execute_f32_to_shared_texture_pipeline(
-        source_texture,
-        &destination_texture,
-        &format,
-        generator,
-    )?;
+    // render passを使ってsource_textureをdestination_textureに書き込む
+    blit_texture_with_render_pass(source_texture, &destination_texture, &format, generator)?;
+
+    generator.device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    })?;
 
     Ok(())
 }
@@ -106,7 +106,7 @@ fn create_texture_from_dmabuf(
 
         let vk_format = match shared_handle_format.as_str() {
             "rgbaf16" => vk::Format::R16G16B16A16_SFLOAT,
-            "bgra" => vk::Format::R8G8B8A8_UNORM, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
+            "bgra" => vk::Format::B8G8R8A8_UNORM, // BGRAフォーマット
             _ => {
                 bail!(
                     "Unsupported shared texture format: {}",
@@ -131,7 +131,7 @@ fn create_texture_from_dmabuf(
                 .array_layers(1)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .tiling(vk::ImageTiling::LINEAR)
-                .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST)
+                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .initial_layout(vk::ImageLayout::PREINITIALIZED);
 
@@ -169,7 +169,7 @@ fn create_texture_from_dmabuf(
                 .array_layers(1)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
-                .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST)
+                .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .initial_layout(vk::ImageLayout::UNDEFINED);
 
@@ -219,7 +219,7 @@ fn create_texture_from_dmabuf(
 
         let tex_format = match shared_handle_format.as_str() {
             "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
-            "bgra" => wgpu::TextureFormat::Rgba8Unorm, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
+            "bgra" => wgpu::TextureFormat::Bgra8Unorm,
             _ => {
                 bail!(
                     "Unsupported shared texture format: {}",
@@ -240,7 +240,7 @@ fn create_texture_from_dmabuf(
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: tex_format,
-            usage: wgpu::TextureUses::STORAGE_READ_WRITE | wgpu::TextureUses::COPY_DST,
+            usage: wgpu::TextureUses::COLOR_TARGET | wgpu::TextureUses::RESOURCE,
             memory_flags: wgpu::hal::MemoryFlags::empty(),
             view_formats: vec![],
         };
@@ -278,7 +278,8 @@ fn create_texture_from_dmabuf(
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
                     format: tex_format,
-                    usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },
             );

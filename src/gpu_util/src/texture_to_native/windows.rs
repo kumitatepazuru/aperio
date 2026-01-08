@@ -6,7 +6,7 @@ use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
 
 use crate::{
     image_generator::ImageGenerator,
-    texture_to_native::post_pipeline::execute_f32_to_shared_texture_pipeline,
+    texture_to_native::post_pipeline::blit_texture_with_render_pass,
 };
 
 pub struct SharedTextureHandle {
@@ -28,12 +28,12 @@ fn bytes_to_handle(bytes: &[u8]) -> Result<HANDLE> {
 }
 
 /// SharedTextureHandleのNTハンドルをD3D12を使いwgpu::Textureに変換し、
-/// ImageGeneratorにあるf32_to_f16のパイプラインを使ってSharedTextureHandleのTextureにwgpu::Textureを書き込む
+/// render passを使ってSharedTextureHandleのTextureにsource_textureを書き込む
 ///
 /// # Arguments
 /// * `shared_handle` - NTハンドル情報を含むSharedTextureHandle
 /// * `source_texture` - 書き込み元のwgpu::Texture (f32フォーマット)
-/// * `generator` - f32_to_f16パイプラインを持つImageGenerator
+/// * `generator` - render pipelineを持つImageGenerator
 ///
 /// # Safety
 /// この関数はD3D12のunsafeなAPIを使用します。
@@ -47,69 +47,12 @@ pub fn attach_texture_to_shared_texture(
     let width = source_texture.width();
     let height = source_texture.height();
 
-    // formatからテクスチャフォーマットを決定
-    let tex_format = match format.as_str() {
-        "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
-        "bgra" => wgpu::TextureFormat::Rgba8Unorm, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
-        _ => anyhow::bail!("Unsupported shared texture format: {}", format),
-    };
-
     // NTハンドルからwgpuテクスチャを作成
     let destination_texture =
         create_texture_from_shared_handle(shared_handle, generator, &format, width, height)?;
 
-    // 中間テクスチャを作成
-    let intermediate_texture = generator.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Intermediate Texture"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: tex_format,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-
-    // f32_to_f16またはf32_to_bgraパイプラインを使ってsource_textureを中間テクスチャに書き込む
-    execute_f32_to_shared_texture_pipeline(
-        source_texture,
-        &intermediate_texture,
-        &format,
-        generator,
-    )?;
-
-    // 中間テクスチャからdestination_textureにコピー
-    let mut encoder = generator
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Copy Texture Command Encoder"),
-        });
-
-    encoder.copy_texture_to_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &intermediate_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyTextureInfo {
-            texture: &destination_texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-
-    generator.queue.submit(std::iter::once(encoder.finish()));
+    // render passを使ってsource_textureをdestination_textureに書き込む
+    blit_texture_with_render_pass(source_texture, &destination_texture, generator)?;
 
     generator.device.poll(wgpu::PollType::Wait {
         submission_index: None,
@@ -133,7 +76,7 @@ fn create_texture_from_shared_handle(
     // formatからテクスチャフォーマットを決定
     let tex_format = match shared_handle_format.as_str() {
         "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
-        "bgra" => wgpu::TextureFormat::Rgba8Unorm, // BGRA8はstorage textureとして扱えないため、RGBA8として処理させる
+        "bgra" => wgpu::TextureFormat::Bgra8Unorm,
         _ => anyhow::bail!(
             "Unsupported shared texture format: {}",
             shared_handle_format
@@ -192,7 +135,8 @@ fn create_texture_from_shared_handle(
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
                     format: tex_format,
-                    usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },
             );
