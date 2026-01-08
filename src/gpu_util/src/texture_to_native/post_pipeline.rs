@@ -5,9 +5,16 @@ use anyhow::Result;
 /// Windows/Linux共通の処理
 pub fn blit_texture_with_render_pass(
     source_texture: &wgpu::Texture,
+    format: &str,
     destination_texture: &wgpu::Texture,
     generator: &ImageGenerator,
 ) -> Result<()> {
+    let pipeline = match format {
+        "rgbaf16" => &generator.blit_f32_to_f16_pipeline,
+        "bgra" => &generator.blit_f32_to_bgra8_pipeline,
+        _ => anyhow::bail!("Unsupported format for blit: {}", format),
+    };
+
     // source textureのビューを作成
     let src_view = source_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let dst_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -16,7 +23,7 @@ pub fn blit_texture_with_render_pass(
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Blit Source->Destination BindGroup"),
-            layout: &generator.blit_f32_pipeline.bind_group_layout,
+            layout: &pipeline.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -52,7 +59,7 @@ pub fn blit_texture_with_render_pass(
             timestamp_writes: None,
         });
 
-        render_pass.set_pipeline(&generator.blit_f32_pipeline.pipeline);
+        render_pass.set_pipeline(&pipeline.pipeline);
         render_pass.set_bind_group(0, &bind_group, &[]);
         render_pass.draw(0..3, 0..1);
     }

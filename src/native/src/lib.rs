@@ -10,6 +10,7 @@ use gpu_util::texture_to_native::linux::SharedTextureHandle;
 use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
 use gpu_util::PySharedTextureHandle;
+use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
@@ -108,7 +109,14 @@ impl JsPlManager {
     #[napi(constructor)]
     pub fn new(dirs: Dirs) -> Self {
         let _ = env_logger::try_init(); // すでに初期化されている場合は無視
-
+        match env_logger::try_init() {
+            Ok(()) => {}
+            Err(e) => {
+                // すでに初期化されている場合は無視するが、デバッグ用にログを出力
+                debug!("env_logger initialization skipped: {}", e);
+            }
+        }
+        
         Self {
             plmanager: None,
             dirs,

@@ -74,7 +74,7 @@ pub fn attach_texture_to_shared_texture(
 fn create_texture_from_dmabuf(
     shared_handle: &SharedTextureHandle,
     generator: &ImageGenerator,
-    shared_handle_format: &String,
+    shared_handle_format: &str,
     width: u32,
     height: u32,
 ) -> Result<wgpu::Texture> {

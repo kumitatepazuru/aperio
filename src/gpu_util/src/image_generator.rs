@@ -91,7 +91,8 @@ pub struct ImageGenerator {
     pub(crate) queue: Arc<wgpu::Queue>,
     // 後処理用のパイプラインと関連リソース
     pub(crate) post_process_pipeline: ComputePipeline,
-    pub(crate) blit_f32_pipeline: RenderPipeline,
+    pub(crate) blit_f32_to_f16_pipeline: RenderPipeline,
+    pub(crate) blit_f32_to_bgra8_pipeline: RenderPipeline,
     pub(crate) blit_sampler: wgpu::Sampler,
 
     // --- パイプラインキャッシュシステム用のフィールド ---
@@ -204,8 +205,8 @@ impl ImageGenerator {
             ..Default::default()
         });
 
-        // --- blit F32 render pipeline ---
-        let blit_f32_pipeline = RenderPipeline::new(
+        // --- blit F32->F16 render pipeline ---
+        let blit_f32_to_f16_pipeline = RenderPipeline::new(
             device.as_ref(),
             BLIT_F32_WGSL,
             &[
@@ -227,14 +228,41 @@ impl ImageGenerator {
                 },
             ],
             wgpu::TextureFormat::Rgba16Float,
-            "Blit F32",
+            "Blit F32->F16",
+        );
+
+        // --- blit F32->BGRA8unorm render pipeline ---
+        let blit_f32_to_bgra8_pipeline = RenderPipeline::new(
+            device.as_ref(),
+            BLIT_F32_WGSL,
+            &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            wgpu::TextureFormat::Bgra8Unorm,
+            "Blit F32->BGRA8unorm",
         );
 
         Ok(Self {
             device,
             queue,
             post_process_pipeline,
-            blit_f32_pipeline,
+            blit_f32_to_f16_pipeline,
+            blit_f32_to_bgra8_pipeline,
             blit_sampler,
 
             // キャッシュフィールドの初期化
@@ -509,7 +537,7 @@ impl ImageGenerator {
         let final_state_vec = self.generate(builder).await?;
 
         if let StepOutput::Gpu { texture, .. } = &final_state_vec[0] {
-            attach_texture_to_shared_texture(texture_handle, format, texture, self)?;
+            attach_texture_to_shared_texture(texture_handle, &format, texture, self)?;
             return Ok(());
         }
 

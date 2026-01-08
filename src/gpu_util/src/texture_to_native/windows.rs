@@ -39,7 +39,7 @@ fn bytes_to_handle(bytes: &[u8]) -> Result<HANDLE> {
 /// この関数はD3D12のunsafeなAPIを使用します。
 pub fn attach_texture_to_shared_texture(
     shared_handle: &SharedTextureHandle,
-    format: String,
+    format: &str,
     source_texture: &wgpu::Texture,
     generator: &ImageGenerator,
 ) -> Result<()> {
@@ -52,7 +52,7 @@ pub fn attach_texture_to_shared_texture(
         create_texture_from_shared_handle(shared_handle, generator, &format, width, height)?;
 
     // render passを使ってsource_textureをdestination_textureに書き込む
-    blit_texture_with_render_pass(source_texture, &destination_texture, generator)?;
+    blit_texture_with_render_pass(source_texture, &format, &destination_texture, generator)?;
 
     generator.device.poll(wgpu::PollType::Wait {
         submission_index: None,
@@ -66,7 +66,7 @@ pub fn attach_texture_to_shared_texture(
 fn create_texture_from_shared_handle(
     shared_handle: &SharedTextureHandle,
     generator: &ImageGenerator,
-    shared_handle_format: &String,
+    shared_handle_format: &str,
     width: u32,
     height: u32,
 ) -> Result<wgpu::Texture> {
@@ -74,7 +74,7 @@ fn create_texture_from_shared_handle(
     let handle = bytes_to_handle(&shared_handle.nt_handle)?;
 
     // formatからテクスチャフォーマットを決定
-    let tex_format = match shared_handle_format.as_str() {
+    let tex_format = match shared_handle_format {
         "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
         "bgra" => wgpu::TextureFormat::Bgra8Unorm,
         _ => anyhow::bail!(

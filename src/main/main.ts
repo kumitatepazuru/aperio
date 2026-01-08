@@ -91,7 +91,7 @@ async function createWindow() {
         sharedTexturePixelFormat: "rgbaf16", // TODO: linuxだったらargb、windowsだったらrgbaf16にする argbはbgraとして返却される。
       },
       contextIsolation: true,
-      nodeIntegration: true,
+      nodeIntegration: false,
       sandbox: false,
     },
   });
