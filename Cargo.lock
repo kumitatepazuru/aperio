@@ -113,6 +113,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "gpu_util",
+ "libc",
  "log",
  "napi",
  "napi-build",
