@@ -26,5 +26,8 @@ env_logger = "0.11.8"
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.178"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.178"
+
 [build-dependencies]
 napi-build = "2"
