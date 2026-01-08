@@ -4,7 +4,13 @@ use crate::{
     structs::{Dirs, FrameLayerStructure},
     util::get_local_data_dir,
 };
-use gpu_util::{PySharedTextureHandle, texture_to_native::linux::SharedTextureHandle};
+#[cfg(target_os = "linux")]
+use gpu_util::texture_to_native::linux::SharedTextureHandle;
+#[cfg(target_os = "windows")]
+use gpu_util::texture_to_native::windows::SharedTextureHandle;
+
+use gpu_util::PySharedTextureHandle;
+use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
@@ -102,6 +108,15 @@ pub struct JsPlManager {
 impl JsPlManager {
     #[napi(constructor)]
     pub fn new(dirs: Dirs) -> Self {
+        let _ = env_logger::try_init(); // すでに初期化されている場合は無視
+        match env_logger::try_init() {
+            Ok(()) => {}
+            Err(e) => {
+                // すでに初期化されている場合は無視するが、デバッグ用にログを出力
+                debug!("env_logger initialization skipped: {}", e);
+            }
+        }
+        
         Self {
             plmanager: None,
             dirs,
@@ -167,6 +182,12 @@ impl JsPlManager {
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
         let content_size = base_texture.coded_size;
+        // rgbaf16またはbgraではない場合はエラー
+        if base_texture.pixel_format != "rgbaf16" && base_texture.pixel_format != "bgra" {
+            return Err(napi::Error::from_reason(
+                "Base texture pixel format must be 'rgbaf16' or 'bgra'".to_string(),
+            ));
+        }
 
         let output = Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);

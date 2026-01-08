@@ -1,9 +1,14 @@
 // gpu_utilは独立したcrateであるため、Aperio本体にはnapi-rsが変換できる型にするために再度同じものを用意する
 
+#[cfg(target_os = "linux")]
 use std::os::fd::RawFd;
-
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::{SharedTextureHandle, SharedTexturePlane};
+
+#[cfg(target_os = "windows")]
+use gpu_util::texture_to_native::windows::SharedTextureHandle;
+#[cfg(target_os = "windows")]
+use napi::bindgen_prelude::Buffer;
 
 use napi_derive::napi;
 
@@ -43,6 +48,7 @@ pub struct Rectangle {
 }
 
 #[napi(object)]
+#[cfg(target_os = "linux")]
 pub struct NodeSharedTexturePlane {
     #[napi(ts_type = "number")]
     pub fd: RawFd,
@@ -52,6 +58,7 @@ pub struct NodeSharedTexturePlane {
 }
 
 #[napi(object)]
+#[cfg(target_os = "linux")]
 pub struct NodeSharedTextureHandleNativePixmap {
     pub planes: Vec<NodeSharedTexturePlane>,
     pub modifier: String,
@@ -68,7 +75,7 @@ pub struct NodeSharedTextureHandle {
 #[napi(object)]
 #[cfg(target_os = "windows")]
 pub struct NodeSharedTextureHandle {
-    pub nt_handle: None, // TODO
+    pub nt_handle: Buffer,
 }
 
 #[napi(object)]
@@ -119,7 +126,9 @@ impl From<NodeSharedTextureHandle> for SharedTextureHandle {
 
         #[cfg(target_os = "windows")]
         {
-            unimplemented!("Windows SharedTextureHandle is not implemented yet");
+            SharedTextureHandle {
+                nt_handle: node_handle.nt_handle.to_vec(),
+            }
         }
 
         #[cfg(target_os = "macos")]

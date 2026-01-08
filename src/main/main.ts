@@ -6,7 +6,7 @@ import { NativeModule } from "./nativeModule";
 import { FrameLayerStructure } from "native";
 
 // TODO: 動的な変更(エラーが起きたら変更など)
-const TEX_FORMAT: "bgra" | "rgba" | "rgbaf16" = "bgra";
+const TEX_FORMAT: "bgra" | "rgba" | "rgbaf16" = "rgbaf16";
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
@@ -88,7 +88,7 @@ async function createWindow() {
     webPreferences: {
       offscreen: {
         useSharedTexture: true,
-        sharedTexturePixelFormat: "argb", // TODO: linuxだったらargb、windowsだったらrgbaf16にする argbはbgraとして返却される。
+        sharedTexturePixelFormat: "rgbaf16", // TODO: linuxだったらargb、windowsだったらrgbaf16にする argbはbgraとして返却される。
       },
       contextIsolation: true,
       nodeIntegration: false,

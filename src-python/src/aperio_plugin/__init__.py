@@ -87,7 +87,7 @@ class PluginManager:
         # プラグインディレクトリ内の各プラグインをインポートしてデコレータを実行する
         # これにより、self.pluginsにプラグインが自動的に登録される
         for d in dirs:
-            plugin_name = d.split("/")[-1]
+            plugin_name = os.path.basename(d)
             if not os.path.exists(f"{d}/__init__.py"):
                 print(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
