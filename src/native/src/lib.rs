@@ -107,7 +107,7 @@ pub struct JsPlManager {
 impl JsPlManager {
     #[napi(constructor)]
     pub fn new(dirs: Dirs) -> Self {
-        env_logger::init();
+        let _ = env_logger::try_init(); // すでに初期化されている場合は無視
 
         Self {
             plmanager: None,

@@ -122,8 +122,17 @@ pub struct ImageGenerator {
 impl ImageGenerator {
     /// 新しいImageGeneratorインスタンスを非同期で作成します。
     pub async fn new() -> Result<Self> {
+        let backends = if cfg!(target_os = "windows") {
+            wgpu::Backends::DX12
+        } else if cfg!(target_os = "linux") {
+            wgpu::Backends::VULKAN
+        } else if cfg!(target_os = "macos") {
+            wgpu::Backends::METAL
+        } else {
+            bail!("Unsupported OS for ImageGenerator");
+        };
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::DX12, // TODO: OSによって変更する
+            backends,
             flags: wgpu::InstanceFlags::advanced_debugging(),
             ..Default::default()
         });
