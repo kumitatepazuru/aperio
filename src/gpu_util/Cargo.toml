@@ -31,7 +31,6 @@ windows = { version = "0.58", features = [
       "Win32_Graphics_Direct3D12",
 ]}
 
-
 [[bin]]
 name = "stub_gen"
 doc = false
