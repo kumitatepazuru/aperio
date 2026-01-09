@@ -2,6 +2,7 @@
 
 #[cfg(target_os = "linux")]
 use std::os::fd::RawFd;
+use gpu_util::SharedTextureFormat;
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::{SharedTextureHandle, SharedTexturePlane};
 
@@ -134,6 +135,21 @@ impl From<NodeSharedTextureHandle> for SharedTextureHandle {
         #[cfg(target_os = "macos")]
         {
             unimplemented!("macOS SharedTextureHandle is not implemented yet");
+        }
+    }
+}
+
+#[napi]
+pub enum NodeSharedTextureFormat {
+    Rgba16Float,
+    Bgra8Unorm,
+}
+
+impl From<NodeSharedTextureFormat> for SharedTextureFormat {
+    fn from(format: NodeSharedTextureFormat) -> Self {
+        match format {
+            NodeSharedTextureFormat::Rgba16Float => SharedTextureFormat::Rgba16Float,
+            NodeSharedTextureFormat::Bgra8Unorm => SharedTextureFormat::Bgra8Unorm,
         }
     }
 }

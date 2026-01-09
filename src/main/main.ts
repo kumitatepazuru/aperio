@@ -3,10 +3,10 @@ import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
-import { FrameLayerStructure } from "native";
+import { FrameLayerStructure, NodeSharedTextureFormat } from "native";
 
 // TODO: 動的な変更(エラーが起きたら変更など)
-const TEX_FORMAT: "bgra" | "rgba" | "rgbaf16" = "rgbaf16";
+const TEX_FORMAT: NodeSharedTextureFormat = NodeSharedTextureFormat.Rgba16Float;
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);

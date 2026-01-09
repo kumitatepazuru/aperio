@@ -2,6 +2,7 @@
 # ruff: noqa: E501, F401
 
 import builtins
+import enum
 import typing
 
 @typing.final
@@ -23,7 +24,7 @@ class PyImageGenerateBuilder:
 class PyImageGenerator:
     def __new__(cls) -> PyImageGenerator: ...
     def generate_buf(self, builder: PyImageGenerateBuilder, buffer_ptr: builtins.int) -> None: ...
-    def generate_shared_texture(self, builder: PyImageGenerateBuilder, texture_handle: PySharedTextureHandle, format: builtins.str) -> None: ...
+    def generate_shared_texture(self, builder: PyImageGenerateBuilder, texture_handle: PySharedTextureHandle, format: SharedTextureFormat) -> None: ...
 
 @typing.final
 class PySamplerOptions:
@@ -32,4 +33,9 @@ class PySamplerOptions:
 @typing.final
 class PySharedTextureHandle:
     ...
+
+@typing.final
+class SharedTextureFormat(enum.Enum):
+    Rgba16Float = ...
+    Bgra8Unorm = ...
 

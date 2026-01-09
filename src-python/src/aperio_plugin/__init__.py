@@ -313,7 +313,7 @@ class PluginManager:
         self.generator.generate_buf(builder, buffer_ptr)
 
     def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: str) -> None:
+                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> None:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -323,7 +323,7 @@ class PluginManager:
             width (int): フレームの幅
             height (int): フレームの高さ
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
-            format (str): 共有テクスチャのフォーマット
+            format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
         """
         builder = self._make_frame(frame_number, frame_structure, width, height)
 

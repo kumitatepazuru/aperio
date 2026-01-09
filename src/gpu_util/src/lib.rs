@@ -3,7 +3,7 @@ use numpy::{PyReadonlyArray1, ToPyArray};
 use pyo3::{exceptions::PyValueError, prelude::*, types::*};
 use pyo3_stub_gen::{
     define_stub_info_gatherer,
-    derive::{gen_stub_pyclass, gen_stub_pymethods},
+    derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods},
 };
 use tokio::runtime::Runtime;
 
@@ -23,6 +23,15 @@ pub mod compiled_wgsl;
 pub mod image_generate_builder;
 pub mod image_generator;
 pub mod texture_to_native;
+
+// texture formatをenumで定義
+#[gen_stub_pyclass_enum]
+#[pyclass]
+#[derive(Debug)]
+pub enum SharedTextureFormat {
+    Rgba16Float,
+    Bgra8Unorm,
+}
 
 // Pythonで動かすためのライブラリのラッパーを作る
 #[gen_stub_pyclass]
@@ -290,7 +299,7 @@ impl PyImageGenerator {
         &self,
         builder: &PyImageGenerateBuilder,
         texture_handle: &PySharedTextureHandle,
-        format: String,
+        format: &SharedTextureFormat,
     ) -> PyResult<()> {
         self.rt.block_on(async {
             self.inner
@@ -311,6 +320,7 @@ pub fn gpu_util(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyImageGenerateBuilder>()?;
     m.add_class::<PyImageGenerator>()?;
     m.add_class::<PySharedTextureHandle>()?;
+    m.add_class::<SharedTextureFormat>()?;
     Ok(())
 }
 

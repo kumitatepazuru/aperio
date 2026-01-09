@@ -17,6 +17,7 @@ use crate::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
         parallel_process::handle_parallel_step, wgsl_process::handle_wgsl_step,
     },
+    SharedTextureFormat,
 };
 use anyhow::{bail, Context, Result};
 use std::{
@@ -532,12 +533,12 @@ impl ImageGenerator {
         &self,
         builder: ImageGenerateBuilder,
         texture_handle: &SharedTextureHandle,
-        format: String,
+        format: &SharedTextureFormat,
     ) -> Result<()> {
         let final_state_vec = self.generate(builder).await?;
 
         if let StepOutput::Gpu { texture, .. } = &final_state_vec[0] {
-            attach_texture_to_shared_texture(texture_handle, &format, texture, self)?;
+            attach_texture_to_shared_texture(texture_handle, format, texture, self)?;
             return Ok(());
         }
 

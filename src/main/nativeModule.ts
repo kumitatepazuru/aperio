@@ -9,6 +9,7 @@ import {
   Dirs,
   FrameLayerStructure,
   NodeOffscreenSharedTextureInfo,
+  NodeSharedTextureFormat,
   PlManager,
 } from "native";
 
@@ -67,7 +68,7 @@ export class NativeModule {
   async getFrameSharedTexture(
     count: number,
     frameStruct: FrameLayerStructure[],
-    format: string,
+    format: NodeSharedTextureFormat,
     frame: Electron.WebContents
   ) {
     this.eventStack.push(async (baseTexture) => {

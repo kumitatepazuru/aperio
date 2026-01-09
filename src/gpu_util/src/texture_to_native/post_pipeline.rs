@@ -1,18 +1,17 @@
-use crate::image_generator::ImageGenerator;
+use crate::{image_generator::ImageGenerator, SharedTextureFormat};
 use anyhow::Result;
 
 /// Render passを使ってsource_textureをdestination_textureに書き込む
 /// Windows/Linux共通の処理
 pub fn blit_texture_with_render_pass(
     source_texture: &wgpu::Texture,
-    format: &str,
+    format: &SharedTextureFormat,
     destination_texture: &wgpu::Texture,
     generator: &ImageGenerator,
 ) -> Result<()> {
     let pipeline = match format {
-        "rgbaf16" => &generator.blit_f32_to_f16_pipeline,
-        "bgra" => &generator.blit_f32_to_bgra8_pipeline,
-        _ => anyhow::bail!("Unsupported format for blit: {}", format),
+        SharedTextureFormat::Rgba16Float => &generator.blit_f32_to_f16_pipeline,
+        SharedTextureFormat::Bgra8Unorm => &generator.blit_f32_to_bgra8_pipeline,
     };
 
     // source textureのビューを作成

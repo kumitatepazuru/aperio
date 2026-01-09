@@ -1,6 +1,6 @@
 use crate::{
     app_config::read_config,
-    node_shared_texture::NodeOffscreenSharedTextureInfo,
+    node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
     structs::{Dirs, FrameLayerStructure},
     util::get_local_data_dir,
 };
@@ -9,7 +9,7 @@ use gpu_util::texture_to_native::linux::SharedTextureHandle;
 #[cfg(target_os = "windows")]
 use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
-use gpu_util::PySharedTextureHandle;
+use gpu_util::{PySharedTextureHandle, SharedTextureFormat};
 use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
@@ -96,8 +96,8 @@ pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
     Ok(pl_manager)
 }
 
-#[napi(js_name = "PlManager")]
-pub struct JsPlManager {
+#[napi]
+pub struct PlManager {
     plmanager: Option<Py<PyAny>>,
     dirs: Dirs,
 }
@@ -105,7 +105,7 @@ pub struct JsPlManager {
 // 一部IDEでanalyserが誤ってエラーを出すため注意
 // 対処方法は(RustRoverの場合)現状ない模様
 #[napi]
-impl JsPlManager {
+impl PlManager {
     #[napi(constructor)]
     pub fn new(dirs: Dirs) -> Self {
         let _ = env_logger::try_init(); // すでに初期化されている場合は無視
@@ -175,7 +175,7 @@ impl JsPlManager {
         count: i32,
         frame_struct: Vec<FrameLayerStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
-        format: String,
+        format: NodeSharedTextureFormat,
     ) -> napi::Result<()> {
         let pl_manager = self
             .plmanager
@@ -194,6 +194,7 @@ impl JsPlManager {
             let frame_struct = frame_struct.into_pyobject(py)?;
             let base_texture: SharedTextureHandle = base_texture.handle.into();
             let base_texture = PySharedTextureHandle::new(base_texture);
+            let format: SharedTextureFormat = format.into();
 
             let func = pl_manager.getattr("make_frame_shared_texture")?;
             func.call1((
