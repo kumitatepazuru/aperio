@@ -12,6 +12,7 @@ use gpu_util::texture_to_native::windows::SharedTextureHandle;
 use napi::bindgen_prelude::Buffer;
 
 use napi_derive::napi;
+use serde::{Deserialize, Serialize};
 
 // https://www.electronjs.org/docs/latest/api/structures/size
 #[napi(object)]
@@ -140,6 +141,7 @@ impl From<NodeSharedTextureHandle> for SharedTextureHandle {
 }
 
 #[napi]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum NodeSharedTextureFormat {
     Rgba16Float,
     Bgra8Unorm,
@@ -150,6 +152,15 @@ impl From<NodeSharedTextureFormat> for SharedTextureFormat {
         match format {
             NodeSharedTextureFormat::Rgba16Float => SharedTextureFormat::Rgba16Float,
             NodeSharedTextureFormat::Bgra8Unorm => SharedTextureFormat::Bgra8Unorm,
+        }
+    }
+}
+
+impl From<SharedTextureFormat> for NodeSharedTextureFormat {
+    fn from(format: SharedTextureFormat) -> Self {
+        match format {
+            SharedTextureFormat::Rgba16Float => NodeSharedTextureFormat::Rgba16Float,
+            SharedTextureFormat::Bgra8Unorm => NodeSharedTextureFormat::Bgra8Unorm,
         }
     }
 }

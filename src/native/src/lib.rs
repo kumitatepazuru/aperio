@@ -116,7 +116,7 @@ impl PlManager {
                 debug!("env_logger initialization skipped: {}", e);
             }
         }
-        
+
         Self {
             plmanager: None,
             dirs,
@@ -136,6 +136,14 @@ impl PlManager {
         self.plmanager = Some(pl_manager);
 
         Ok(())
+    }
+
+    #[napi]
+    pub fn get_shared_texture_format(&self) -> napi::Result<NodeSharedTextureFormat> {
+        let config = app_config::read_config(&self.dirs)
+            .map_err(|e| napi::Error::from_reason(format!("Failed to read app config: {:?}", e)))?;
+
+        Ok(config.tex_pixel_format.into())
     }
 
     #[napi]
@@ -175,18 +183,23 @@ impl PlManager {
         count: i32,
         frame_struct: Vec<FrameLayerStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
-        format: NodeSharedTextureFormat,
     ) -> napi::Result<()> {
         let pl_manager = self
             .plmanager
             .as_ref()
             .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
         let content_size = base_texture.coded_size;
-        // rgbaf16またはbgraではない場合はエラー
-        if base_texture.pixel_format != "rgbaf16" && base_texture.pixel_format != "bgra" {
-            return Err(napi::Error::from_reason(
-                "Base texture pixel format must be 'rgbaf16' or 'bgra'".to_string(),
-            ));
+        let format = self.get_shared_texture_format()?;
+        // formatとbase_texture.pixel_formatが一致してなければエラー
+        if (format == NodeSharedTextureFormat::Rgba16Float
+            && base_texture.pixel_format != "rgbaf16")
+            || (format == NodeSharedTextureFormat::Bgra8Unorm
+                && base_texture.pixel_format != "bgra")
+        {
+            return Err(napi::Error::from_reason(format!(
+                "Pixel format mismatch: expected {:?}, got {}",
+                format, base_texture.pixel_format
+            )));
         }
 
         let output = Python::attach(|py| -> PyResult<()> {

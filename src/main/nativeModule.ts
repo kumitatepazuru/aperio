@@ -9,12 +9,11 @@ import {
   Dirs,
   FrameLayerStructure,
   NodeOffscreenSharedTextureInfo,
-  NodeSharedTextureFormat,
   PlManager,
 } from "native";
 
 export class NativeModule {
-  plManagerSingleton: PlManager;
+  plManager: PlManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
   buffer: SharedArrayBuffer;
@@ -33,8 +32,8 @@ export class NativeModule {
     console.log("Plugin Manager Path:", dirs.pluginManagerDir);
     console.log("Default Plugins Path:", dirs.defaultPluginsDir);
     console.log("Dist Path:", dirs.distDir);
-    this.plManagerSingleton = new PlManager(dirs);
-    this.plManagerSingleton.initialize();
+    this.plManager = new PlManager(dirs);
+    this.plManager.initialize();
 
     this.buffer = new SharedArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
   }
@@ -61,14 +60,13 @@ export class NativeModule {
     const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
     const data = new Uint8Array(buffer);
 
-    this.plManagerSingleton.getFrameBuf(data, count, frameStruct);
+    this.plManager.getFrameBuf(data, count, frameStruct);
     this.p1.postMessage(buffer);
   }
 
   async getFrameSharedTexture(
     count: number,
     frameStruct: FrameLayerStructure[],
-    format: NodeSharedTextureFormat,
     frame: Electron.WebContents
   ) {
     this.eventStack.push(async (baseTexture) => {
@@ -76,11 +74,10 @@ export class NativeModule {
       if (!textureInfo) {
         throw new Error("Failed to get base shared texture");
       }
-      this.plManagerSingleton.getFrameTexture(
+      this.plManager.getFrameTexture(
         count,
         frameStruct,
-        textureInfo as NodeOffscreenSharedTextureInfo,
-        format
+        textureInfo as NodeOffscreenSharedTextureInfo
       );
 
       const imported = sharedTexture.importSharedTexture({

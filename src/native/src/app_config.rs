@@ -3,6 +3,7 @@ use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::node_shared_texture::NodeSharedTextureFormat;
 use crate::util::get_data_dir;
 use crate::Dirs;
 
@@ -13,14 +14,17 @@ pub struct PythonConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub python: PythonConfig,
+    pub tex_pixel_format: NodeSharedTextureFormat,
 }
+
+const DEFAULT_CONFIG: &str = include_str!("data/default-config.json");
 
 pub fn init_config(dirs: &Dirs) -> Result<()> {
     // 設定ファイルがあるか確認し、なければdefault-config.jsonをコピー
     let appdata_dir = get_data_dir(dirs)?;
     let config_path = appdata_dir.join("config.json");
     if !config_path.exists() {
-        let config_bytes = include_bytes!("data/default-config.json");
+        let config_bytes = DEFAULT_CONFIG.as_bytes();
         let mut file = File::create(&config_path)?;
         file.write(config_bytes)?;
         file.sync_data()?;
@@ -59,7 +63,7 @@ pub fn read_config(dirs: &Dirs) -> Result<AppConfig> {
 }
 
 fn merge_configs(config: &str) -> Result<Value> {
-    let default_config_bytes = include_bytes!("data/default-config.json");
+    let default_config_bytes = DEFAULT_CONFIG.as_bytes();
     let default_config: Value = serde_json::from_slice(default_config_bytes)?;
     let user_config: Value = serde_json::from_str(config)?;
     let mut merged_config = default_config;

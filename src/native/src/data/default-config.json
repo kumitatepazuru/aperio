@@ -1,5 +1,6 @@
 {
   "python": {
     "default_version": "3.13.0"
-  }
+  },
+  "tex_pixel_format": "Bgra8Unorm"
 }

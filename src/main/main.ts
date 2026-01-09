@@ -5,9 +5,6 @@ import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
 import { FrameLayerStructure, NodeSharedTextureFormat } from "native";
 
-// TODO: 動的な変更(エラーが起きたら変更など)
-const TEX_FORMAT: NodeSharedTextureFormat = NodeSharedTextureFormat.Rgba16Float;
-
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
 
@@ -71,16 +68,21 @@ ipcMain.handle(
 ipcMain.handle(
   "get-frame-shared-texture",
   async (event, count: number, frameStruct: FrameLayerStructure[]) => {
-    await nativeModule.getFrameSharedTexture(
-      count,
-      frameStruct,
-      TEX_FORMAT,
-      event.sender
-    );
+    await nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
   }
 );
 
 async function createWindow() {
+  let format: "argb" | "rgbaf16" | undefined;
+  switch (nativeModule.plManager.getSharedTextureFormat()) {
+    case NodeSharedTextureFormat.Rgba16Float:
+      format = "rgbaf16";
+      break;
+    case NodeSharedTextureFormat.Bgra8Unorm:
+      format = "argb";
+      break;
+  }
+
   osrWin = new BrowserWindow({
     width: 1920,
     height: 1080,
@@ -88,7 +90,7 @@ async function createWindow() {
     webPreferences: {
       offscreen: {
         useSharedTexture: true,
-        sharedTexturePixelFormat: "rgbaf16", // TODO: linuxだったらargb、windowsだったらrgbaf16にする argbはbgraとして返却される。
+        sharedTexturePixelFormat: format,
       },
       contextIsolation: true,
       nodeIntegration: false,
@@ -111,7 +113,8 @@ async function createWindow() {
 
   if (isDev) {
     // Vite の dev サーバに接続
-    const url = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173/renderer/";
+    const url =
+      process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173/renderer/";
     await win.loadURL(url);
     await osrWin.loadURL("http://localhost:5173/osr/");
     win.webContents.openDevTools({ mode: "detach" });
