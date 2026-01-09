@@ -84,7 +84,7 @@ async function createWindow() {
   osrWin = new BrowserWindow({
     width: 1920,
     height: 1080,
-    show: true, // debug
+    show: false,
     webPreferences: {
       offscreen: {
         useSharedTexture: true,
@@ -96,7 +96,6 @@ async function createWindow() {
     },
   });
   nativeModule.setOsrWebContents(osrWin.webContents);
-  osrWin.loadURL("https://webglsamples.org/aquarium/aquarium.html"); // TODO: OSR用のベースページを用意
 
   win = new BrowserWindow({
     width: 1100,
@@ -112,13 +111,16 @@ async function createWindow() {
 
   if (isDev) {
     // Vite の dev サーバに接続
-    const url = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
+    const url = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173/renderer/";
     await win.loadURL(url);
+    await osrWin.loadURL("http://localhost:5173/osr/");
     win.webContents.openDevTools({ mode: "detach" });
   } else {
     // 本番はビルド済みファイルを読む
     const indexHtml = path.join(dirName, "./renderer/index.html");
+    const osrHtml = path.join(dirName, "./osr/index.html");
     await win.loadFile(indexHtml);
+    await osrWin.loadFile(osrHtml);
   }
 
   win.on("closed", () => (win = null));
