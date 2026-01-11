@@ -1,4 +1,4 @@
-import { FrameLayerStructure } from "native";
+import { type FrameLayerStructure, type AppConfig } from "native";
 import { sharedTexture } from "electron";
 
 declare global {
@@ -16,6 +16,9 @@ declare global {
         count: number,
         frameStruct: FrameLayerStructure[]
       ) => Promise<void>;
+    };
+    main: {
+      getConfig: () => Promise<AppConfig>;
     };
   }
 }

@@ -72,9 +72,13 @@ ipcMain.handle(
   }
 );
 
+ipcMain.handle("get-config", () => {
+  return nativeModule.plManager.configManager.config;
+});
+
 async function createWindow() {
   let format: "argb" | "rgbaf16" | undefined;
-  switch (nativeModule.plManager.getSharedTextureFormat()) {
+  switch (nativeModule.plManager.configManager.config.texPixelFormat) {
     case NodeSharedTextureFormat.Rgba16Float:
       format = "rgbaf16";
       break;

@@ -155,12 +155,3 @@ impl From<NodeSharedTextureFormat> for SharedTextureFormat {
         }
     }
 }
-
-impl From<SharedTextureFormat> for NodeSharedTextureFormat {
-    fn from(format: SharedTextureFormat) -> Self {
-        match format {
-            SharedTextureFormat::Rgba16Float => NodeSharedTextureFormat::Rgba16Float,
-            SharedTextureFormat::Bgra8Unorm => NodeSharedTextureFormat::Bgra8Unorm,
-        }
-    }
-}

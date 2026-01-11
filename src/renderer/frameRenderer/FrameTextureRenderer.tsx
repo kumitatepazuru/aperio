@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FrameLayerStructure } from "native";
 
 const frameStruct: FrameLayerStructure[] = [
@@ -73,11 +73,11 @@ const FrameTextureRenderer = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const resourcesRef = useRef<WebGPUResources | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const isRunningRef = useRef(false);
-  const countRef = useRef(0);
+  const frameCount = useRef(0);
+  const [initialized, setInitialized] = useState(false);
 
   // WebGPUリソースの初期化
-  const initWebGPU = useCallback(async (): Promise<WebGPUResources | null> => {
+  const initWebGPU = async (): Promise<WebGPUResources | null> => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
@@ -168,90 +168,83 @@ const FrameTextureRenderer = () => {
       sampler,
       bindGroupLayout,
     };
-  }, []);
-
+  };
   // VideoFrameを描画する関数
-  const renderVideoFrame = useCallback(
-    (videoFrame: VideoFrame, resources: WebGPUResources) => {
-      const { device, context, pipeline, sampler, bindGroupLayout } = resources;
+  const renderVideoFrame = (
+    videoFrame: VideoFrame,
+    resources: WebGPUResources
+  ) => {
+    const { device, context, pipeline, sampler, bindGroupLayout } = resources;
 
-      // external textureのインポート
-      const externalTexture = device.importExternalTexture({
-        source: videoFrame,
-      });
+    // external textureのインポート
+    const externalTexture = device.importExternalTexture({
+      source: videoFrame,
+    });
 
-      // バインドグループの作成
-      const bindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [
-          {
-            binding: 0,
-            resource: externalTexture,
-          },
-          {
-            binding: 1,
-            resource: sampler,
-          },
-        ],
-      });
+    // バインドグループの作成
+    const bindGroup = device.createBindGroup({
+      layout: bindGroupLayout,
+      entries: [
+        {
+          binding: 0,
+          resource: externalTexture,
+        },
+        {
+          binding: 1,
+          resource: sampler,
+        },
+      ],
+    });
 
-      // // コマンドエンコーダーの作成
-      const commandEncoder = device.createCommandEncoder();
+    // // コマンドエンコーダーの作成
+    const commandEncoder = device.createCommandEncoder();
 
-      // // レンダーパスの開始
-      const renderPass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: context.getCurrentTexture().createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ],
-      });
+    // // レンダーパスの開始
+    const renderPass = commandEncoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: context.getCurrentTexture().createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        },
+      ],
+    });
 
-      renderPass.setPipeline(pipeline);
-      renderPass.setBindGroup(0, bindGroup);
-      renderPass.draw(6);
-      renderPass.end();
+    renderPass.setPipeline(pipeline);
+    renderPass.setBindGroup(0, bindGroup);
+    renderPass.draw(6);
+    renderPass.end();
 
-      // コマンドの送信
-      device.queue.submit([commandEncoder.finish()]);
-    },
-    []
-  );
+    // コマンドの送信
+    device.queue.submit([commandEncoder.finish()]);
+  };
 
   // フレームループ
-  const frameLoop = useCallback(async () => {
-    if (!isRunningRef.current || !resourcesRef.current) return;
+  const frameLoop = async () => {
+    if (!resourcesRef.current) return;
 
     try {
       // getFrameSharedTextureを呼び出し
-      await window.frame.getFrameSharedTexture(countRef.current, frameStruct);
-      countRef.current += 1;
+      await window.frame.getFrameSharedTexture(frameCount.current, frameStruct);
     } catch (error) {
       console.error("Error getting frame:", error);
     }
-
-    // 次のフレームをスケジュール
-    if (isRunningRef.current) {
-      animationFrameRef.current = requestAnimationFrame(frameLoop);
-    }
-  }, []);
+  };
 
   useEffect(() => {
-    let mounted = true;
+    console.log("FrameTextureRenderer mounted");
 
     const setup = async () => {
       // WebGPUリソースの初期化
       const resources = await initWebGPU();
-      if (!mounted || !resources) return;
+      if (!resources) return;
 
       resourcesRef.current = resources;
 
       // レシーバーの設定
       window.frame.setReceiver(async (textureInfo) => {
-        if (!mounted || !resourcesRef.current) return;
+        if (!resourcesRef.current) return;
 
         try {
           // VideoFrameを取得
@@ -266,28 +259,38 @@ const FrameTextureRenderer = () => {
         } catch (error) {
           console.error("Error processing texture:", error);
         }
-      });
 
-      // フレームループの開始
-      isRunningRef.current = true;
-      animationFrameRef.current = requestAnimationFrame(frameLoop);
+        // TODO: 同期処理をしているためフレーム生成速度によってFPSが変わる
+        // 実際は経過時間基準のフレームカウントがされるため、current(時間基準)とcount(フレーム基準)の変数を作り生成完了と同時にcountにcurrentをセットする形にする
+        frameCount.current += 1;
+        requestAnimationFrame(frameLoop);
+      });
+      setInitialized(true);
     };
 
     setup();
 
     return () => {
-      mounted = false;
-      isRunningRef.current = false;
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
       // WebGPUリソースのクリーンアップ
       if (resourcesRef.current) {
         resourcesRef.current.device.destroy();
         resourcesRef.current = null;
       }
     };
-  }, [initWebGPU, renderVideoFrame, frameLoop]);
+  }, []);
+
+  // setupが終わってからframe loopを開始
+  useEffect(() => {
+    if (initialized) {
+      animationFrameRef.current = requestAnimationFrame(frameLoop);
+    }
+
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [initialized]);
 
   return (
     <canvas

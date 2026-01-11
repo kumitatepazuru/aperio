@@ -1,5 +1,5 @@
 use crate::{
-    app_config::read_config,
+    app_config::{AppConfig, AppConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
     structs::{Dirs, FrameLayerStructure},
     util::get_local_data_dir,
@@ -37,11 +37,8 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
     }
 }
 
-pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
-    // configの初期化
-    app_config::init_config(dirs)?;
-    let config = read_config(dirs)?;
-    let default_version = config.python.default_version;
+fn _initialize(dirs: &Dirs, config: &AppConfig) -> anyhow::Result<Py<PyAny>> {
+    let default_version = &config.python.default_version;
     let local_data_dir = get_local_data_dir(dirs)?;
     let python_path = local_data_dir.join("python"); // pythonがある
 
@@ -49,7 +46,7 @@ pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
     // python環境変数の設定
     if !python_path.exists() {
         println!("Found no Python installation at {:?}", python_path);
-        python::utils::install_python(dirs, &default_version, true)?;
+        python::utils::install_python(dirs, default_version, true)?;
     }
     python::utils::add_python_path_env(dirs)?;
 
@@ -60,7 +57,7 @@ pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
         println!("Python is not installed. Installing...");
         python::utils::install_python(
             dirs,
-            result.version.as_ref().unwrap_or(&default_version),
+            result.version.as_ref().unwrap_or(default_version),
             result.version.is_none(),
         )?;
         println!("Python installed");
@@ -98,8 +95,8 @@ pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
 
 #[napi]
 pub struct PlManager {
-    plmanager: Option<Py<PyAny>>,
-    dirs: Dirs,
+    plmanager: Py<PyAny>,
+    config_manager: AppConfigManager,
 }
 
 // 一部IDEでanalyserが誤ってエラーを出すため注意
@@ -107,7 +104,7 @@ pub struct PlManager {
 #[napi]
 impl PlManager {
     #[napi(constructor)]
-    pub fn new(dirs: Dirs) -> Self {
+    pub fn new(dirs: Dirs) -> napi::Result<Self> {
         let _ = env_logger::try_init(); // すでに初期化されている場合は無視
         match env_logger::try_init() {
             Ok(()) => {}
@@ -116,34 +113,21 @@ impl PlManager {
                 debug!("env_logger initialization skipped: {}", e);
             }
         }
-
-        Self {
-            plmanager: None,
-            dirs,
-        }
-    }
-
-    #[napi]
-    pub fn initialize(&mut self) -> napi::Result<()> {
-        let result = _initialize(&self.dirs);
-        let pl_manager = result.map_err(|e| {
-            eprintln!("Failed to initialize Python environment: {:?}", e);
-
+        let config_manager = AppConfigManager::new(&dirs)?;
+        let config = config_manager.get_config();
+        let plmanager = _initialize(&dirs, &config).map_err(|e| {
             napi::Error::from_reason(format!("Failed to initialize Python environment: {:?}", e))
         })?;
 
-        // 内部情報の更新
-        self.plmanager = Some(pl_manager);
-
-        Ok(())
+        Ok(Self {
+            plmanager,
+            config_manager,
+        })
     }
 
-    #[napi]
-    pub fn get_shared_texture_format(&self) -> napi::Result<NodeSharedTextureFormat> {
-        let config = app_config::read_config(&self.dirs)
-            .map_err(|e| napi::Error::from_reason(format!("Failed to read app config: {:?}", e)))?;
-
-        Ok(config.tex_pixel_format.into())
+    #[napi(getter)]
+    pub fn config_manager(&self) -> AppConfigManager {
+        self.config_manager.clone()
     }
 
     #[napi]
@@ -153,10 +137,7 @@ impl PlManager {
         count: i32,
         frame_struct: Vec<FrameLayerStructure>,
     ) -> napi::Result<()> {
-        let pl_manager = self
-            .plmanager
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+        let pl_manager = self.plmanager.as_ref();
 
         Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);
@@ -184,12 +165,10 @@ impl PlManager {
         frame_struct: Vec<FrameLayerStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
     ) -> napi::Result<()> {
-        let pl_manager = self
-            .plmanager
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+        let pl_manager = self.plmanager.as_ref();
+
         let content_size = base_texture.coded_size;
-        let format = self.get_shared_texture_format()?;
+        let format = self.config_manager.get_config().tex_pixel_format;
         // formatとbase_texture.pixel_formatが一致してなければエラー
         if (format == NodeSharedTextureFormat::Rgba16Float
             && base_texture.pixel_format != "rgbaf16")
