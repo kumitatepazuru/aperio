@@ -14,13 +14,12 @@ import {
   PlManager,
 } from "native";
 
-const TIMEOUT_MS = 10000;
+const TIMEOUT_MS = 1000;
 
 export class NativeModule {
   plManager: PlManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
-  buffer: SharedArrayBuffer;
   eventStack: ((texture: OffscreenSharedTexture) => Promise<void>)[] = [];
   paintTimeout: NodeJS.Timeout | null = null;
 
@@ -38,8 +37,6 @@ export class NativeModule {
     console.log("Default Plugins Path:", dirs.defaultPluginsDir);
     console.log("Dist Path:", dirs.distDir);
     this.plManager = new PlManager(dirs);
-
-    this.buffer = new SharedArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
   }
 
   setOsrWebContents(wc: Electron.WebContents) {

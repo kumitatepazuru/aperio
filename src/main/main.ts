@@ -77,31 +77,34 @@ ipcMain.handle("get-config", () => {
 });
 
 async function createWindow() {
-  let format: "argb" | "rgbaf16" | undefined;
-  switch (nativeModule.plManager.configManager.config.texPixelFormat) {
-    case NodeSharedTextureFormat.Rgba16Float:
-      format = "rgbaf16";
-      break;
-    case NodeSharedTextureFormat.Bgra8Unorm:
-      format = "argb";
-      break;
-  }
+  const config = nativeModule.plManager.configManager.config;
+  if (config.fastPreview) {
+    let format: "argb" | "rgbaf16" | undefined;
+    switch (config.texPixelFormat) {
+      case NodeSharedTextureFormat.Rgba16Float:
+        format = "rgbaf16";
+        break;
+      case NodeSharedTextureFormat.Bgra8Unorm:
+        format = "argb";
+        break;
+    }
 
-  osrWin = new BrowserWindow({
-    width: 1920,
-    height: 1080,
-    show: false,
-    webPreferences: {
-      offscreen: {
-        useSharedTexture: true,
-        sharedTexturePixelFormat: format,
+    osrWin = new BrowserWindow({
+      width: 1920,
+      height: 1080,
+      show: false,
+      webPreferences: {
+        offscreen: {
+          useSharedTexture: true,
+          sharedTexturePixelFormat: format,
+        },
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
       },
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  });
-  nativeModule.setOsrWebContents(osrWin.webContents);
+    });
+    nativeModule.setOsrWebContents(osrWin.webContents);
+  }
 
   win = new BrowserWindow({
     width: 1100,
@@ -120,14 +123,14 @@ async function createWindow() {
     const url =
       process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173/renderer/";
     await win.loadURL(url);
-    await osrWin.loadURL("http://localhost:5173/osr/");
+    await osrWin?.loadURL("http://localhost:5173/osr/");
     win.webContents.openDevTools({ mode: "detach" });
   } else {
     // 本番はビルド済みファイルを読む
     const indexHtml = path.join(dirName, "./renderer/index.html");
     const osrHtml = path.join(dirName, "./osr/index.html");
     await win.loadFile(indexHtml);
-    await osrWin.loadFile(osrHtml);
+    await osrWin?.loadFile(osrHtml);
   }
 
   win.on("closed", () => (win = null));
