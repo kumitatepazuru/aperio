@@ -86,9 +86,9 @@ class PluginManager:
 
         # プラグインディレクトリ内の各プラグインをインポートしてデコレータを実行する
         # これにより、self.pluginsにプラグインが自動的に登録される
-        for d in dirs:
-            plugin_name = d.split("/")[-1]
-            if not os.path.exists(f"{d}/__init__.py"):
+        for dir in dirs:
+            plugin_name = os.path.basename(dir)
+            if not os.path.exists(f"{dir}/__init__.py"):
                 print(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
             __import__(f"{self.plugin_dir_name}.{plugin_name}")
@@ -214,17 +214,19 @@ class PluginManager:
         self.__load_plugins()
         return True
 
-    def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, buffer_ptr: int) -> None:
+    def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
+                             width: int, height: int) -> gpu_util.PyImageGenerateBuilder:
         """
-        指定されたフレーム構造に基づいてフレームを生成するメソッド。
+        指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
+
+        このメソッドは公開APIから呼び出されるフレーム生成処理を共通化するために  
+        切り出されたものであり、クラス外部から直接利用されることは想定していない。
 
         Args:
             frame_number (int): 生成するフレームの番号
             frame_structure (list[LayerStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-            buffer_ptr (int): 書き込み先バッファのポインタ
         """
         try:
             if not isinstance(frame_structure, list):
@@ -237,7 +239,6 @@ class PluginManager:
                 raise ValueError("width and height must be positive integers")
             if len(frame_structure) == 0:
                 raise ValueError("frame_structure must contain at least one layer")
-
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
             params = []
@@ -286,18 +287,50 @@ class PluginManager:
                 params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"], alpha, *rotation_matrix)
                 params.append(params_bytes)
 
-            # GPU処理実行
+            # builderを作成
             builder = gpu_util.PyImageGenerateBuilder() \
                 .add_parallel_wgsl(layer_builders) \
                 .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
 
-            # 直接バッファに書き込み
-            self.generator.generate(builder, buffer_ptr)
-
         except Exception as e:
             import traceback
             traceback.print_exc()
-            raise RuntimeError(f"Failed to make frame: {e}")
+            raise RuntimeError(f"Failed to build frame pipeline: {e}")  
+
+        return builder
+    
+    def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], 
+                             width: int, height: int, buffer_ptr: int) -> None:
+        """
+        指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
+
+        Args:
+            frame_number (int): 生成するフレームの番号
+            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            width (int): フレームの幅
+            height (int): フレームの高さ
+            buffer_ptr (int): 書き込み先バッファのポインタ
+        """
+        builder = self._make_frame(frame_number, frame_structure, width, height)
+
+        self.generator.generate_buf(builder, buffer_ptr)
+
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], 
+                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> None:
+        """
+        指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
+
+        Args:
+            frame_number (int): 生成するフレームの番号
+            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            width (int): フレームの幅
+            height (int): フレームの高さ
+            texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
+            format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
+        """
+        builder = self._make_frame(frame_number, frame_structure, width, height)
+
+        self.generator.generate_shared_texture(builder, texture_handle, format)
 
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
@@ -318,7 +351,7 @@ class PluginManager:
                 raise ValueError("amount must be a positive integer")
 
             frames = []
-            futures = [executor.submit(self.make_frame, start_frame_number + i, *args, **kwargs)
+            futures = [executor.submit(self.make_frame_buf, start_frame_number + i, *args, **kwargs)
                        for i in range(amount)]
             for future in futures:
                 frames.append(future.result())

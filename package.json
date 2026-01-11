@@ -26,42 +26,36 @@
     "gpu:stubgen": "run-s gpu:stub && bun run scripts/pmkdir.ts src-python/out/gpu_util && mv src/gpu_util/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.6",
-    "@react-three/fiber": "^9.4.0",
     "@tailwindcss/vite": "^4.1.16",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "tailwindcss": "^4.1.16",
-    "three": "^0.180.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@emnapi/core": "^1.5.0",
     "@emnapi/runtime": "^1.5.0",
     "@eslint/js": "^9.36.0",
-    "@napi-rs/cli": "^3.5.0",
+    "@napi-rs/cli": "^3.5.1",
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
-    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "@webgpu/types": "^0.1.68",
     "babel-plugin-react-compiler": "^19.1.0-rc.3",
     "cross-env": "^10.1.0",
-    "electron": "^38.3.0",
+    "electron": "40.0.0-beta.6",
     "electron-builder": "^26.0.12",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
     "globals": "^16.4.0",
     "npm-run-all2": "^8.0.4",
-    "rolldown": "^1.0.0-beta.53",
+    "rolldown": "1.0.0-beta.58",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.45.0",
-    "vite": "npm:rolldown-vite@7.1.14",
+    "vite": "^8.0.0-beta.7",
     "wait-on": "^9.0.1"
-  },
-  "overrides": {
-    "vite": "npm:rolldown-vite@7.1.14"
   },
   "napi": {
     "binaryName": "aperio",

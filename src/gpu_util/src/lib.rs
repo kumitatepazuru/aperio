@@ -3,7 +3,7 @@ use numpy::{PyReadonlyArray1, ToPyArray};
 use pyo3::{exceptions::PyValueError, prelude::*, types::*};
 use pyo3_stub_gen::{
     define_stub_info_gatherer,
-    derive::{gen_stub_pyclass, gen_stub_pymethods},
+    derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods},
 };
 use tokio::runtime::Runtime;
 
@@ -12,10 +12,26 @@ use crate::{
     image_generate_builder::ImageGenerateBuilder,
 };
 
+#[cfg(target_os = "linux")]
+use crate::texture_to_native::linux::SharedTextureHandle;
+#[cfg(target_os = "windows")]
+use crate::texture_to_native::windows::SharedTextureHandle;
+
+pub mod common_pipeline;
 pub mod compiled_func;
 pub mod compiled_wgsl;
 pub mod image_generate_builder;
 pub mod image_generator;
+pub mod texture_to_native;
+
+// texture formatをenumで定義
+#[gen_stub_pyclass_enum]
+#[pyclass]
+#[derive(Debug)]
+pub enum SharedTextureFormat {
+    Rgba16Float,
+    Bgra8Unorm,
+}
 
 // Pythonで動かすためのライブラリのラッパーを作る
 #[gen_stub_pyclass]
@@ -35,6 +51,12 @@ pub struct PyCompiledWgsl {
 pub struct PyCompiledFunc {
     _id: String,
     pub inner: compiled_func::CompiledFunc,
+}
+
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct PySharedTextureHandle {
+    pub inner: SharedTextureHandle,
 }
 
 #[gen_stub_pyclass]
@@ -79,7 +101,10 @@ impl PySamplerOptions {
         };
 
         Ok(Self {
-            inner: compiled_wgsl::SamplerOptions { address_mode, filter },
+            inner: compiled_wgsl::SamplerOptions {
+                address_mode,
+                filter,
+            },
         })
     }
 }
@@ -160,6 +185,12 @@ impl PyCompiledFunc {
             _id: id.to_string(),
             inner,
         })
+    }
+}
+
+impl PySharedTextureHandle {
+    pub fn new(handle: SharedTextureHandle) -> Self {
+        Self { inner: handle }
     }
 }
 
@@ -247,15 +278,34 @@ impl PyImageGenerator {
         Ok(Self { inner, rt })
     }
 
-    pub fn generate(&self, builder: &PyImageGenerateBuilder, buffer_ptr: usize) -> PyResult<()> {
+    pub fn generate_buf(
+        &self,
+        builder: &PyImageGenerateBuilder,
+        buffer_ptr: usize,
+    ) -> PyResult<()> {
         let result = self
             .rt
-            .block_on(async { self.inner.generate(builder.inner.clone()).await })?;
+            .block_on(async { self.inner.generate_buf(builder.inner.clone()).await })?;
 
         // 直接メモリコピー
         unsafe {
             std::ptr::copy_nonoverlapping(result.as_ptr(), buffer_ptr as *mut u8, result.len());
         }
+
+        Ok(())
+    }
+
+    pub fn generate_shared_texture(
+        &self,
+        builder: &PyImageGenerateBuilder,
+        texture_handle: &PySharedTextureHandle,
+        format: &SharedTextureFormat,
+    ) -> PyResult<()> {
+        self.rt.block_on(async {
+            self.inner
+                .generate_shared_texture(builder.inner.clone(), &texture_handle.inner, format)
+                .await
+        })?;
 
         Ok(())
     }
@@ -269,6 +319,8 @@ pub fn gpu_util(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyCompiledFunc>()?;
     m.add_class::<PyImageGenerateBuilder>()?;
     m.add_class::<PyImageGenerator>()?;
+    m.add_class::<PySharedTextureHandle>()?;
+    m.add_class::<SharedTextureFormat>()?;
     Ok(())
 }
 

@@ -21,6 +21,16 @@ pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
 numpy = "0.27.0"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.178"
+ash = "0.38"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+      "Win32_Foundation",
+      "Win32_Graphics_Direct3D12",
+]}
+
 [[bin]]
 name = "stub_gen"
 doc = false
