@@ -41,23 +41,21 @@
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",
+    "@webgpu/types": "^0.1.68",
     "babel-plugin-react-compiler": "^19.1.0-rc.3",
     "cross-env": "^10.1.0",
-    "electron": "npm:electron-nightly@41.0.0-nightly.20260105",
+    "electron": "40.0.0-beta.6",
     "electron-builder": "^26.0.12",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
     "globals": "^16.4.0",
     "npm-run-all2": "^8.0.4",
-    "rolldown": "^1.0.0-beta.58",
+    "rolldown": "1.0.0-beta.58",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.45.0",
-    "vite": "npm:rolldown-vite@7.1.14",
+    "vite": "^8.0.0-beta.7",
     "wait-on": "^9.0.1"
-  },
-  "overrides": {
-    "vite": "npm:rolldown-vite@7.1.14"
   },
   "napi": {
     "binaryName": "aperio",
