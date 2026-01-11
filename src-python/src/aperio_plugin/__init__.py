@@ -86,9 +86,9 @@ class PluginManager:
 
         # プラグインディレクトリ内の各プラグインをインポートしてデコレータを実行する
         # これにより、self.pluginsにプラグインが自動的に登録される
-        for d in dirs:
-            plugin_name = os.path.basename(d)
-            if not os.path.exists(f"{d}/__init__.py"):
+        for dir in dirs:
+            plugin_name = os.path.basename(dir)
+            if not os.path.exists(f"{dir}/__init__.py"):
                 print(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
             __import__(f"{self.plugin_dir_name}.{plugin_name}")
@@ -217,7 +217,10 @@ class PluginManager:
     def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
                              width: int, height: int) -> gpu_util.PyImageGenerateBuilder:
         """
-        指定されたフレーム構造に基づいてフレームを生成するメソッド。
+        指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
+
+        このメソッドは公開APIから呼び出されるフレーム生成処理を共通化するために  
+        切り出されたものであり、クラス外部から直接利用されることは想定していない。
 
         Args:
             frame_number (int): 生成するフレームの番号
@@ -292,7 +295,7 @@ class PluginManager:
         except Exception as e:
             import traceback
             traceback.print_exc()
-            raise RuntimeError(f"Failed to initialize make frame: {e}")
+            raise RuntimeError(f"Failed to build frame pipeline: {e}")  
 
         return builder
     

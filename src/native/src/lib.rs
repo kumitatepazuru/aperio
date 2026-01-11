@@ -105,7 +105,6 @@ pub struct PlManager {
 impl PlManager {
     #[napi(constructor)]
     pub fn new(dirs: Dirs) -> napi::Result<Self> {
-        let _ = env_logger::try_init(); // すでに初期化されている場合は無視
         match env_logger::try_init() {
             Ok(()) => {}
             Err(e) => {

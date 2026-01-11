@@ -1,11 +1,11 @@
 use std::os::fd::RawFd;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use ash::vk;
 
 use crate::{
     image_generator::ImageGenerator,
-    texture_to_native::post_pipeline::blit_texture_with_render_pass,
+    texture_to_native::post_pipeline::blit_texture_with_render_pass, SharedTextureFormat,
 };
 
 pub struct SharedTextureHandle {
@@ -47,7 +47,7 @@ fn dup_fd(fd: i32) -> Result<i32> {
 /// この関数はVulkanのunsafeなAPIを使用します。
 pub fn attach_texture_to_shared_texture(
     shared_handle: &SharedTextureHandle,
-    format: String,
+    format: &SharedTextureFormat,
     source_texture: &wgpu::Texture,
     generator: &ImageGenerator,
 ) -> Result<()> {
@@ -57,10 +57,10 @@ pub fn attach_texture_to_shared_texture(
 
     // dmabufからwgpuテクスチャを作成
     let destination_texture =
-        create_texture_from_dmabuf(shared_handle, generator, &format, width, height)?;
+        create_texture_from_dmabuf(shared_handle, generator, format, width, height)?;
 
     // render passを使ってsource_textureをdestination_textureに書き込む
-    blit_texture_with_render_pass(source_texture, &destination_texture, &format, generator)?;
+    blit_texture_with_render_pass(source_texture, format, &destination_texture, generator)?;
 
     generator.device.poll(wgpu::PollType::Wait {
         submission_index: None,
@@ -74,7 +74,7 @@ pub fn attach_texture_to_shared_texture(
 fn create_texture_from_dmabuf(
     shared_handle: &SharedTextureHandle,
     generator: &ImageGenerator,
-    shared_handle_format: &str,
+    shared_handle_format: &SharedTextureFormat,
     width: u32,
     height: u32,
 ) -> Result<wgpu::Texture> {
@@ -104,15 +104,9 @@ fn create_texture_from_dmabuf(
         let external_memory_info = vk::ExternalMemoryImageCreateInfo::default()
             .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
 
-        let vk_format = match shared_handle_format.as_str() {
-            "rgbaf16" => vk::Format::R16G16B16A16_SFLOAT,
-            "bgra" => vk::Format::B8G8R8A8_UNORM, // BGRAフォーマット
-            _ => {
-                bail!(
-                    "Unsupported shared texture format: {}",
-                    shared_handle_format
-                );
-            }
+        let vk_format = match shared_handle_format {
+            SharedTextureFormat::Rgba16Float => vk::Format::R16G16B16A16_SFLOAT,
+            SharedTextureFormat::Bgra8Unorm => vk::Format::B8G8R8A8_UNORM,
         };
 
         let raw_device = device_guard.raw_device();
@@ -217,15 +211,9 @@ fn create_texture_from_dmabuf(
             .bind_image_memory(image, memory, 0)
             .context("Failed to bind image memory")?;
 
-        let tex_format = match shared_handle_format.as_str() {
-            "rgbaf16" => wgpu::TextureFormat::Rgba16Float,
-            "bgra" => wgpu::TextureFormat::Bgra8Unorm,
-            _ => {
-                bail!(
-                    "Unsupported shared texture format: {}",
-                    shared_handle_format
-                );
-            }
+        let tex_format = match shared_handle_format {
+            SharedTextureFormat::Rgba16Float => wgpu::TextureFormat::Rgba16Float,
+            SharedTextureFormat::Bgra8Unorm => wgpu::TextureFormat::Bgra8Unorm,
         };
 
         // wgpu-halのTextureDescを作成

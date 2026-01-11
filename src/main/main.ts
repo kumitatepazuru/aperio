@@ -87,6 +87,9 @@ async function createWindow() {
       case NodeSharedTextureFormat.Bgra8Unorm:
         format = "argb";
         break;
+      default:
+        format = undefined;
+        break;
     }
 
     osrWin = new BrowserWindow({
