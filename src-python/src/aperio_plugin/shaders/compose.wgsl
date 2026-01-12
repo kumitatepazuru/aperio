@@ -50,7 +50,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // 事前に計算された回転行列を適用
     let rotated_coord = params.rotation_matrix * relative_coord;
-    // let rotated_coord = relative_coord;
+
     
     // スケールを適用
     let src_coord_pixel = rotated_coord / params.scale;

@@ -1,64 +1,37 @@
-import { contextBridge, ipcRenderer } from "electron";
-import path from "path";
-import { LayerStructure, PlManager } from "native";
+import { contextBridge, ipcRenderer, sharedTexture } from "electron";
+import { FrameLayerStructure } from "native";
 
-let plManagerSingleton: PlManager;
-
-const ch = new MessageChannel();
-const p1 = ch.port1;
-const p2 = ch.port2;
-p1.start();
-
-// TODO: 何らかの理由によりinitがされてなかったときのエラー処理
-
-contextBridge.exposeInMainWorld("native", {
-  init: async () => {
-    if (!plManagerSingleton) {
-      const userDataPath = await ipcRenderer.invoke("get-app-path", "userData");
-      const resourcesPath = await ipcRenderer.invoke("get-resources");
-      const pluginManagerPath = await ipcRenderer.invoke("get-plugin-manager");
-      const defaultPluginsPath = await ipcRenderer.invoke(
-        "get-default-plugins"
-      );
-      const distDir = await ipcRenderer.invoke("get-dist-dir");
-
-      console.log("Plugin Manager is being initialized");
-      console.log("User Data Path:", userDataPath);
-      console.log("Resources Path:", resourcesPath);
-      console.log("Plugin Manager Path:", pluginManagerPath);
-      console.log("Default Plugins Path:", defaultPluginsPath);
-      console.log("Dist Path:", distDir);
-      plManagerSingleton = new PlManager({
-        dataDir: userDataPath,
-        localDataDir: path.join(userDataPath, "local"),
-        resourceDir: resourcesPath,
-        pluginManagerDir: pluginManagerPath,
-        defaultPluginsDir: defaultPluginsPath,
-        distDir,
-      });
-      plManagerSingleton.initialize();
-    }
-
-    window.postMessage({ type: "frame-port" }, "*", [p2]);
-  },
-  getPluginNames: (): Record<string, string>[] => {
-    return plManagerSingleton?.getPluginNames() || [];
-  }
+// メインプロセスからMessagePortを受け取り、レンダラープロセスのwindowに転送する
+ipcRenderer.on("frame-port-main", (event) => {
+  const port: MessagePort = event.ports[0];
+  window.postMessage({ type: "frame-port" }, "*", [port]);
 });
 
+type SharedTextureReceiverParam = Parameters<
+  typeof sharedTexture.setSharedTextureReceiver
+>[0];
+
+// フレーム取得系API
 contextBridge.exposeInMainWorld("frame", {
-  getFrame: (count: number, frameStruct: LayerStructure[]) => {
-    // ArrayBufferをここで作ってgetFrameに参照渡しする
-    const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
-    const data = new Uint8Array(buffer);
+  sendPort: async () => {
+    await ipcRenderer.invoke("send-port");
+  },
+  getFrameBuf: async (count: number, frameStruct: FrameLayerStructure[]) => {
+    await ipcRenderer.invoke("get-frame-buf", count, frameStruct);
+  },
 
-    plManagerSingleton?.getFrame(data, count, frameStruct);
-    p1.postMessage(buffer, [buffer]);
+  setReceiver: (cb: SharedTextureReceiverParam) => {
+    sharedTexture.setSharedTextureReceiver(cb);
+  },
+  getFrameSharedTexture: async (
+    count: number,
+    frameStruct: FrameLayerStructure[]
+  ) => {
+    await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
   },
 });
 
-contextBridge.exposeInMainWorld("path", {
-  getPath: (name: "userData" | "temp" | "exe") =>
-    ipcRenderer.invoke("get-app-path", name),
-  getResources: () => ipcRenderer.invoke("get-resources"),
+// その他のメインプロセスAPI
+contextBridge.exposeInMainWorld("main", {
+  getConfig: () => ipcRenderer.invoke("get-config"),
 });

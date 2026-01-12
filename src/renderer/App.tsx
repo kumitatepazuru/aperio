@@ -1,9 +1,11 @@
-import { Canvas } from "@react-three/fiber";
+import "./App.css";
+import FrameBufferRenderer from "./frameRenderer/FrameBufferRenderer";
+import FrameTextureRenderer from "./frameRenderer/FrameTextureRenderer";
 import Dock from "./dock/Dock";
-import FrameRenderer from "./FrameRenderer";
 import Timeline from "./timeline/Timeline";
-import { CameraControls, Grid, StatsGl } from "@react-three/drei";
 import { useRef } from "react";
+
+const config = await window.main.getConfig();
 
 function App() {
   const rendererCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -11,14 +13,11 @@ function App() {
   return (
     <Dock>
       <div ref={rendererCanvasRef}>
-        <Canvas flat linear>
-          <StatsGl
-            parent={rendererCanvasRef as React.RefObject<HTMLDivElement>}
-          />
-          <Grid infiniteGrid />
-          <CameraControls />
-          <FrameRenderer />
-        </Canvas>
+        {config.fastPreview ? (
+          <FrameTextureRenderer />
+        ) : (
+          <FrameBufferRenderer />
+        )}
       </div>
       <Timeline />
     </Dock>

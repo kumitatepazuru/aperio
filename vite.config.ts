@@ -1,14 +1,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
+import { resolve } from "path";
 import tailwindcss from "@tailwindcss/vite";
+
+const root = resolve(__dirname, "src");
+const outDir = resolve(__dirname, "dist");
 
 // https://vite.dev/config/
 export default defineConfig({
   base: "./",
+  root,
   build: {
-    outDir: path.resolve(__dirname, "dist/renderer"),
+    outDir,
     emptyOutDir: true,
+    rolldownOptions: {
+      input: {
+        main: resolve(root, "renderer", "index.html"),
+        osr: resolve(root, "osr", "index.html"),
+      },
+    },
   },
   plugins: [
     react({
@@ -20,8 +30,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src/renderer"),
-      native: path.resolve(__dirname, "dist/native/index.d.ts"),
+      "@": resolve(__dirname, "src/renderer"),
+      native: resolve(__dirname, "dist/native/index.d.ts"),
     },
   },
 });

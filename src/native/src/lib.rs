@@ -1,14 +1,23 @@
 use std::collections::HashMap;
 
 use crate::{
-    app_config::read_config,
+    app_config::{AppConfig, AppConfigManager},
+    node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
     structs::{Dirs, LayerStructure},
     util::get_local_data_dir,
 };
+#[cfg(target_os = "linux")]
+use gpu_util::texture_to_native::linux::SharedTextureHandle;
+#[cfg(target_os = "windows")]
+use gpu_util::texture_to_native::windows::SharedTextureHandle;
+
+use gpu_util::{PySharedTextureHandle, SharedTextureFormat};
+use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
 mod app_config;
+mod node_shared_texture;
 mod python;
 mod structs;
 mod util;
@@ -30,11 +39,8 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
     }
 }
 
-pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
-    // configの初期化
-    app_config::init_config(dirs)?;
-    let config = read_config(dirs)?;
-    let default_version = config.python.default_version;
+fn _initialize(dirs: &Dirs, config: &AppConfig) -> anyhow::Result<Py<PyAny>> {
+    let default_version = &config.python.default_version;
     let local_data_dir = get_local_data_dir(dirs)?;
     let python_path = local_data_dir.join("python"); // pythonがある
 
@@ -42,7 +48,7 @@ pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
     // python環境変数の設定
     if !python_path.exists() {
         println!("Found no Python installation at {:?}", python_path);
-        python::utils::install_python(dirs, &default_version, true)?;
+        python::utils::install_python(dirs, default_version, true)?;
     }
     python::utils::add_python_path_env(dirs)?;
 
@@ -53,7 +59,7 @@ pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
         println!("Python is not installed. Installing...");
         python::utils::install_python(
             dirs,
-            result.version.as_ref().unwrap_or(&default_version),
+            result.version.as_ref().unwrap_or(default_version),
             result.version.is_none(),
         )?;
         println!("Python installed");
@@ -89,50 +95,50 @@ pub fn _initialize(dirs: &Dirs) -> anyhow::Result<Py<PyAny>> {
     Ok(pl_manager)
 }
 
-#[napi(js_name = "PlManager")]
-pub struct JsPlManager {
-    plmanager: Option<Py<PyAny>>,
-    dirs: Dirs,
+#[napi]
+pub struct PlManager {
+    plmanager: Py<PyAny>,
+    config_manager: AppConfigManager,
 }
 
 // 一部IDEでanalyserが誤ってエラーを出すため注意
 // 対処方法は(RustRoverの場合)現状ない模様
 #[napi]
-impl JsPlManager {
+impl PlManager {
     #[napi(constructor)]
-    pub fn new(dirs: Dirs) -> Self {
-        Self {
-            plmanager: None,
-            dirs,
+    pub fn new(dirs: Dirs) -> napi::Result<Self> {
+        match env_logger::try_init() {
+            Ok(()) => {}
+            Err(e) => {
+                // すでに初期化されている場合は無視するが、デバッグ用にログを出力
+                debug!("env_logger initialization skipped: {}", e);
+            }
         }
-    }
-
-    #[napi]
-    pub fn initialize(&mut self) -> napi::Result<()> {
-        let result = _initialize(&self.dirs);
-        let pl_manager = result.map_err(|e| {
-            eprintln!("Failed to initialize Python environment: {:?}", e);
-
+        let config_manager = AppConfigManager::new(&dirs)?;
+        let config = config_manager.get_config();
+        let plmanager = _initialize(&dirs, &config).map_err(|e| {
             napi::Error::from_reason(format!("Failed to initialize Python environment: {:?}", e))
         })?;
 
-        // 内部情報の更新
-        self.plmanager = Some(pl_manager);
+        Ok(Self {
+            plmanager,
+            config_manager,
+        })
+    }
 
-        Ok(())
+    #[napi(getter)]
+    pub fn config_manager(&self) -> AppConfigManager {
+        self.config_manager.clone()
     }
 
     #[napi]
-    pub fn get_frame(
+    pub fn get_frame_buf(
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
         frame_struct: Vec<LayerStructure>,
     ) -> napi::Result<()> {
-        let pl_manager = self
-            .plmanager
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+        let pl_manager = self.plmanager.as_ref();
 
         Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);
@@ -143,7 +149,7 @@ impl JsPlManager {
                 buffer_slice.as_mut_ptr() as usize
             };
 
-            let func = pl_manager.getattr("make_frame")?;
+            let func = pl_manager.getattr("make_frame_buf")?;
             func.call1((count, frame_struct, 1920, 1080, buffer_ptr))?;
 
             Ok(())
@@ -155,10 +161,7 @@ impl JsPlManager {
 
     #[napi]
     pub fn get_plugin_names(&self) -> napi::Result<Vec<HashMap<String, String>>> {
-        let pl_manager = self
-            .plmanager
-            .as_ref()
-            .ok_or_else(|| napi::Error::from_reason("PluginManager is not initialized"))?;
+        let pl_manager = self.plmanager.as_ref();
 
         let result = Python::attach(|py| -> PyResult<Vec<HashMap<String, String>>> {
             let pl_manager = pl_manager.bind(py);
@@ -168,5 +171,52 @@ impl JsPlManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get plugin names: {:?}", e)))?;
 
         Ok(result)
+    }
+
+    #[napi]
+    pub fn get_frame_texture(
+        &self,
+        count: i32,
+        frame_struct: Vec<LayerStructure>,
+        base_texture: NodeOffscreenSharedTextureInfo,
+    ) -> napi::Result<()> {
+        let pl_manager = self.plmanager.as_ref();
+
+        let content_size = base_texture.coded_size;
+        let format = self.config_manager.get_config().tex_pixel_format;
+        // formatとbase_texture.pixel_formatが一致してなければエラー
+        if (format == NodeSharedTextureFormat::Rgba16Float
+            && base_texture.pixel_format != "rgbaf16")
+            || (format == NodeSharedTextureFormat::Bgra8Unorm
+                && base_texture.pixel_format != "bgra")
+        {
+            return Err(napi::Error::from_reason(format!(
+                "Pixel format mismatch: expected {:?}, got {}",
+                format, base_texture.pixel_format
+            )));
+        }
+
+        let output = Python::attach(|py| -> PyResult<()> {
+            let pl_manager = pl_manager.bind(py);
+            let frame_struct = frame_struct.into_pyobject(py)?;
+            let base_texture: SharedTextureHandle = base_texture.handle.into();
+            let base_texture = PySharedTextureHandle::new(base_texture);
+            let format: SharedTextureFormat = format.into();
+
+            let func = pl_manager.getattr("make_frame_shared_texture")?;
+            func.call1((
+                count,
+                frame_struct,
+                content_size.width,
+                content_size.height,
+                base_texture,
+                format,
+            ))?;
+
+            Ok(())
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
+
+        Ok(output)
     }
 }

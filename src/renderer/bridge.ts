@@ -1,46 +1,48 @@
-import type { LayerStructure } from "native";
+import type { FrameLayerStructure } from "native";
 
-let port: MessagePort;
+const Frame = class {
+  port?: MessagePort;
 
-const initFunc = new Promise((resolve) => {
-  const listenerFunc = (event: MessageEvent) => {
-    if (event.data.type !== "frame-port") return;
+  init() {
+    return new Promise((resolve) => {
+      const listenerFunc = (event: MessageEvent) => {
+        if (event.data.type !== "frame-port") return;
 
-    port = event.ports[0];
-    port.start();
-    // event listenerを削除
-    window.removeEventListener("message", listenerFunc);
-    resolve(null);
-  };
+        const port: MessagePort = event.ports[0];
+        this.port = port;
 
-  window.addEventListener("message", listenerFunc);
+        port.start();
+        // event listenerを削除
+        window.removeEventListener("message", listenerFunc);
+        resolve(null);
+      };
 
-  // initの終わりにportが送らてくるため、resolveされるとき即ちinitが完了しているとみなせる
-  // そのため、awaitは必要ない
-  window.native.init();
-});
+      window.addEventListener("message", listenerFunc);
 
-await initFunc;
-
-const getFrame = async (
-  frameCount: number,
-  frameStruct: LayerStructure[]
-): Promise<ArrayBuffer> => {
-  if (!port) {
-    await initFunc;
+      window.frame.sendPort();
+    });
   }
 
-  return new Promise((resolve) => {
-    port?.addEventListener(
-      "message",
-      (e) => {
-        resolve(e.data);
-      },
-      { once: true }
-    );
+  async getBuf(
+    frameCount: number,
+    frameStruct: FrameLayerStructure[]
+  ): Promise<ArrayBuffer> {
+    if (!this.port) {
+      await this.init();
+    }
 
-    window.frame.getFrame(frameCount, frameStruct);
-  });
+    return new Promise((resolve) => {
+      this.port?.addEventListener(
+        "message",
+        (e) => {
+          resolve(e.data);
+        },
+        { once: true }
+      );
+
+      window.frame.getFrameBuf(frameCount, frameStruct);
+    });
+  }
 };
 
-export { getFrame };
+export default Frame;
