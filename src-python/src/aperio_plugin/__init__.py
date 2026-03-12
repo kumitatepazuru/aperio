@@ -232,7 +232,7 @@ class PluginManager:
         return result
 
     def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int) -> gpu_util.PyImageGenerateBuilder:
+                             width: int, height: int) -> gpu_util.PyImageGenerateBuilder | None:
         """
         指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
 
@@ -244,6 +244,9 @@ class PluginManager:
             frame_structure (list[LayerStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
+
+        Returns:
+            gpu_util.PyImageGenerateBuilder | None: フレーム生成のビルダーオブジェクト、またはフレーム構造が空の場合はNone
         """
         try:
             if not isinstance(frame_structure, list):
@@ -332,7 +335,8 @@ class PluginManager:
         """
         builder = self._make_frame(frame_number, frame_structure, width, height)
 
-        self.generator.generate_buf(builder, buffer_ptr)
+        if builder is not None:
+            self.generator.generate_buf(builder, buffer_ptr)
 
     def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], 
                              width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> None:
@@ -349,7 +353,8 @@ class PluginManager:
         """
         builder = self._make_frame(frame_number, frame_structure, width, height)
 
-        self.generator.generate_shared_texture(builder, texture_handle, format)
+        if builder is not None:
+            self.generator.generate_shared_texture(builder, texture_handle, format)
 
 
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):

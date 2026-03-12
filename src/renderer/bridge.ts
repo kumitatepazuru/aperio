@@ -1,4 +1,4 @@
-import type { FrameLayerStructure } from "native";
+import type { LayerStructure } from "native";
 
 const Frame = class {
   port?: MessagePort;
@@ -25,7 +25,7 @@ const Frame = class {
 
   async getBuf(
     frameCount: number,
-    frameStruct: FrameLayerStructure[]
+    frameStruct: LayerStructure[]
   ): Promise<ArrayBuffer> {
     if (!this.port) {
       await this.init();

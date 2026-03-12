@@ -1,58 +1,13 @@
-import { useEffect, useRef, useCallback, useMemo } from "react";
-import Frame from "../bridge";
-import type { FrameLayerStructure } from "native";
-
-const frameStruct: FrameLayerStructure[] = [
-  {
-    x: 500,
-    y: 500,
-    scale: 3.0,
-    rotation: 40.0,
-    alpha: 1.0,
-    obj: {
-      name: "TestObject",
-      parameters: {},
-    },
-    effects: [],
-  },
-];
+import { useEffect, useRef, useMemo } from "react";
+import FrameManager from "../bridge";
+import useStore from "@/store";
+import { useShallow } from "zustand/shallow";
+import {
+  useBufferPreviewWebGPU,
+  type BufferWebGPUResources,
+} from "@/hooks/useWebGPU";
 
 // RGBAバッファをテクスチャとして描画するためのシェーダー
-const vertexShaderCode = /* wgsl */ `
-struct VertexOutput {
-  @builtin(position) position: vec4f,
-  @location(0) texCoord: vec2f,
-}
-
-@vertex
-fn main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-  // フルスクリーン四角形（2つの三角形で描画）
-  var positions = array<vec2f, 6>(
-    vec2f(-1.0, -1.0),
-    vec2f( 1.0, -1.0),
-    vec2f(-1.0,  1.0),
-    vec2f(-1.0,  1.0),
-    vec2f( 1.0, -1.0),
-    vec2f( 1.0,  1.0),
-  );
-  
-  // Y座標を反転（flipY相当）
-  var texCoords = array<vec2f, 6>(
-    vec2f(0.0, 1.0),
-    vec2f(1.0, 1.0),
-    vec2f(0.0, 0.0),
-    vec2f(0.0, 0.0),
-    vec2f(1.0, 1.0),
-    vec2f(1.0, 0.0),
-  );
-
-  var output: VertexOutput;
-  output.position = vec4f(positions[vertexIndex], 0.0, 1.0);
-  output.texCoord = texCoords[vertexIndex];
-  return output;
-}
-`;
-
 const fragmentShaderCode = /* wgsl */ `
 @group(0) @binding(0) var frameTexture: texture_2d<f32>;
 @group(0) @binding(1) var texSampler: sampler;
@@ -66,238 +21,131 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 const FRAME_WIDTH = 1920;
 const FRAME_HEIGHT = 1080;
 
-interface WebGPUResources {
-  device: GPUDevice;
-  context: GPUCanvasContext;
-  pipeline: GPURenderPipeline;
-  sampler: GPUSampler;
-  bindGroupLayout: GPUBindGroupLayout;
-  texture: GPUTexture;
-}
-
 const FrameBufferRenderer = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const resourcesRef = useRef<WebGPUResources | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const isRunningRef = useRef(false);
-  const countRef = useRef(0);
-  const frame = useMemo(() => new Frame(), []);
+  const { resources, canvas: canvasRef } = useBufferPreviewWebGPU({
+    fragmentShaderCode,
+    width: FRAME_WIDTH,
+    height: FRAME_HEIGHT,
+  });
+  const animationFrameReserve = useRef<number | null>(null);
+  const frameManager = useMemo(() => new FrameManager(), []);
+  const previousFrameCount = useRef<number | null>(null);
+  const { state, getFrameStruct, getCurrentFrameCount } = useStore(
+    useShallow((state) => ({
+      state: state.viewerState.state,
+      getFrameStruct: state.getFrameStruct,
+      getCurrentFrameCount: state.getCurrentFrameCount,
+    })),
+  );
 
-  // WebGPUリソースの初期化
-  const initWebGPU = useCallback(async (): Promise<WebGPUResources | null> => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
+  // テクスチャデータを更新して描画する関数
+  const updateAndRender = (
+    data: Uint8Array<ArrayBuffer>,
+    resources: BufferWebGPUResources,
+  ) => {
+    const { device, context, pipeline, sampler, bindGroupLayout, texture } =
+      resources;
 
-    // WebGPUのサポートチェック
-    if (!navigator.gpu) {
-      console.error("WebGPU is not supported");
-      return null;
-    }
+    // テクスチャデータの更新
+    device.queue.writeTexture(
+      { texture },
+      data.buffer,
+      {
+        bytesPerRow: FRAME_WIDTH * 4,
+        rowsPerImage: FRAME_HEIGHT,
+      },
+      { width: FRAME_WIDTH, height: FRAME_HEIGHT },
+    );
 
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) {
-      console.error("Failed to get GPU adapter");
-      return null;
-    }
-
-    const device = await adapter.requestDevice();
-
-    const context = canvas.getContext("webgpu");
-    if (!context) {
-      console.error("Failed to get WebGPU context");
-      return null;
-    }
-
-    const format = navigator.gpu.getPreferredCanvasFormat();
-    context.configure({
-      device,
-      format,
-      alphaMode: "premultiplied",
-    });
-
-    // シェーダーモジュールの作成
-    const vertexShaderModule = device.createShaderModule({
-      code: vertexShaderCode,
-    });
-
-    const fragmentShaderModule = device.createShaderModule({
-      code: fragmentShaderCode,
-    });
-
-    // サンプラーの作成（NearestFilter相当）
-    const sampler = device.createSampler({
-      magFilter: "nearest",
-      minFilter: "nearest",
-      addressModeU: "clamp-to-edge",
-      addressModeV: "clamp-to-edge",
-    });
-
-    // フレームデータ用テクスチャの作成
-    const texture = device.createTexture({
-      size: { width: FRAME_WIDTH, height: FRAME_HEIGHT },
-      format: "rgba8unorm",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-
-    // バインドグループレイアウトの作成
-    const bindGroupLayout = device.createBindGroupLayout({
+    // バインドグループの作成
+    const bindGroup = device.createBindGroup({
+      layout: bindGroupLayout,
       entries: [
         {
           binding: 0,
-          visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: "float" },
+          resource: texture.createView(),
         },
         {
           binding: 1,
-          visibility: GPUShaderStage.FRAGMENT,
-          sampler: {},
+          resource: sampler,
         },
       ],
     });
 
-    // パイプラインレイアウトの作成
-    const pipelineLayout = device.createPipelineLayout({
-      bindGroupLayouts: [bindGroupLayout],
-    });
+    // コマンドエンコーダーの作成
+    const commandEncoder = device.createCommandEncoder();
 
-    // レンダーパイプラインの作成
-    const pipeline = device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: {
-        module: vertexShaderModule,
-        entryPoint: "main",
-      },
-      fragment: {
-        module: fragmentShaderModule,
-        entryPoint: "main",
-        targets: [{ format }],
-      },
-      primitive: {
-        topology: "triangle-list",
-      },
-    });
-
-    return {
-      device,
-      context,
-      pipeline,
-      sampler,
-      bindGroupLayout,
-      texture,
-    };
-  }, []);
-
-  // テクスチャデータを更新して描画する関数
-  const updateAndRender = useCallback(
-    (data: Uint8Array<ArrayBuffer>, resources: WebGPUResources) => {
-      const { device, context, pipeline, sampler, bindGroupLayout, texture } =
-        resources;
-
-      // テクスチャデータの更新
-      device.queue.writeTexture(
-        { texture },
-        data.buffer,
+    // レンダーパスの開始
+    const renderPass = commandEncoder.beginRenderPass({
+      colorAttachments: [
         {
-          bytesPerRow: FRAME_WIDTH * 4,
-          rowsPerImage: FRAME_HEIGHT,
+          view: context.getCurrentTexture().createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
         },
-        { width: FRAME_WIDTH, height: FRAME_HEIGHT }
-      );
+      ],
+    });
 
-      // バインドグループの作成
-      const bindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [
-          {
-            binding: 0,
-            resource: texture.createView(),
-          },
-          {
-            binding: 1,
-            resource: sampler,
-          },
-        ],
-      });
+    renderPass.setPipeline(pipeline);
+    renderPass.setBindGroup(0, bindGroup);
+    renderPass.draw(6);
+    renderPass.end();
 
-      // コマンドエンコーダーの作成
-      const commandEncoder = device.createCommandEncoder();
-
-      // レンダーパスの開始
-      const renderPass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: context.getCurrentTexture().createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ],
-      });
-
-      renderPass.setPipeline(pipeline);
-      renderPass.setBindGroup(0, bindGroup);
-      renderPass.draw(6);
-      renderPass.end();
-
-      // コマンドの送信
-      device.queue.submit([commandEncoder.finish()]);
-    },
-    []
-  );
+    // コマンドの送信
+    device.queue.submit([commandEncoder.finish()]);
+  };
 
   // フレームループ
-  const frameLoop = useCallback(async () => {
-    if (!isRunningRef.current || !resourcesRef.current) return;
+  const frameLoop = async () => {
+    const isPlaying = state === "playing";
+    const currentFrameCount = getCurrentFrameCount();
+    // 前回と同じフレームならスキップ
+    // TODO: この前に音声1ブロック分の生成・再生処理を入れる
+    if (!resources) {
+      // リソースがまだ準備できていない場合はスキップ
+      animationFrameReserve.current = null;
+      return;
+    } else if (previousFrameCount.current === currentFrameCount) {
+      // フレームが前回と同じならスキップ
+      animationFrameReserve.current = isPlaying
+        ? requestAnimationFrame(frameLoop)
+        : null;
+      return;
+    }
 
     try {
       // フレームデータを取得
-      const data = await frame.getBuf(countRef.current, frameStruct);
+      const data = await frameManager.getBuf(
+        currentFrameCount,
+        getFrameStruct(),
+      );
       const uint8Data = new Uint8Array(data);
 
       // 描画
-      updateAndRender(uint8Data, resourcesRef.current);
-      countRef.current += 1;
+      updateAndRender(uint8Data, resources);
     } catch (error) {
       console.error("Error getting frame:", error);
     }
 
     // 次のフレームをスケジュール
-    if (isRunningRef.current) {
-      animationFrameRef.current = requestAnimationFrame(frameLoop);
-    }
-  }, [frame, updateAndRender]);
+    previousFrameCount.current = currentFrameCount;
+    animationFrameReserve.current = isPlaying
+      ? requestAnimationFrame(frameLoop)
+      : null;
+  };
 
   useEffect(() => {
-    let mounted = true;
-
-    const setup = async () => {
-      // WebGPUリソースの初期化
-      const resources = await initWebGPU();
-      if (!mounted || !resources) return;
-
-      resourcesRef.current = resources;
-
-      // フレームループの開始
-      isRunningRef.current = true;
-      animationFrameRef.current = requestAnimationFrame(frameLoop);
-    };
-
-    setup();
+    // 最初のフレームをリクエスト
+    animationFrameReserve.current = requestAnimationFrame(frameLoop);
 
     return () => {
-      mounted = false;
-      isRunningRef.current = false;
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      // WebGPUリソースのクリーンアップ
-      if (resourcesRef.current) {
-        resourcesRef.current.texture.destroy();
-        resourcesRef.current.device.destroy();
-        resourcesRef.current = null;
+      if (animationFrameReserve.current !== null) {
+        cancelAnimationFrame(animationFrameReserve.current);
       }
     };
-  }, [initWebGPU, frameLoop]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, resources]);
 
   return (
     <canvas

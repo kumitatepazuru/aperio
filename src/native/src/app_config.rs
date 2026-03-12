@@ -16,7 +16,7 @@ pub struct PythonConfig {
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[napi(object)]
-pub struct AppConfig {
+pub struct AperioConfig {
     pub python: PythonConfig,
     pub fast_preview: bool,
     pub tex_pixel_format: NodeSharedTextureFormat,
@@ -26,14 +26,15 @@ const DEFAULT_CONFIG: &str = include_str!("data/default-config.json");
 
 #[derive(Clone)]
 #[napi]
-pub struct AppConfigManager {
+pub struct AperioConfigManager {
     config_path: PathBuf,
-    config: AppConfig,
+    config: AperioConfig,
 }
 
 #[napi]
-impl AppConfigManager {
-    pub fn new(dirs: &Dirs) -> napi::Result<Self> {
+impl AperioConfigManager {
+    #[napi(constructor)]
+    pub fn new(dirs: Dirs) -> napi::Result<Self> {
         // 設定ファイルがあるか確認し、なければdefault-config.jsonをコピー
         let appdata_dir =
             get_data_dir(&dirs).map_err(|e| napi::Error::from_reason(e.to_string()))?;
@@ -52,7 +53,7 @@ impl AppConfigManager {
             fs::read_to_string(&config_path)?
         };
 
-        let config: AppConfig = match serde_json::from_str(&config_str) {
+        let config: AperioConfig = match serde_json::from_str(&config_str) {
             Ok(config) => config,
             Err(err) => {
                 println!(
@@ -60,7 +61,7 @@ impl AppConfigManager {
                     err
                 );
                 let merged_config = merge_configs(&config_str)?;
-                let config: AppConfig = serde_json::from_value(merged_config)?;
+                let config: AperioConfig = serde_json::from_value(merged_config)?;
 
                 // 成功したなら保存
                 let config_str = serde_json::to_string_pretty(&config)?;
@@ -70,19 +71,19 @@ impl AppConfigManager {
             }
         };
 
-        Ok(AppConfigManager {
+        Ok(AperioConfigManager {
             config_path,
             config,
         })
     }
 
     #[napi(getter, js_name = "config")]
-    pub fn get_config(&self) -> AppConfig {
+    pub fn get_config(&self) -> AperioConfig {
         self.config.clone()
     }
 
     #[napi]
-    pub fn set_config(&mut self, config: AppConfig) -> napi::Result<()> {
+    pub fn set_config(&mut self, config: AperioConfig) -> napi::Result<()> {
         let config_str = serde_json::to_string_pretty(&config)?;
         self.config = config;
         fs::write(&self.config_path, config_str)?;

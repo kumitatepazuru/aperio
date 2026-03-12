@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import type { LayerStructure } from "native";
 import { create } from "zustand";
 
@@ -8,32 +9,101 @@ type TimelineLayerStructure = LayerStructure & {
   to: number; // 終了フレーム
 };
 
-type ViewerState = "playing" | "paused";
+type ViewerState = {
+  state: "playing" | "paused";
+  changeTime: number; // 状態変更時刻のタイムスタンプ performance.now()基準
+  beginFrame: number; // 再生開始フレーム
+};
 
 type Store = {
-  frameCount: number;
+  fps: number;
   viewerState: ViewerState;
-  setViewerState: (state: ViewerState) => void;
-  setFrameCount: (count: number) => void;
+  play: (beginFrame: number) => void;
+  pause: () => void;
+  getPluginNames: () => { [key: string]: string }[];
+  getCurrentFrameCount: () => number;
+  getFrameStruct: () => LayerStructure[];
+  setFrameCount: (frame: number) => void;
+  setFps: (fps: number) => void;
   timelineLayers: TimelineLayerStructure[];
   setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
   pluginNames?: { [key: string]: string }[];
-  getPluginNames: () => { [key: string]: string }[];
 };
 
 const useStore = create<Store>()((set, get) => ({
-  frameCount: 0,
-  viewerState: "playing",
-  setViewerState: (state) => set({ viewerState: state }),
-  setFrameCount: (count) => set({ frameCount: count }),
-  timelineLayers: [],
+  fps: 60,
+  viewerState: {
+    state: "paused",
+    changeTime: performance.now(),
+    beginFrame: 0,
+  },
+  play: (beginFrame: number) =>
+    set({
+      viewerState: {
+        state: "playing",
+        changeTime: performance.now(),
+        beginFrame,
+      },
+    }),
+  pause: () =>
+    set({
+      viewerState: {
+        state: "paused",
+        changeTime: performance.now(),
+        beginFrame: get().getCurrentFrameCount(),
+      },
+    }),
+  getCurrentFrameCount: () => {
+    const { viewerState, fps } = get();
+    if (viewerState.state === "playing") {
+      const elapsedTime = (performance.now() - viewerState.changeTime) / 1000;
+      return viewerState.beginFrame + Math.floor(elapsedTime * fps);
+    } else {
+      return viewerState.beginFrame;
+    }
+  },
+  getFrameStruct: () => {
+    const currentFrame = get().getCurrentFrameCount();
+    return get()
+      .timelineLayers.filter((layer) => {
+        return currentFrame >= layer.from && currentFrame <= layer.to;
+      })
+      .sort((a, b) => a.layer - b.layer);
+  },
+  setFrameCount: (frame) =>
+    set({
+      viewerState: {
+        state: "paused",
+        changeTime: performance.now(),
+        beginFrame: frame,
+      },
+    }),
+  setFps: (fps) => set({ fps }),
+  timelineLayers: [
+  {
+    id: uuidv4(),
+    layer: 0,
+    from: 0,
+    to: 1000,
+    x: 500,
+    y: 500,
+    scale: 3.0,
+    rotation: 40.0,
+    alpha: 1.0,
+    obj: {
+      name: "TestObject",
+      parameters: {},
+    },
+    effects: [],
+  },
+],
   setTimelineLayers: (layers) => set({ timelineLayers: layers }),
   pluginNames: undefined,
   getPluginNames: () => {
     // なかったら取得してセットする
     let names = get().pluginNames;
     if (!names) {
-      names = window.native.getPluginNames();
+      names = window.main.getPluginNames();
       set({ pluginNames: names });
     }
     return names;

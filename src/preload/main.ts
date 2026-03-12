@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, sharedTexture } from "electron";
-import { FrameLayerStructure } from "native";
+import { LayerStructure } from "native";
 
 // メインプロセスからMessagePortを受け取り、レンダラープロセスのwindowに転送する
 ipcRenderer.on("frame-port-main", (event) => {
@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("frame", {
   sendPort: async () => {
     await ipcRenderer.invoke("send-port");
   },
-  getFrameBuf: async (count: number, frameStruct: FrameLayerStructure[]) => {
+  getFrameBuf: async (count: number, frameStruct: LayerStructure[]) => {
     await ipcRenderer.invoke("get-frame-buf", count, frameStruct);
   },
 
@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld("frame", {
   },
   getFrameSharedTexture: async (
     count: number,
-    frameStruct: FrameLayerStructure[]
+    frameStruct: LayerStructure[]
   ) => {
     await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
   },

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    app_config::{AppConfig, AppConfigManager},
+    app_config::{AperioConfig, AperioConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
     structs::{Dirs, LayerStructure},
     util::get_local_data_dir,
@@ -39,7 +39,7 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
     }
 }
 
-fn _initialize(dirs: &Dirs, config: &AppConfig) -> anyhow::Result<Py<PyAny>> {
+fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> {
     let default_version = &config.python.default_version;
     let local_data_dir = get_local_data_dir(dirs)?;
     let python_path = local_data_dir.join("python"); // pythonがある
@@ -96,17 +96,16 @@ fn _initialize(dirs: &Dirs, config: &AppConfig) -> anyhow::Result<Py<PyAny>> {
 }
 
 #[napi]
-pub struct PlManager {
+pub struct AperioManager {
     plmanager: Py<PyAny>,
-    config_manager: AppConfigManager,
 }
 
 // 一部IDEでanalyserが誤ってエラーを出すため注意
 // 対処方法は(RustRoverの場合)現状ない模様
 #[napi]
-impl PlManager {
+impl AperioManager {
     #[napi(constructor)]
-    pub fn new(dirs: Dirs) -> napi::Result<Self> {
+    pub fn new(dirs: Dirs, config_manager: &AperioConfigManager) -> napi::Result<Self> {
         match env_logger::try_init() {
             Ok(()) => {}
             Err(e) => {
@@ -114,7 +113,6 @@ impl PlManager {
                 debug!("env_logger initialization skipped: {}", e);
             }
         }
-        let config_manager = AppConfigManager::new(&dirs)?;
         let config = config_manager.get_config();
         let plmanager = _initialize(&dirs, &config).map_err(|e| {
             napi::Error::from_reason(format!("Failed to initialize Python environment: {:?}", e))
@@ -122,13 +120,7 @@ impl PlManager {
 
         Ok(Self {
             plmanager,
-            config_manager,
         })
-    }
-
-    #[napi(getter)]
-    pub fn config_manager(&self) -> AppConfigManager {
-        self.config_manager.clone()
     }
 
     #[napi]
@@ -138,7 +130,7 @@ impl PlManager {
         count: i32,
         frame_struct: Vec<LayerStructure>,
     ) -> napi::Result<()> {
-        let pl_manager = self.plmanager.as_ref();
+        let pl_manager = &self.plmanager;
 
         Python::attach(|py| -> PyResult<()> {
             let pl_manager = pl_manager.bind(py);
@@ -161,7 +153,7 @@ impl PlManager {
 
     #[napi]
     pub fn get_plugin_names(&self) -> napi::Result<Vec<HashMap<String, String>>> {
-        let pl_manager = self.plmanager.as_ref();
+        let pl_manager = &self.plmanager;
 
         let result = Python::attach(|py| -> PyResult<Vec<HashMap<String, String>>> {
             let pl_manager = pl_manager.bind(py);
@@ -177,13 +169,13 @@ impl PlManager {
     pub fn get_frame_texture(
         &self,
         count: i32,
+        format: NodeSharedTextureFormat,
         frame_struct: Vec<LayerStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
     ) -> napi::Result<()> {
-        let pl_manager = self.plmanager.as_ref();
+        let pl_manager = &self.plmanager;
 
         let content_size = base_texture.coded_size;
-        let format = self.config_manager.get_config().tex_pixel_format;
         // formatとbase_texture.pixel_formatが一致してなければエラー
         if (format == NodeSharedTextureFormat::Rgba16Float
             && base_texture.pixel_format != "rgbaf16")

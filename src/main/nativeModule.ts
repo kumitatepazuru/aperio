@@ -9,15 +9,17 @@ import {
 } from "electron";
 import {
   Dirs,
-  FrameLayerStructure,
+  LayerStructure,
   NodeOffscreenSharedTextureInfo,
-  PlManager,
+  AperioManager,
+  AperioConfigManager,
 } from "native";
 
 const TIMEOUT_MS = 1000;
 
 export class NativeModule {
-  plManager: PlManager;
+  configManager: AperioConfigManager;
+  aperioManager: AperioManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
   eventStack: ((texture: OffscreenSharedTexture) => Promise<void>)[] = [];
@@ -36,7 +38,8 @@ export class NativeModule {
     console.log("Plugin Manager Path:", dirs.pluginManagerDir);
     console.log("Default Plugins Path:", dirs.defaultPluginsDir);
     console.log("Dist Path:", dirs.distDir);
-    this.plManager = new PlManager(dirs);
+    this.configManager = new AperioConfigManager(dirs);
+    this.aperioManager = new AperioManager(dirs, this.configManager);
   }
 
   setOsrWebContents(wc: Electron.WebContents) {
@@ -44,7 +47,10 @@ export class NativeModule {
       try {
         if (this.eventStack.length > 0 && e.texture) {
           if (this.eventStack.length > 100) {
-            console.warn("Warning: eventStack length exceeded 100: " + this.eventStack.length);
+            console.warn(
+              "Warning: eventStack length exceeded 100: " +
+                this.eventStack.length
+            );
           }
           const cb = this.eventStack.shift();
           await cb?.(e.texture);
@@ -60,18 +66,18 @@ export class NativeModule {
     webContents.postMessage("frame-port-main", null, [this.p2]);
   }
 
-  getFrameBuf(count: number, frameStruct: FrameLayerStructure[]) {
+  getFrameBuf(count: number, frameStruct: LayerStructure[]) {
     // ArrayBufferをここで作ってgetFrameに参照渡しする
     const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
     const data = new Uint8Array(buffer);
 
-    this.plManager.getFrameBuf(data, count, frameStruct);
+    this.aperioManager.getFrameBuf(data, count, frameStruct);
     this.p1.postMessage(buffer);
   }
 
   async getFrameSharedTexture(
     count: number,
-    frameStruct: FrameLayerStructure[],
+    frameStruct: LayerStructure[],
     frame: Electron.WebContents
   ) {
     this.eventStack.push(async (baseTexture) => {
@@ -79,8 +85,9 @@ export class NativeModule {
       if (!textureInfo) {
         throw new Error("Failed to get base shared texture");
       }
-      this.plManager.getFrameTexture(
+      this.aperioManager.getFrameTexture(
         count,
+        this.configManager.config.texPixelFormat,
         frameStruct,
         textureInfo as NodeOffscreenSharedTextureInfo
       );
@@ -126,9 +133,9 @@ export class NativeModule {
         });
 
         if (dialogResult === 0) {
-          const config = this.plManager.configManager.config;
+          const config = this.configManager.config;
           config.fastPreview = false;
-          this.plManager.configManager.setConfig(config);
+          this.configManager.setConfig(config);
           app.relaunch();
           app.exit(0);
         } else {

@@ -3,7 +3,7 @@ import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
-import { FrameLayerStructure, NodeSharedTextureFormat } from "native";
+import { LayerStructure, NodeSharedTextureFormat } from "native";
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
@@ -59,7 +59,7 @@ ipcMain.handle(
   (
     _: IpcMainInvokeEvent,
     count: number,
-    frameStruct: FrameLayerStructure[]
+    frameStruct: LayerStructure[]
   ) => {
     nativeModule.getFrameBuf(count, frameStruct);
   }
@@ -67,17 +67,17 @@ ipcMain.handle(
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  async (event, count: number, frameStruct: FrameLayerStructure[]) => {
+  async (event, count: number, frameStruct: LayerStructure[]) => {
     await nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
   }
 );
 
 ipcMain.handle("get-config", () => {
-  return nativeModule.plManager.configManager.config;
+  return nativeModule.configManager.config;
 });
 
 async function createWindow() {
-  const config = nativeModule.plManager.configManager.config;
+  const config = nativeModule.configManager.config;
   if (config.fastPreview) {
     let format: "argb" | "rgbaf16" | undefined;
     switch (config.texPixelFormat) {
