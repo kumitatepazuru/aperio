@@ -56,24 +56,24 @@ ipcMain.handle("send-port", (event) => {
 
 ipcMain.handle(
   "get-frame-buf",
-  (
-    _: IpcMainInvokeEvent,
-    count: number,
-    frameStruct: LayerStructure[]
-  ) => {
+  (_: IpcMainInvokeEvent, count: number, frameStruct: LayerStructure[]) => {
     nativeModule.getFrameBuf(count, frameStruct);
-  }
+  },
 );
 
 ipcMain.handle(
   "get-frame-shared-texture",
   async (event, count: number, frameStruct: LayerStructure[]) => {
     await nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
-  }
+  },
 );
 
 ipcMain.handle("get-config", () => {
   return nativeModule.configManager.config;
+});
+
+ipcMain.on("store-state-update", (_event, state) => {
+  osrWin?.webContents.send("store-state", state);
 });
 
 async function createWindow() {
@@ -97,6 +97,7 @@ async function createWindow() {
       height: 1080,
       show: false,
       webPreferences: {
+        preload: path.join(dirName, "./preload.js"),
         offscreen: {
           useSharedTexture: true,
           sharedTexturePixelFormat: format,

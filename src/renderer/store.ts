@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 import type { LayerStructure } from "native";
 import { create } from "zustand";
 
@@ -80,23 +80,23 @@ const useStore = create<Store>()((set, get) => ({
     }),
   setFps: (fps) => set({ fps }),
   timelineLayers: [
-  {
-    id: uuidv4(),
-    layer: 0,
-    from: 0,
-    to: 1000,
-    x: 500,
-    y: 500,
-    scale: 3.0,
-    rotation: 40.0,
-    alpha: 1.0,
-    obj: {
-      name: "TestObject",
-      parameters: {},
+    {
+      id: uuidv4(),
+      layer: 0,
+      from: 0,
+      to: 1000,
+      x: 500,
+      y: 500,
+      scale: 3.0,
+      rotation: 40.0,
+      alpha: 1.0,
+      obj: {
+        name: "TestObject",
+        parameters: {},
+      },
+      effects: [],
     },
-    effects: [],
-  },
-],
+  ],
   setTimelineLayers: (layers) => set({ timelineLayers: layers }),
   pluginNames: undefined,
   getPluginNames: () => {
@@ -109,5 +109,13 @@ const useStore = create<Store>()((set, get) => ({
     return names;
   },
 }));
+
+// renderer -> osr へのストア同期
+useStore.subscribe((state) => {
+  window.storeSync?.sendStoreState({
+    fps: state.fps,
+    viewerState: state.viewerState,
+  });
+});
 
 export default useStore;

@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer, sharedTexture } from "electron";
-import { LayerStructure } from "native";
+import { type LayerStructure } from "native";
+
+export type SyncedStoreState = {
+  fps: number;
+  viewerState: {
+    state: "playing" | "paused";
+    changeTime: number;
+    beginFrame: number;
+  };
+};
 
 // メインプロセスからMessagePortを受け取り、レンダラープロセスのwindowに転送する
 ipcRenderer.on("frame-port-main", (event) => {
@@ -25,7 +34,7 @@ contextBridge.exposeInMainWorld("frame", {
   },
   getFrameSharedTexture: async (
     count: number,
-    frameStruct: LayerStructure[]
+    frameStruct: LayerStructure[],
   ) => {
     await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
   },
@@ -34,4 +43,13 @@ contextBridge.exposeInMainWorld("frame", {
 // その他のメインプロセスAPI
 contextBridge.exposeInMainWorld("main", {
   getConfig: () => ipcRenderer.invoke("get-config"),
+});
+
+// renderer <-> osr ストア同期
+contextBridge.exposeInMainWorld("storeSync", {
+  sendStoreState: (state: SyncedStoreState) =>
+    ipcRenderer.send("store-state-update", state),
+  onStoreState: (cb: (state: SyncedStoreState) => void) => {
+    ipcRenderer.on("store-state", (_, state: SyncedStoreState) => cb(state));
+  },
 });
