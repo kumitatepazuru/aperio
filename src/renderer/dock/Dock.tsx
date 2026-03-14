@@ -19,13 +19,16 @@ const makeWidget = (title: string, content: ReactElement) => {
   w.addClass("widget");
 
   const container = document.createElement("div");
+  container.className = "w-full h-full";
 
   // この中身は普通の DOM なので、自由に書いてOK
   w.node.appendChild(container);
 
   const root = createRoot(container);
   root.render(
-    <dockWidgetContext.Provider value={w}>{content}</dockWidgetContext.Provider>
+    <dockWidgetContext.Provider value={w}>
+      {content}
+    </dockWidgetContext.Provider>,
   );
 
   return { widget: w, unmount: () => root.unmount() };
@@ -37,7 +40,7 @@ const Dock: FC<{ children: ReactElement | ReactElement[] }> = ({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const components = useMemo(
     () => Children.toArray(children).filter(isValidElement),
-    [children]
+    [children],
   );
 
   useEffect(() => {

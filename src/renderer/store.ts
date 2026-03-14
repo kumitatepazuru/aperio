@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { LayerStructure } from "native";
 import { create } from "zustand";
 
-type TimelineLayerStructure = LayerStructure & {
+export type TimelineLayerStructure = LayerStructure & {
   id: string; // UUIDが期待される
   layer: number; // レイヤー番号
   from: number; // 開始フレーム
