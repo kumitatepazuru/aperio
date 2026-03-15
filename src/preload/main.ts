@@ -43,13 +43,15 @@ contextBridge.exposeInMainWorld("frame", {
 // その他のメインプロセスAPI
 contextBridge.exposeInMainWorld("main", {
   getConfig: () => ipcRenderer.invoke("get-config"),
-});
+  getEventStackLength: () => ipcRenderer.invoke("get-event-stack-length"),
+  onEventStackLengthChanged: (cb: (length: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, length: number) => {
+      cb(length);
+    };
+    ipcRenderer.on("event-stack-length-changed", listener);
 
-// renderer <-> osr ストア同期
-contextBridge.exposeInMainWorld("storeSync", {
-  sendStoreState: (state: SyncedStoreState) =>
-    ipcRenderer.send("store-state-update", state),
-  onStoreState: (cb: (state: SyncedStoreState) => void) => {
-    ipcRenderer.on("store-state", (_, state: SyncedStoreState) => cb(state));
+    return () => {
+      ipcRenderer.removeListener("event-stack-length-changed", listener);
+    };
   },
 });

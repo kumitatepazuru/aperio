@@ -25,9 +25,9 @@ const FrameTextureRenderer = () => {
     fragmentShaderCode,
   });
   const animationFrameReserve = useRef<number | null>(null);
-  const { state, getFrameStruct, getCurrentFrameCount } = useStore(
+  const { viewerState, getFrameStruct, getCurrentFrameCount } = useStore(
     useShallow((state) => ({
-      state: state.viewerState.state,
+      viewerState: state.viewerState,
       getFrameStruct: state.getFrameStruct,
       getCurrentFrameCount: state.getCurrentFrameCount,
     })),
@@ -116,7 +116,7 @@ const FrameTextureRenderer = () => {
       }
 
       animationFrameReserve.current =
-        state === "playing" ? requestAnimationFrame(frameLoop) : null;
+        viewerState.state === "playing" ? requestAnimationFrame(frameLoop) : null;
     });
 
     // 最初のフレームをリクエスト
@@ -128,7 +128,7 @@ const FrameTextureRenderer = () => {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, resources]);
+  }, [viewerState, resources]);
 
   return (
     <canvas

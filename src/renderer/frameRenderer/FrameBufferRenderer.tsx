@@ -30,9 +30,9 @@ const FrameBufferRenderer = () => {
   const animationFrameReserve = useRef<number | null>(null);
   const frameManager = useMemo(() => new FrameManager(), []);
   const previousFrameCount = useRef<number | null>(null);
-  const { state, getFrameStruct, getCurrentFrameCount } = useStore(
+  const { viewerState, getFrameStruct, getCurrentFrameCount } = useStore(
     useShallow((state) => ({
-      state: state.viewerState.state,
+      viewerState: state.viewerState,
       getFrameStruct: state.getFrameStruct,
       getCurrentFrameCount: state.getCurrentFrameCount,
     })),
@@ -98,7 +98,7 @@ const FrameBufferRenderer = () => {
 
   // フレームループ
   const frameLoop = async () => {
-    const isPlaying = state === "playing";
+    const isPlaying = viewerState.state === "playing";
     const currentFrameCount = getCurrentFrameCount();
     // 前回と同じフレームならスキップ
     // TODO: この前に音声1ブロック分の生成・再生処理を入れる
@@ -145,7 +145,7 @@ const FrameBufferRenderer = () => {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, resources]);
+  }, [viewerState, resources]);
 
   return (
     <canvas

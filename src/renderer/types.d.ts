@@ -1,6 +1,5 @@
 import { type FrameLayerStructure, type AppConfig } from "native";
 import { sharedTexture } from "electron";
-import type { SyncedStoreState } from "../preload/main";
 
 declare global {
   interface Window {
@@ -21,10 +20,8 @@ declare global {
     main: {
       getPluginNames: () => Record<string, string>[];
       getConfig: () => Promise<AppConfig>;
-    };
-    storeSync: {
-      sendStoreState: (state: SyncedStoreState) => void;
-      onStoreState: (cb: (state: SyncedStoreState) => void) => void;
+      getEventStackLength: () => Promise<number>;
+      onEventStackLengthChanged: (cb: (length: number) => void) => () => void;
     };
   }
 }

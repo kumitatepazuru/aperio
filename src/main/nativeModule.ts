@@ -24,6 +24,7 @@ export class NativeModule {
   p2: MessagePortMain;
   eventStack: ((texture: OffscreenSharedTexture) => Promise<void>)[] = [];
   paintTimeout: NodeJS.Timeout | null = null;
+  onEventStackLengthChanged?: (length: number) => void;
 
   constructor(dirs: Dirs) {
     const { port1, port2 } = new MessageChannelMain();
@@ -49,10 +50,11 @@ export class NativeModule {
           if (this.eventStack.length > 100) {
             console.warn(
               "Warning: eventStack length exceeded 100: " +
-                this.eventStack.length
+                this.eventStack.length,
             );
           }
           const cb = this.eventStack.shift();
+          this.notifyEventStackLengthChanged();
           await cb?.(e.texture);
         }
       } finally {
@@ -78,7 +80,7 @@ export class NativeModule {
   async getFrameSharedTexture(
     count: number,
     frameStruct: LayerStructure[],
-    frame: Electron.WebContents
+    frame: Electron.WebContents,
   ) {
     this.eventStack.push(async (baseTexture) => {
       const textureInfo = baseTexture.textureInfo;
@@ -89,7 +91,7 @@ export class NativeModule {
         count,
         this.configManager.config.texPixelFormat,
         frameStruct,
-        textureInfo as NodeOffscreenSharedTextureInfo
+        textureInfo as NodeOffscreenSharedTextureInfo,
       );
 
       const imported = sharedTexture.importSharedTexture({
@@ -102,6 +104,7 @@ export class NativeModule {
 
       imported.release();
     });
+    this.notifyEventStackLengthChanged();
 
     this.schedulePaintWatchdog();
   }
@@ -119,7 +122,7 @@ export class NativeModule {
     this.paintTimeout = setTimeout(() => {
       if (this.eventStack.length > 0) {
         console.error(
-          `Pending paint events not fulfilled for ${TIMEOUT_MS}ms while eventStack is non-empty.`
+          `Pending paint events not fulfilled for ${TIMEOUT_MS}ms while eventStack is non-empty.`,
         );
         const dialogResult = dialog.showMessageBoxSync({
           type: "error",
@@ -143,5 +146,17 @@ export class NativeModule {
         }
       }
     }, TIMEOUT_MS);
+  }
+
+  getEventStackLength() {
+    return this.eventStack.length;
+  }
+
+  setEventStackLengthListener(listener: (length: number) => void) {
+    this.onEventStackLengthChanged = listener;
+  }
+
+  private notifyEventStackLengthChanged() {
+    this.onEventStackLengthChanged?.(this.eventStack.length);
   }
 }

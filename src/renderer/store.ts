@@ -19,7 +19,7 @@ type Store = {
   fps: number;
   viewerState: ViewerState;
   play: (beginFrame: number) => void;
-  pause: () => void;
+  pause: (beginFrame?: number) => void;
   getPluginNames: () => { [key: string]: string }[];
   getCurrentFrameCount: () => number;
   getFrameStruct: () => LayerStructure[];
@@ -45,12 +45,12 @@ const useStore = create<Store>()((set, get) => ({
         beginFrame,
       },
     }),
-  pause: () =>
+  pause: (beginFrame?: number) =>
     set({
       viewerState: {
         state: "paused",
         changeTime: performance.now(),
-        beginFrame: get().getCurrentFrameCount(),
+        beginFrame: beginFrame ?? get().viewerState.beginFrame,
       },
     }),
   getCurrentFrameCount: () => {
@@ -109,13 +109,5 @@ const useStore = create<Store>()((set, get) => ({
     return names;
   },
 }));
-
-// renderer -> osr へのストア同期
-useStore.subscribe((state) => {
-  window.storeSync?.sendStoreState({
-    fps: state.fps,
-    viewerState: state.viewerState,
-  });
-});
 
 export default useStore;

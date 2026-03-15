@@ -50,6 +50,10 @@ const nativeModule = new NativeModule({
   distDir: getDistDir(),
 });
 
+nativeModule.setEventStackLengthListener((length) => {
+  osrWin?.webContents.send("event-stack-length-changed", length);
+});
+
 ipcMain.handle("send-port", (event) => {
   nativeModule.sendPort(event.sender);
 });
@@ -72,8 +76,8 @@ ipcMain.handle("get-config", () => {
   return nativeModule.configManager.config;
 });
 
-ipcMain.on("store-state-update", (_event, state) => {
-  osrWin?.webContents.send("store-state", state);
+ipcMain.handle("get-event-stack-length", () => {
+  return nativeModule.getEventStackLength();
 });
 
 async function createWindow() {
@@ -108,6 +112,12 @@ async function createWindow() {
       },
     });
     nativeModule.setOsrWebContents(osrWin.webContents);
+    osrWin.webContents.on("did-finish-load", () => {
+      osrWin?.webContents.send(
+        "event-stack-length-changed",
+        nativeModule.getEventStackLength(),
+      );
+    });
   }
 
   win = new BrowserWindow({
