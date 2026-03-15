@@ -22,9 +22,10 @@ export class NativeModule {
   aperioManager: AperioManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
-  eventStack: ((texture: OffscreenSharedTexture) => Promise<void>)[] = [];
+  eventStack: ((texture: OffscreenSharedTexture) => Promise<void>) | null =
+    null;
   paintTimeout: NodeJS.Timeout | null = null;
-  onEventStackLengthChanged?: (length: number) => void;
+  onEventStackChanged?: (length: number) => void;
 
   constructor(dirs: Dirs) {
     const { port1, port2 } = new MessageChannelMain();
@@ -45,16 +46,11 @@ export class NativeModule {
 
   setOsrWebContents(wc: Electron.WebContents) {
     wc.on("paint", async (e: WebContentsPaintEventParams) => {
+      const cb = this.eventStack;
       try {
-        if (this.eventStack.length > 0 && e.texture) {
-          if (this.eventStack.length > 100) {
-            console.warn(
-              "Warning: eventStack length exceeded 100: " +
-                this.eventStack.length,
-            );
-          }
-          const cb = this.eventStack.shift();
-          this.notifyEventStackLengthChanged();
+        if (cb && e.texture) {
+          this.notifyEventStackChanged();
+          this.eventStack = null;
           await cb?.(e.texture);
         }
       } finally {
@@ -82,7 +78,7 @@ export class NativeModule {
     frameStruct: LayerStructure[],
     frame: Electron.WebContents,
   ) {
-    this.eventStack.push(async (baseTexture) => {
+    this.eventStack = async (baseTexture) => {
       const textureInfo = baseTexture.textureInfo;
       if (!textureInfo) {
         throw new Error("Failed to get base shared texture");
@@ -103,8 +99,8 @@ export class NativeModule {
       });
 
       imported.release();
-    });
-    this.notifyEventStackLengthChanged();
+    };
+    this.notifyEventStackChanged();
 
     this.schedulePaintWatchdog();
   }
@@ -115,12 +111,12 @@ export class NativeModule {
       this.paintTimeout = null;
     }
 
-    if (this.eventStack.length === 0) {
+    if (!this.eventStack) {
       return;
     }
 
     this.paintTimeout = setTimeout(() => {
-      if (this.eventStack.length > 0) {
+      if (this.eventStack) {
         console.error(
           `Pending paint events not fulfilled for ${TIMEOUT_MS}ms while eventStack is non-empty.`,
         );
@@ -148,15 +144,15 @@ export class NativeModule {
     }, TIMEOUT_MS);
   }
 
-  getEventStackLength() {
-    return this.eventStack.length;
+  getEventStack() {
+    return this.eventStack ? performance.now() : 0;
   }
 
-  setEventStackLengthListener(listener: (length: number) => void) {
-    this.onEventStackLengthChanged = listener;
+  setEventStackListener(listener: (length: number) => void) {
+    this.onEventStackChanged = listener;
   }
 
-  private notifyEventStackLengthChanged() {
-    this.onEventStackLengthChanged?.(this.eventStack.length);
+  private notifyEventStackChanged() {
+    this.onEventStackChanged?.(this.eventStack ? performance.now() : 0);
   }
 }

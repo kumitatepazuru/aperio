@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 
 const App = () => {
-  const [eventStackLength, setEventStackLength] = useState(0);
+  const [eventStackID, setEventStackID] = useState(0);
 
   useEffect(() => {
     const onEvent = (length: number) => {
-      setEventStackLength(length);
+      setEventStackID(length);
     };
 
-    const unsubscribe = window.main.onEventStackLengthChanged(onEvent);
-    void window.main.getEventStackLength().then(onEvent);
+    const unsubscribe = window.main.onEventStackChanged(onEvent);
+    void window.main.getEventStack().then(onEvent);
 
     return () => {
       unsubscribe();
@@ -39,8 +39,8 @@ const App = () => {
             </div>
             <div className="flex gap-1 flex-col font-mono">
               <div>
-                <span className="font-bold">eventStack length:</span>{" "}
-                {eventStackLength}
+                <span className="font-bold">eventStack ID:</span>{" "}
+                {eventStackID}
               </div>
             </div>
           </div>

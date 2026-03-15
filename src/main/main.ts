@@ -50,7 +50,7 @@ const nativeModule = new NativeModule({
   distDir: getDistDir(),
 });
 
-nativeModule.setEventStackLengthListener((length) => {
+nativeModule.setEventStackListener((length) => {
   osrWin?.webContents.send("event-stack-length-changed", length);
 });
 
@@ -77,7 +77,7 @@ ipcMain.handle("get-config", () => {
 });
 
 ipcMain.handle("get-event-stack-length", () => {
-  return nativeModule.getEventStackLength();
+  return nativeModule.getEventStack();
 });
 
 async function createWindow() {
@@ -115,7 +115,7 @@ async function createWindow() {
     osrWin.webContents.on("did-finish-load", () => {
       osrWin?.webContents.send(
         "event-stack-length-changed",
-        nativeModule.getEventStackLength(),
+        nativeModule.getEventStack(),
       );
     });
   }

@@ -20,8 +20,8 @@ declare global {
     main: {
       getPluginNames: () => Record<string, string>[];
       getConfig: () => Promise<AppConfig>;
-      getEventStackLength: () => Promise<number>;
-      onEventStackLengthChanged: (cb: (length: number) => void) => () => void;
+      getEventStack: () => Promise<number>;
+      onEventStackChanged: (cb: (length: number) => void) => () => void;
     };
   }
 }

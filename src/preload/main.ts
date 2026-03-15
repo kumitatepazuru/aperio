@@ -43,8 +43,8 @@ contextBridge.exposeInMainWorld("frame", {
 // その他のメインプロセスAPI
 contextBridge.exposeInMainWorld("main", {
   getConfig: () => ipcRenderer.invoke("get-config"),
-  getEventStackLength: () => ipcRenderer.invoke("get-event-stack-length"),
-  onEventStackLengthChanged: (cb: (length: number) => void) => {
+  getEventStack: () => ipcRenderer.invoke("get-event-stack-length"),
+  onEventStackChanged: (cb: (length: number) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, length: number) => {
       cb(length);
     };
