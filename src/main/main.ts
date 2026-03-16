@@ -67,8 +67,8 @@ ipcMain.handle(
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  async (event, count: number, frameStruct: LayerStructure[]) => {
-    await nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
+  (event, count: number, frameStruct: LayerStructure[]) => {
+    nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
   },
 );
 

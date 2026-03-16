@@ -278,7 +278,9 @@ const useExternalTexturePreviewWebGPU = ({
   resources: ExternalTextureWebGPUResources | null;
   canvas: RefCallback<HTMLCanvasElement>;
 } => {
-  window.main.resizeOsr(width, height);
+  useEffect(() => {
+    window.main.resizeOsr(width, height);
+  }, [width, height]);
 
   return usePreviewWebGPUBase(
     fragmentShaderCode,

@@ -47,10 +47,10 @@ export class NativeModule {
   setOsrWebContents(wc: Electron.WebContents) {
     wc.on("paint", async (e: WebContentsPaintEventParams) => {
       const cb = this.eventStack;
+      this.eventStack = null;
       try {
         if (cb && e.texture) {
           this.notifyEventStackChanged();
-          this.eventStack = null;
           await cb?.(e.texture);
         }
       } finally {
@@ -64,20 +64,26 @@ export class NativeModule {
     webContents.postMessage("frame-port-main", null, [this.p2]);
   }
 
-  getFrameBuf(count: number, width: number, height: number, frameStruct: LayerStructure[]) {
+  getFrameBuf(
+    count: number,
+    width: number,
+    height: number,
+    frameStruct: LayerStructure[],
+  ) {
     // ArrayBufferをここで作ってgetFrameに参照渡しする
     const buffer = new ArrayBuffer(width * height * 4); // width x height x 4 bytes for RGBA
     const data = new Uint8Array(buffer);
 
-    this.aperioManager.getFrameBuf(data, count, frameStruct);
+    this.aperioManager.getFrameBuf(data, count, width, height, frameStruct);
     this.p1.postMessage(buffer);
   }
 
-  async getFrameSharedTexture(
+  getFrameSharedTexture(
     count: number,
     frameStruct: LayerStructure[],
     frame: Electron.WebContents,
   ) {
+    if (this.eventStack) return; // すでに処理中の場合は無視
     this.eventStack = async (baseTexture) => {
       const textureInfo = baseTexture.textureInfo;
       if (!textureInfo) {
