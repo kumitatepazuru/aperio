@@ -1,4 +1,4 @@
-import { type FrameLayerStructure, type AppConfig } from "native";
+import { type FrameLayerStructure, type AperioConfig } from "native";
 import { sharedTexture } from "electron";
 
 declare global {
@@ -19,7 +19,7 @@ declare global {
     };
     main: {
       getPluginNames: () => Record<string, string>[];
-      getConfig: () => Promise<AppConfig>;
+      getConfig: () => Promise<AperioConfig>;
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
     };

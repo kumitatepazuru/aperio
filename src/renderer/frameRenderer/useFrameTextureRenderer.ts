@@ -17,10 +17,7 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 }
 `;
 
-const FRAME_WIDTH = 1920;
-const FRAME_HEIGHT = 1080;
-
-const FrameTextureRenderer = () => {
+const useFrameTextureRenderer = () => {
   const { resources, canvas: canvasRef } = useExternalTexturePreviewWebGPU({
     fragmentShaderCode,
   });
@@ -130,14 +127,7 @@ const FrameTextureRenderer = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerState, resources]);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      width={FRAME_WIDTH}
-      height={FRAME_HEIGHT}
-      style={{ width: "100%", height: "100%" }}
-    />
-  );
+  return canvasRef;
 };
 
-export default FrameTextureRenderer;
+export default useFrameTextureRenderer;

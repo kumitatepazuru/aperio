@@ -136,7 +136,7 @@ const Timeline = () => {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full p-2 gap-3">
       <Buttons />
 
       <div className="flex-1 overflow-hidden">
