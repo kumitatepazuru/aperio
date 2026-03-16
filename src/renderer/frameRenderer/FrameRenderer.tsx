@@ -2,7 +2,7 @@ import type { FC, Ref } from "react";
 import useFrameBufferRenderer from "./useFrameBufferRenderer";
 import useFrameTextureRenderer from "./useFrameTextureRenderer";
 
-const FRAME_WIDTH = 1920;
+const FRAME_WIDTH = 1024;
 const FRAME_HEIGHT = 1080;
 
 const config = await window.main.getConfig();
@@ -19,13 +19,13 @@ const Canvas: FC<{ ref: Ref<HTMLCanvasElement> }> = ({ ref }) => (
 );
 
 const FrameTextureRenderer = () => {
-  const canvasRef = useFrameTextureRenderer();
+  const canvasRef = useFrameTextureRenderer(FRAME_WIDTH, FRAME_HEIGHT);
 
   return <Canvas ref={canvasRef} />;
 };
 
 const FrameBufferRenderer = () => {
-  const canvasRef = useFrameBufferRenderer();
+  const canvasRef = useFrameBufferRenderer(FRAME_WIDTH, FRAME_HEIGHT);
 
   return <Canvas ref={canvasRef} />;
 };

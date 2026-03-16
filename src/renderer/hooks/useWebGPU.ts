@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, type RefCallback } from "react";
 
 type previewWebGPUBase = {
   fragmentShaderCode: string;
+  width: number;
+  height: number;
 };
 
 type webGPUResources = {
@@ -10,11 +12,6 @@ type webGPUResources = {
   format: GPUTextureFormat;
   vertexShaderModule: GPUShaderModule;
   fragmentShaderModule: GPUShaderModule;
-};
-
-export type previewWebGPUArg = previewWebGPUBase & {
-  width: number;
-  height: number;
 };
 
 export type BufferWebGPUResources = {
@@ -83,7 +80,8 @@ const initPreviewWebGPU = async ({
   canvas,
   fragmentShaderCode,
   device,
-}: previewWebGPUBase & {
+}: {
+  fragmentShaderCode: string;
   device: GPUDevice;
   canvas: HTMLCanvasElement | null;
 }): Promise<webGPUResources | null> => {
@@ -200,7 +198,9 @@ const buildBufferResources = (
   width: number,
   height: number,
 ): BufferWebGPUResources => {
-  console.warn("BufferWebGPUResources is used. This may lead to suboptimal performance. Consider switching to useExternalTexturePreviewWebGPU for better performance.");
+  console.warn(
+    "BufferWebGPUResources is used. This may lead to suboptimal performance. Consider switching to useExternalTexturePreviewWebGPU for better performance.",
+  );
 
   const { device, context } = base;
 
@@ -259,7 +259,7 @@ const useBufferPreviewWebGPU = ({
   fragmentShaderCode,
   width,
   height,
-}: previewWebGPUArg): {
+}: previewWebGPUBase): {
   resources: BufferWebGPUResources | null;
   canvas: RefCallback<HTMLCanvasElement>;
 } =>
@@ -272,10 +272,19 @@ const useBufferPreviewWebGPU = ({
 
 const useExternalTexturePreviewWebGPU = ({
   fragmentShaderCode,
+  width,
+  height,
 }: previewWebGPUBase): {
   resources: ExternalTextureWebGPUResources | null;
   canvas: RefCallback<HTMLCanvasElement>;
-} =>
-  usePreviewWebGPUBase(fragmentShaderCode, buildExternalTextureResources, []);
+} => {
+  window.main.resizeOsr(width, height);
+
+  return usePreviewWebGPUBase(
+    fragmentShaderCode,
+    buildExternalTextureResources,
+    [],
+  );
+};
 
 export { useBufferPreviewWebGPU, useExternalTexturePreviewWebGPU };

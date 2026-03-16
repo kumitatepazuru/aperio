@@ -60,8 +60,8 @@ ipcMain.handle("send-port", (event) => {
 
 ipcMain.handle(
   "get-frame-buf",
-  (_: IpcMainInvokeEvent, count: number, frameStruct: LayerStructure[]) => {
-    nativeModule.getFrameBuf(count, frameStruct);
+  (_: IpcMainInvokeEvent, count: number, width: number, height: number, frameStruct: LayerStructure[]) => {
+    nativeModule.getFrameBuf(count, width, height, frameStruct);
   },
 );
 
@@ -78,6 +78,10 @@ ipcMain.handle("get-config", () => {
 
 ipcMain.handle("get-event-stack-length", () => {
   return nativeModule.getEventStack();
+});
+
+ipcMain.handle("resize-osr", (_, width: number, height: number) => {
+  osrWin?.setSize(width, height, false);
 });
 
 async function createWindow() {

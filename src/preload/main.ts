@@ -54,4 +54,6 @@ contextBridge.exposeInMainWorld("main", {
       ipcRenderer.removeListener("event-stack-length-changed", listener);
     };
   },
+  resizeOsr: (width: number, height: number) =>
+    ipcRenderer.invoke("resize-osr", width, height),
 });

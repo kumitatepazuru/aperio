@@ -22,6 +22,7 @@ declare global {
       getConfig: () => Promise<AperioConfig>;
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
+      resizeOsr: (width: number, height: number) => Promise<void>;
     };
   }
 }

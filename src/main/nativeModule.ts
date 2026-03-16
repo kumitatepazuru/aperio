@@ -15,7 +15,7 @@ import {
   AperioConfigManager,
 } from "native";
 
-const TIMEOUT_MS = 1000;
+const TIMEOUT_MS = 5000;
 
 export class NativeModule {
   configManager: AperioConfigManager;
@@ -64,9 +64,9 @@ export class NativeModule {
     webContents.postMessage("frame-port-main", null, [this.p2]);
   }
 
-  getFrameBuf(count: number, frameStruct: LayerStructure[]) {
+  getFrameBuf(count: number, width: number, height: number, frameStruct: LayerStructure[]) {
     // ArrayBufferをここで作ってgetFrameに参照渡しする
-    const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
+    const buffer = new ArrayBuffer(width * height * 4); // width x height x 4 bytes for RGBA
     const data = new Uint8Array(buffer);
 
     this.aperioManager.getFrameBuf(data, count, frameStruct);

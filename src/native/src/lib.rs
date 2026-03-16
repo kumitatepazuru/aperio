@@ -128,6 +128,8 @@ impl AperioManager {
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
+        width: i32,
+        height: i32,
         frame_struct: Vec<LayerStructure>,
     ) -> napi::Result<()> {
         let pl_manager = &self.plmanager;
@@ -142,7 +144,7 @@ impl AperioManager {
             };
 
             let func = pl_manager.getattr("make_frame_buf")?;
-            func.call1((count, frame_struct, 1920, 1080, buffer_ptr))?;
+            func.call1((count, frame_struct, width, height, buffer_ptr))?;
 
             Ok(())
         })

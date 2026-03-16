@@ -18,14 +18,11 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 }
 `;
 
-const FRAME_WIDTH = 1920;
-const FRAME_HEIGHT = 1080;
-
-const useFrameBufferRenderer = () => {
+const useFrameBufferRenderer = (width: number, height: number) => {
   const { resources, canvas: canvasRef } = useBufferPreviewWebGPU({
     fragmentShaderCode,
-    width: FRAME_WIDTH,
-    height: FRAME_HEIGHT,
+    width,
+    height,
   });
   const animationFrameReserve = useRef<number | null>(null);
   const frameManager = useMemo(() => new FrameManager(), []);
@@ -51,10 +48,10 @@ const useFrameBufferRenderer = () => {
       { texture },
       data.buffer,
       {
-        bytesPerRow: FRAME_WIDTH * 4,
-        rowsPerImage: FRAME_HEIGHT,
+        bytesPerRow: width * 4,
+        rowsPerImage: height,
       },
-      { width: FRAME_WIDTH, height: FRAME_HEIGHT },
+      { width, height },
     );
 
     // バインドグループの作成

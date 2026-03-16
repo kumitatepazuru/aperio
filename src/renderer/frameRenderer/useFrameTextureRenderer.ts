@@ -17,9 +17,11 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 }
 `;
 
-const useFrameTextureRenderer = () => {
+const useFrameTextureRenderer = (width: number, height: number) => {
   const { resources, canvas: canvasRef } = useExternalTexturePreviewWebGPU({
     fragmentShaderCode,
+    width,
+    height,
   });
   const animationFrameReserve = useRef<number | null>(null);
   const { viewerState, getFrameStruct, getCurrentFrameCount } = useStore(
@@ -113,7 +115,9 @@ const useFrameTextureRenderer = () => {
       }
 
       animationFrameReserve.current =
-        viewerState.state === "playing" ? requestAnimationFrame(frameLoop) : null;
+        viewerState.state === "playing"
+          ? requestAnimationFrame(frameLoop)
+          : null;
     });
 
     // 最初のフレームをリクエスト
