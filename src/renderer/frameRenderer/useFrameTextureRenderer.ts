@@ -1,10 +1,10 @@
-import { useEffect, useRef } from "react";
-import useStore from "@/store";
-import { useShallow } from "zustand/shallow";
+import { useCallback, useEffect, useRef } from "react";
+import useStore, { getCurrentFrameCount, getFrameStruct } from "@shared/store";
 import {
   useExternalTexturePreviewWebGPU,
   type ExternalTextureWebGPUResources,
 } from "@/hooks/useWebGPU";
+import type { ReceivedSharedTextureData } from "electron";
 
 // VideoFrameをcanvasに描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -17,20 +17,14 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 }
 `;
 
-const useFrameTextureRenderer = (width: number, height: number) => {
+const useFrameTextureRenderer = () => {
   const { resources, canvas: canvasRef } = useExternalTexturePreviewWebGPU({
     fragmentShaderCode,
-    width,
-    height,
   });
   const animationFrameReserve = useRef<number | null>(null);
-  const { viewerState, getFrameStruct, getCurrentFrameCount } = useStore(
-    useShallow((state) => ({
-      viewerState: state.viewerState,
-      getFrameStruct: state.getFrameStruct,
-      getCurrentFrameCount: state.getCurrentFrameCount,
-    })),
-  );
+  const viewerState = useStore((state) => state.viewerState);
+  const frameState = useStore((state) => state.frameState);
+  const previousFrameCount = useRef<number | null>(null);
 
   // VideoFrameを描画する関数
   const renderVideoFrame = (
@@ -84,29 +78,40 @@ const useFrameTextureRenderer = (width: number, height: number) => {
   };
 
   // フレームループ
-  const frameLoop = async () => {
+  const frameLoop = useCallback(async () => {
+    const currentFrameCount = getCurrentFrameCount();
+    // TODO: この前に音声1ブロック分の生成・再生処理を入れる
+    if (previousFrameCount.current === currentFrameCount) {
+      // フレームが前回と同じならスキップ
+      animationFrameReserve.current =
+        useStore.getState().viewerState.state === "playing"
+          ? requestAnimationFrame(frameLoop)
+          : null;
+      return;
+    }
+
     try {
       await window.frame.getFrameSharedTexture(
-        getCurrentFrameCount(),
+        currentFrameCount,
         getFrameStruct(),
       );
+      previousFrameCount.current = currentFrameCount;
     } catch (error) {
       console.error("Error getting frame:", error);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (!resources) return;
-
-    // レシーバーの設定
-    window.frame.setReceiver(async (textureInfo) => {
+    const receiver = async (textureInfo: ReceivedSharedTextureData) => {
       try {
         // VideoFrameを取得
         const videoFrame = textureInfo.importedSharedTexture.getVideoFrame();
         textureInfo.importedSharedTexture.release();
 
         // 描画
-        renderVideoFrame(videoFrame, resources);
+        if (resources) {
+          renderVideoFrame(videoFrame, resources);
+        }
 
         // VideoFrameを速やかにclose
         videoFrame.close();
@@ -115,12 +120,20 @@ const useFrameTextureRenderer = (width: number, height: number) => {
       }
 
       animationFrameReserve.current =
-        viewerState.state === "playing"
+        useStore.getState().viewerState.state === "playing"
           ? requestAnimationFrame(frameLoop)
           : null;
-    });
+    };
 
-    // 最初のフレームをリクエスト
+    // レシーバーの設定
+    window.frame.setReceiver(receiver);
+  }, [frameLoop, resources]);
+
+  useEffect(() => {
+    if (!resources) return;
+
+    // 初期化して最初のフレームをリクエスト
+    previousFrameCount.current = null;
     animationFrameReserve.current = requestAnimationFrame(frameLoop);
 
     return () => {
@@ -128,8 +141,7 @@ const useFrameTextureRenderer = (width: number, height: number) => {
         cancelAnimationFrame(animationFrameReserve.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewerState, resources]);
+  }, [viewerState, frameState, resources, frameLoop]);
 
   return canvasRef;
 };

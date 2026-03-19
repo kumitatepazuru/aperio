@@ -1,4 +1,4 @@
-import useStore from "@/store";
+import useStore from "@shared/store";
 import { useShallow } from "zustand/shallow";
 import { useCallback, useEffect, useRef, type MouseEvent } from "react";
 

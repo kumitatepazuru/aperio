@@ -9,7 +9,7 @@ const App = () => {
     };
 
     const unsubscribe = window.main.onEventStackChanged(onEvent);
-    void window.main.getEventStack().then(onEvent);
+    window.main.getEventStack().then(onEvent);
 
     return () => {
       unsubscribe();

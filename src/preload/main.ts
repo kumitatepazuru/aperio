@@ -25,8 +25,19 @@ contextBridge.exposeInMainWorld("frame", {
   sendPort: async () => {
     await ipcRenderer.invoke("send-port");
   },
-  getFrameBuf: async (count: number, frameStruct: LayerStructure[]) => {
-    await ipcRenderer.invoke("get-frame-buf", count, frameStruct);
+  getFrameBuf: async (
+    count: number,
+    width: number,
+    height: number,
+    frameStruct: LayerStructure[],
+  ) => {
+    await ipcRenderer.invoke(
+      "get-frame-buf",
+      count,
+      width,
+      height,
+      frameStruct,
+    );
   },
 
   setReceiver: (cb: SharedTextureReceiverParam) => {
@@ -37,6 +48,28 @@ contextBridge.exposeInMainWorld("frame", {
     frameStruct: LayerStructure[],
   ) => {
     await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
+  },
+});
+
+// Rendezvous API
+contextBridge.exposeInMainWorld("rendezvous", {
+  register: () => ipcRenderer.invoke("rendezvous:register"),
+  heartbeat: (clientId: number) =>
+    ipcRenderer.invoke("rendezvous:heartbeat", clientId),
+  getMaster: () => ipcRenderer.invoke("rendezvous:get-master"),
+  requestState: (masterWebContentsId: number) =>
+    ipcRenderer.invoke("rendezvous:request-state", masterWebContentsId),
+  stateResponse: (requesterId: number, state: unknown) =>
+    ipcRenderer.invoke("rendezvous:state-response", requesterId, state),
+  onProvideState: (cb: (requesterWebContentsId: number) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, id: number) => cb(id);
+    ipcRenderer.on("rendezvous:provide-state", listener);
+    return () => ipcRenderer.removeListener("rendezvous:provide-state", listener);
+  },
+  onClientDied: (cb: (deadClientId: number) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, id: number) => cb(id);
+    ipcRenderer.on("rendezvous:client-died", listener);
+    return () => ipcRenderer.removeListener("rendezvous:client-died", listener);
   },
 });
 
@@ -56,4 +89,5 @@ contextBridge.exposeInMainWorld("main", {
   },
   resizeOsr: (width: number, height: number) =>
     ipcRenderer.invoke("resize-osr", width, height),
+  showDialog: (id: string) => ipcRenderer.invoke("show-dialog", id),
 });

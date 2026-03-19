@@ -1,9 +1,17 @@
-import { app, BrowserWindow, IpcMainInvokeEvent, ipcMain } from "electron";
+import {
+  app,
+  BrowserWindow,
+  IpcMainInvokeEvent,
+  ipcMain,
+  webContents,
+} from "electron";
+import { RendezvousServer } from "./rendezvousServer";
 import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
 import { LayerStructure, NodeSharedTextureFormat } from "native";
+import setMenu from "./menu";
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
@@ -15,6 +23,7 @@ app.commandLine.appendSwitch("ignore-gpu-blocklist");
 
 let osrWin: BrowserWindow | null = null;
 let win: BrowserWindow | null = null;
+let dialogWin: BrowserWindow | null = null;
 
 // TODO: リソースパス取得系IPCを一元化して引数で処理を分けるようにする
 function getResources() {
@@ -50,6 +59,17 @@ const nativeModule = new NativeModule({
   distDir: getDistDir(),
 });
 
+const showDialog = async (id: string) => {
+  if (isDev) {
+    await dialogWin?.loadURL(`http://localhost:5173/dialog/?id=${id}`);
+  } else {
+    const dialogHtml = path.join(dirName, `./dialog.html?id=${id}`);
+    await dialogWin?.loadFile(dialogHtml);
+  }
+
+  dialogWin?.show();
+};
+
 nativeModule.setEventStackListener((length) => {
   osrWin?.webContents.send("event-stack-length-changed", length);
 });
@@ -60,7 +80,13 @@ ipcMain.handle("send-port", (event) => {
 
 ipcMain.handle(
   "get-frame-buf",
-  (_: IpcMainInvokeEvent, count: number, width: number, height: number, frameStruct: LayerStructure[]) => {
+  (
+    _: IpcMainInvokeEvent,
+    count: number,
+    width: number,
+    height: number,
+    frameStruct: LayerStructure[],
+  ) => {
     nativeModule.getFrameBuf(count, width, height, frameStruct);
   },
 );
@@ -83,6 +109,71 @@ ipcMain.handle("get-event-stack-length", () => {
 ipcMain.handle("resize-osr", (_, width: number, height: number) => {
   osrWin?.setSize(width, height, false);
 });
+
+ipcMain.handle("show-dialog", (_, id: string) => showDialog(id));
+setMenu(showDialog);
+
+// ─── Rendezvous Server ───────────────────────────────────────────────────────
+
+const rendezvousServer = new RendezvousServer();
+rendezvousServer.start();
+
+// requesterWebContentsId -> resolve: state relay の待機テーブル
+const pendingStateRequests = new Map<number, (state: unknown) => void>();
+
+ipcMain.handle("rendezvous:register", (event) => {
+  return rendezvousServer.register(event.sender.id);
+});
+
+ipcMain.handle("rendezvous:heartbeat", (event, clientId: number) => {
+  return rendezvousServer.heartbeat(clientId, event.sender.id);
+});
+
+ipcMain.handle("rendezvous:get-master", () => {
+  const master = rendezvousServer.getMasterExcluding();
+  return {
+    masterId: master?.clientId ?? null,
+    masterWebContentsId: master?.webContentsId ?? null,
+  };
+});
+
+/** 新クライアントが master に state を要求する。main が中継する */
+ipcMain.handle(
+  "rendezvous:request-state",
+  async (event, masterWebContentsId: number) => {
+    const masterWC = webContents.fromId(masterWebContentsId);
+    if (!masterWC || masterWC.isDestroyed()) return null;
+
+    return new Promise<unknown>((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingStateRequests.delete(event.sender.id);
+        resolve(null);
+      }, 5000);
+
+      pendingStateRequests.set(event.sender.id, (state) => {
+        clearTimeout(timeout);
+        resolve(state);
+      });
+
+      // master renderer に「この requester に state を渡せ」と通知
+      masterWC.send("rendezvous:provide-state", event.sender.id);
+    });
+  },
+);
+
+/** master renderer が state を返してくる */
+ipcMain.handle(
+  "rendezvous:state-response",
+  (_event, requesterId: number, state: unknown) => {
+    const resolve = pendingStateRequests.get(requesterId);
+    if (resolve) {
+      pendingStateRequests.delete(requesterId);
+      resolve(state);
+    }
+  },
+);
+
+app.on("will-quit", () => rendezvousServer.stop());
 
 async function createWindow() {
   const config = nativeModule.configManager.config;
@@ -136,6 +227,19 @@ async function createWindow() {
     },
   });
 
+  dialogWin = new BrowserWindow({
+    width: 640,
+    height: 480,
+    parent: win,
+    modal: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(dirName, "./preload.js"),
+      sandbox: false,
+    }
+  });
+  dialogWin.setMenu(null);
+
   if (isDev) {
     // Vite の dev サーバに接続
     const url =
@@ -143,6 +247,7 @@ async function createWindow() {
     await win.loadURL(url);
     await osrWin?.loadURL("http://localhost:5173/osr/");
     win.webContents.openDevTools({ mode: "detach" });
+    dialogWin.webContents.openDevTools({ mode: "detach" });
   } else {
     // 本番はビルド済みファイルを読む
     const indexHtml = path.join(dirName, "./renderer/index.html");
@@ -152,6 +257,12 @@ async function createWindow() {
   }
 
   win.on("closed", () => (win = null));
+
+  // ダイアログは閉じるボタンを押したときshowをfalseにするだけ
+  dialogWin.on("close", (e) => {
+    e.preventDefault();
+    dialogWin?.hide();
+  });  
 }
 
 app.whenReady().then(createWindow);

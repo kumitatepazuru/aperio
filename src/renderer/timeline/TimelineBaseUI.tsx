@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import frameToDate from "@/utils/frameToDate";
-import useStore from "@/store";
+import useStore, { getCurrentFrameCount } from "@shared/store";
 import { useShallow } from "zustand/shallow";
 
 type TimelineBaseUIProps = {
@@ -30,11 +30,10 @@ const TimelineBaseUI = ({
   visibleVerticalLineIndices,
   children,
 }: TimelineBaseUIProps) => {
-  const { fps, viewerState, getCurrentFrameCount, pause } = useStore(
+  const { fps, viewerState, pause } = useStore(
     useShallow((state) => ({
       fps: state.fps,
       viewerState: state.viewerState,
-      getCurrentFrameCount: state.getCurrentFrameCount,
       pause: state.pause,
     })),
   );

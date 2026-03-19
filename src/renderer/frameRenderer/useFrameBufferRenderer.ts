@@ -1,6 +1,6 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import FrameManager from "../bridge";
-import useStore from "@/store";
+import useStore, { getCurrentFrameCount, getFrameStruct } from "@shared/store";
 import { useShallow } from "zustand/shallow";
 import {
   useBufferPreviewWebGPU,
@@ -18,84 +18,82 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 }
 `;
 
-const useFrameBufferRenderer = (width: number, height: number) => {
+const frameManager = new FrameManager();
+
+const useFrameBufferRenderer = () => {
   const { resources, canvas: canvasRef } = useBufferPreviewWebGPU({
     fragmentShaderCode,
-    width,
-    height,
   });
   const animationFrameReserve = useRef<number | null>(null);
-  const frameManager = useMemo(() => new FrameManager(), []);
   const previousFrameCount = useRef<number | null>(null);
-  const { viewerState, getFrameStruct, getCurrentFrameCount } = useStore(
+  const { viewerState, frameState } = useStore(
     useShallow((state) => ({
       viewerState: state.viewerState,
-      getFrameStruct: state.getFrameStruct,
-      getCurrentFrameCount: state.getCurrentFrameCount,
+      frameState: state.frameState,
     })),
   );
 
   // テクスチャデータを更新して描画する関数
-  const updateAndRender = (
-    data: Uint8Array<ArrayBuffer>,
-    resources: BufferWebGPUResources,
-  ) => {
-    const { device, context, pipeline, sampler, bindGroupLayout, texture } =
-      resources;
+  const updateAndRender = useCallback(
+    (data: Uint8Array<ArrayBuffer>, resources: BufferWebGPUResources) => {
+      const { device, context, pipeline, sampler, bindGroupLayout, texture } =
+        resources;
 
-    // テクスチャデータの更新
-    device.queue.writeTexture(
-      { texture },
-      data.buffer,
-      {
-        bytesPerRow: width * 4,
-        rowsPerImage: height,
-      },
-      { width, height },
-    );
-
-    // バインドグループの作成
-    const bindGroup = device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
+      // テクスチャデータの更新
+      device.queue.writeTexture(
+        { texture },
+        data.buffer,
         {
-          binding: 0,
-          resource: texture.createView(),
+          bytesPerRow: frameState.width * 4,
+          rowsPerImage: frameState.height,
         },
-        {
-          binding: 1,
-          resource: sampler,
-        },
-      ],
-    });
+        { width: frameState.width, height: frameState.height },
+      );
 
-    // コマンドエンコーダーの作成
-    const commandEncoder = device.createCommandEncoder();
+      // バインドグループの作成
+      const bindGroup = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: texture.createView(),
+          },
+          {
+            binding: 1,
+            resource: sampler,
+          },
+        ],
+      });
 
-    // レンダーパスの開始
-    const renderPass = commandEncoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: "clear",
-          storeOp: "store",
-        },
-      ],
-    });
+      // コマンドエンコーダーの作成
+      const commandEncoder = device.createCommandEncoder();
 
-    renderPass.setPipeline(pipeline);
-    renderPass.setBindGroup(0, bindGroup);
-    renderPass.draw(6);
-    renderPass.end();
+      // レンダーパスの開始
+      const renderPass = commandEncoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
+      });
 
-    // コマンドの送信
-    device.queue.submit([commandEncoder.finish()]);
-  };
+      renderPass.setPipeline(pipeline);
+      renderPass.setBindGroup(0, bindGroup);
+      renderPass.draw(6);
+      renderPass.end();
+
+      // コマンドの送信
+      device.queue.submit([commandEncoder.finish()]);
+    },
+    [frameState],
+  );
 
   // フレームループ
-  const frameLoop = async () => {
-    const isPlaying = viewerState.state === "playing";
+  const frameLoop = useCallback(async () => {
+    const isPlaying = useStore.getState().viewerState.state === "playing";
     const currentFrameCount = getCurrentFrameCount();
     // 前回と同じフレームならスキップ
     // TODO: この前に音声1ブロック分の生成・再生処理を入れる
@@ -115,6 +113,8 @@ const useFrameBufferRenderer = (width: number, height: number) => {
       // フレームデータを取得
       const data = await frameManager.getBuf(
         currentFrameCount,
+        frameState.width,
+        frameState.height,
         getFrameStruct(),
       );
       const uint8Data = new Uint8Array(data);
@@ -130,10 +130,11 @@ const useFrameBufferRenderer = (width: number, height: number) => {
     animationFrameReserve.current = isPlaying
       ? requestAnimationFrame(frameLoop)
       : null;
-  };
+  }, [frameState, resources, updateAndRender]);
 
   useEffect(() => {
-    // 最初のフレームをリクエスト
+    // 初期化して最初のフレームをリクエスト
+    previousFrameCount.current = null;
     animationFrameReserve.current = requestAnimationFrame(frameLoop);
 
     return () => {
@@ -141,8 +142,7 @@ const useFrameBufferRenderer = (width: number, height: number) => {
         cancelAnimationFrame(animationFrameReserve.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewerState, resources]);
+  }, [viewerState, resources, frameLoop]);
 
   return canvasRef;
 };

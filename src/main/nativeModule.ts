@@ -26,6 +26,8 @@ export class NativeModule {
     null;
   paintTimeout: NodeJS.Timeout | null = null;
   onEventStackChanged?: (length: number) => void;
+  private _sharedBuf: ArrayBuffer | null = null;
+  private _sharedBufSize = 0;
 
   constructor(dirs: Dirs) {
     const { port1, port2 } = new MessageChannelMain();
@@ -70,12 +72,16 @@ export class NativeModule {
     height: number,
     frameStruct: LayerStructure[],
   ) {
-    // ArrayBufferをここで作ってgetFrameに参照渡しする
-    const buffer = new ArrayBuffer(width * height * 4); // width x height x 4 bytes for RGBA
-    const data = new Uint8Array(buffer);
+    const size = width * height * 4;
+    if (!this._sharedBuf || this._sharedBufSize !== size) {
+      console.log("Allocating new ArrayBuffer of size:", size);
+      this._sharedBuf = new ArrayBuffer(size);
+      this._sharedBufSize = size;
+    }
+    const data = new Uint8Array(this._sharedBuf);
 
     this.aperioManager.getFrameBuf(data, count, width, height, frameStruct);
-    this.p1.postMessage(buffer);
+    this.p1.postMessage(this._sharedBuf);
   }
 
   getFrameSharedTexture(
@@ -83,7 +89,7 @@ export class NativeModule {
     frameStruct: LayerStructure[],
     frame: Electron.WebContents,
   ) {
-    if (this.eventStack) return; // すでに処理中の場合は無視
+    // if (this.eventStack) return; // すでに処理中の場合は無視
     this.eventStack = async (baseTexture) => {
       const textureInfo = baseTexture.textureInfo;
       if (!textureInfo) {

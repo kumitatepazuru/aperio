@@ -1,12 +1,11 @@
-import useStore from "@/store";
+import useStore, { getCurrentFrameCount } from "@shared/store";
 import { FaBackward, FaForward, FaPause, FaPlay } from "react-icons/fa";
 import { useShallow } from "zustand/shallow";
 
 const Buttons = () => {
-  const { state, getCurrentFrameCount, play, pause } = useStore(
+  const { state, play, pause } = useStore(
     useShallow((state) => ({
       state: state.viewerState,
-      getCurrentFrameCount: state.getCurrentFrameCount,
       play: state.play,
       pause: state.pause,
     })),

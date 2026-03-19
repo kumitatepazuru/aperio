@@ -1,12 +1,38 @@
 import { type FrameLayerStructure, type AperioConfig } from "native";
 import { sharedTexture } from "electron";
+import type { SyncableState } from "../shared/store";
 
 declare global {
   interface Window {
+    rendezvous: {
+      register: () => Promise<{
+        clientId: number;
+        masterId: number | null;
+        masterWebContentsId: number | null;
+      }>;
+      heartbeat: (clientId: number) => Promise<{ clientId: number }>;
+      getMaster: () => Promise<{
+        masterId: number | null;
+        masterWebContentsId: number | null;
+      }>;
+      requestState: (
+        masterWebContentsId: number,
+      ) => Promise<SyncableState | null>;
+      stateResponse: (
+        requesterId: number,
+        state: SyncableState,
+      ) => Promise<void>;
+      onProvideState: (
+        cb: (requesterWebContentsId: number) => void,
+      ) => () => void;
+      onClientDied: (cb: (deadClientId: number) => void) => () => void;
+    };
     frame: {
       sendPort: () => Promise<void>;
       getFrameBuf: (
         count: number,
+        width: number,
+        height: number,
         frameStruct: FrameLayerStructure[],
       ) => Promise<void>;
       setReceiver: (

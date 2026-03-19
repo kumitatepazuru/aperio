@@ -1,9 +1,8 @@
+import useStore from "@shared/store";
 import { useState, useEffect, useCallback, type RefCallback } from "react";
 
 type previewWebGPUBase = {
   fragmentShaderCode: string;
-  width: number;
-  height: number;
 };
 
 type webGPUResources = {
@@ -257,27 +256,28 @@ const buildExternalTextureResources = (
 
 const useBufferPreviewWebGPU = ({
   fragmentShaderCode,
-  width,
-  height,
 }: previewWebGPUBase): {
   resources: BufferWebGPUResources | null;
   canvas: RefCallback<HTMLCanvasElement>;
-} =>
-  usePreviewWebGPUBase(
+} => {
+  const { width, height } = useStore(({ frameState }) => frameState);
+
+  return usePreviewWebGPUBase(
     fragmentShaderCode,
     (base) => buildBufferResources(base, width, height),
     [width, height],
     (prev) => prev.texture.destroy(),
   );
+};
 
 const useExternalTexturePreviewWebGPU = ({
   fragmentShaderCode,
-  width,
-  height,
 }: previewWebGPUBase): {
   resources: ExternalTextureWebGPUResources | null;
   canvas: RefCallback<HTMLCanvasElement>;
 } => {
+  const { width, height } = useStore(({ frameState }) => frameState);
+
   useEffect(() => {
     window.main.resizeOsr(width, height);
   }, [width, height]);

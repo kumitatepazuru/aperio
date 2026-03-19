@@ -1,6 +1,6 @@
 import { useShallow } from "zustand/shallow";
 import Buttons from "./Buttons";
-import useStore from "@/store";
+import useStore from "@shared/store";
 import { useMemo, useRef, useState, type WheelEvent } from "react";
 import useContentSize from "@/hooks/useContentSize";
 import LayerContents from "./LayerContents";
