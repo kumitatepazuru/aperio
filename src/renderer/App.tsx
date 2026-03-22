@@ -8,8 +8,8 @@ function App() {
   return (
     <Suspense fallback={<Loading />}>
       <Dock>
-        <FrameRenderer />
-        <Timeline />
+        <FrameRenderer key="aperio.frame_renderer" />
+        <Timeline key="aperio.timeline" />
       </Dock>
     </Suspense>
   );

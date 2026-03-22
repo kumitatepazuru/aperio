@@ -46,6 +46,7 @@ declare global {
     main: {
       getPluginNames: () => Record<string, string>[];
       getConfig: () => Promise<AperioConfig>;
+      saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
       resizeOsr: (width: number, height: number) => Promise<void>;

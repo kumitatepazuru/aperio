@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, sharedTexture } from "electron";
-import { type LayerStructure } from "native";
+import { AperioConfig, type LayerStructure } from "native";
 
 export type SyncedStoreState = {
   fps: number;
@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld("rendezvous", {
 // その他のメインプロセスAPI
 contextBridge.exposeInMainWorld("main", {
   getConfig: () => ipcRenderer.invoke("get-config"),
+  saveConfig: (config: Partial<AperioConfig>) => ipcRenderer.invoke("save-config", config),
   getEventStack: () => ipcRenderer.invoke("get-event-stack-length"),
   onEventStackChanged: (cb: (length: number) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, length: number) => {

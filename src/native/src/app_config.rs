@@ -20,6 +20,7 @@ pub struct AperioConfig {
     pub python: PythonConfig,
     pub fast_preview: bool,
     pub tex_pixel_format: NodeSharedTextureFormat,
+    pub dock_layout: Option<Value>,
 }
 
 const DEFAULT_CONFIG: &str = include_str!("data/default-config.json");

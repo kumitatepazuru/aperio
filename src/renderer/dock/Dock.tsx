@@ -1,4 +1,4 @@
-import { DockPanel, Widget } from "@lumino/widgets";
+import { DockPanel, Widget, DockLayout } from "@lumino/widgets";
 import {
   Children,
   isValidElement,
@@ -12,8 +12,25 @@ import "@lumino/default-theme/style/index.css";
 import { dockWidgetContext } from "./dockWidgetContext";
 import { createRoot } from "react-dom/client";
 
-const makeWidget = (title: string, content: ReactElement) => {
+type SeriarizableITabAreaConfig = Omit<DockLayout.ITabAreaConfig, "widgets"> & {
+  widgets: string[]; // widgetのIDの配列に置き換える
+};
+type SerializableISplitAreaConfig = Omit<
+  DockLayout.ISplitAreaConfig,
+  "children"
+> & {
+  children: SerializableAreaConfig[];
+};
+type SerializableAreaConfig =
+  | SeriarizableITabAreaConfig
+  | SerializableISplitAreaConfig;
+type SerializableILayoutConfig = {
+  main: SerializableAreaConfig | null;
+};
+
+const makeWidget = (id: string, title: string, content: ReactElement) => {
   const w = new Widget();
+  w.id = id;
   w.title.label = title;
   w.title.closable = true;
   w.addClass("widget");
@@ -42,6 +59,7 @@ const Dock: FC<{ children: ReactElement | ReactElement[] }> = ({
     () => Children.toArray(children).filter(isValidElement),
     [children],
   );
+  const isInitialized = useRef(false);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -49,27 +67,106 @@ const Dock: FC<{ children: ReactElement | ReactElement[] }> = ({
     const dock = new DockPanel();
     dock.addClass("grow-1");
     dock.addClass("shrink-1");
-
-    const widgets = components.map((child, index) => {
-      const title = `Untitled ${index + 1}`;
-      const content = child;
-      const widget = makeWidget(title, content);
-      if (index === 0) {
-        dock.addWidget(widget.widget);
-      } else {
-        dock.addWidget(widget.widget, {
-          mode: "split-right",
-        });
+    dock.layoutModified.connect(() => {
+      if (!isInitialized.current) {
+        // 初回のlayoutModifiedは無視する（初期レイアウトの保存を防止）
+        return;
       }
 
-      return widget;
+      // 内部のWidgets型がjsonに変換できないため置き換える
+      const replacer = (
+        areaConfig: DockLayout.AreaConfig,
+      ): SerializableAreaConfig => {
+        if (areaConfig.type === "tab-area") {
+          // TabArea
+          return {
+            ...areaConfig,
+            widgets: areaConfig.widgets.map((widget) => widget.id),
+          };
+        } else {
+          // SplitArea
+          return {
+            ...areaConfig,
+            children: areaConfig.children.map(replacer),
+          };
+        }
+      };
+
+      const config = dock.saveLayout();
+      let serializableConfig: SerializableILayoutConfig = { main: null };
+      if (config.main) {
+        serializableConfig = {
+          main: replacer(config.main),
+        };
+      }
+      console.log("Layout modified, saving config:", serializableConfig);
+      window.main.saveConfig({ dockLayout: serializableConfig });
     });
+
+    const widgets = components
+      .map((child, index) => {
+        const title = `Untitled ${index + 1}`;
+        if (!child.key) {
+          console.warn("Child component is missing a key prop");
+          return null;
+        }
+
+        const widget = makeWidget(child.key, title, child);
+        if (index === 0) {
+          dock.addWidget(widget.widget);
+        } else {
+          dock.addWidget(widget.widget, {
+            mode: "split-right",
+          });
+        }
+
+        return widget;
+      })
+      .filter((w) => w !== null);
 
     Widget.attach(dock, hostRef.current);
 
     const onResize = () => dock.update();
     window.addEventListener("resize", onResize);
 
+    // 初期レイアウトの読み込み
+    window.main.getConfig().then((config) => {
+      if (!config.dockLayout) return;
+      const deserializer = (
+        areaConfig: SerializableAreaConfig,
+      ): DockLayout.AreaConfig => {
+        if (areaConfig.type === "tab-area") {
+          // TabArea
+          const areaWidgets = areaConfig.widgets
+            .map((id) => {
+              const found = widgets.find((w) => w.widget.id === id);
+              return found ? found.widget : null;
+            })
+            .filter((w): w is Widget => !!w);
+
+          return {
+            ...areaConfig,
+            widgets: areaWidgets,
+          };
+        } else {
+          // SplitArea
+          return {
+            ...areaConfig,
+            children: areaConfig.children.map(deserializer),
+          };
+        }
+      };
+
+      let deserializedConfig: DockLayout.ILayoutConfig = { main: null };
+      if (config.dockLayout.main) {
+        deserializedConfig = {
+          main: deserializer(config.dockLayout.main),
+        };
+      }
+      dock.restoreLayout(deserializedConfig);
+    });
+
+    isInitialized.current = true;
     dock.update();
 
     return () => {
