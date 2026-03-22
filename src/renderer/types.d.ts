@@ -1,4 +1,8 @@
-import { type FrameLayerStructure, type AperioConfig } from "native";
+import {
+  type FrameLayerStructure,
+  type AperioConfig,
+  type RequestStructureParameter,
+} from "native";
 import { sharedTexture } from "electron";
 import type { SyncableState } from "../shared/store";
 
@@ -45,6 +49,9 @@ declare global {
     };
     main: {
       getPluginNames: () => Record<string, string>[];
+      getParameterStruct: (
+        pluginName: string,
+      ) => Promise<RequestStructureParameter[]>;
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       getEventStack: () => Promise<number>;

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
-    structs::{Dirs, LayerStructure},
+    structs::{Dirs, LayerStructure, RequestStructureParameter},
     util::get_local_data_dir,
 };
 #[cfg(target_os = "linux")]
@@ -118,9 +118,7 @@ impl AperioManager {
             napi::Error::from_reason(format!("Failed to initialize Python environment: {:?}", e))
         })?;
 
-        Ok(Self {
-            plmanager,
-        })
+        Ok(Self { plmanager })
     }
 
     #[napi]
@@ -163,6 +161,25 @@ impl AperioManager {
             Ok(names.extract()?)
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get plugin names: {:?}", e)))?;
+
+        Ok(result)
+    }
+
+    #[napi]
+    pub fn get_parameter_struct(
+        &self,
+        plugin_name: String,
+    ) -> napi::Result<Vec<RequestStructureParameter>> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<Vec<RequestStructureParameter>> {
+            let pl_manager = pl_manager.bind(py);
+            let struct_info = pl_manager.call_method1("get_parameter_struct", (plugin_name,))?;
+            Ok(struct_info.extract()?)
+        })
+        .map_err(|e| {
+            napi::Error::from_reason(format!("Failed to get parameter struct: {:?}", e))
+        })?;
 
         Ok(result)
     }

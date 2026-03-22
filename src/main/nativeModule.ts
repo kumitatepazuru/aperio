@@ -172,4 +172,12 @@ export class NativeModule {
   saveConfig(config: Partial<AperioConfig>) {
     this.configManager.setConfig({ ...this.configManager.config, ...config });
   }
+
+  getPluginNames() {
+    return this.aperioManager.getPluginNames();
+  }
+
+  getParameterStruct(pluginName: string) {
+    return this.aperioManager.getParameterStruct(pluginName);
+  }
 }

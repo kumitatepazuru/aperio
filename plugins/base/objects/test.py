@@ -2,6 +2,7 @@ import os
 import site
 import sys
 
+from aperio_plugin.types.frame_structure import Vec2IntParam
 import cv2
 from gpu_util import PyCompiledWgsl, PyImageGenerator
 import numpy as np
@@ -14,8 +15,8 @@ class TestObject(ObjectGeneratorBase):
     テストフレームを生成するオブジェクトプラグイン。OpencvとGStreamerのテストソースを利用してフレームを生成する。
     """
 
-    frame = cv2.VideoCapture("videotestsrc ! videoconvert ! appsink")  # GStreamerのテストソースを利用
-    frame.set(cv2.CAP_PROP_FPS, 240)
+    frame = cv2.VideoCapture("videotestsrc ! videoconvert ! appsink", cv2.CAP_GSTREAMER)  # GStreamerのテストソースを利用
+    # frame.set(cv2.CAP_PROP_FPS, 60)
 
     def __init__(self, generator: PyImageGenerator):
         super().__init__(generator)
@@ -34,6 +35,10 @@ class TestObject(ObjectGeneratorBase):
         current_dir = os.path.dirname(__file__)
         with open(os.path.join(current_dir, "test.wgsl"), "r") as f:
             self.shader = PyCompiledWgsl("test", f.read(), generator, None)
+        
+        self.request_args_struct = [
+            Vec2IntParam(id="position", title="テキスト位置", x=50, y=50),
+        ]
 
     def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn:
         ret, img = self.frame.read()

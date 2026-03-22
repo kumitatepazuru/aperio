@@ -64,7 +64,8 @@ contextBridge.exposeInMainWorld("rendezvous", {
   onProvideState: (cb: (requesterWebContentsId: number) => void) => {
     const listener = (_: Electron.IpcRendererEvent, id: number) => cb(id);
     ipcRenderer.on("rendezvous:provide-state", listener);
-    return () => ipcRenderer.removeListener("rendezvous:provide-state", listener);
+    return () =>
+      ipcRenderer.removeListener("rendezvous:provide-state", listener);
   },
   onClientDied: (cb: (deadClientId: number) => void) => {
     const listener = (_: Electron.IpcRendererEvent, id: number) => cb(id);
@@ -76,7 +77,8 @@ contextBridge.exposeInMainWorld("rendezvous", {
 // その他のメインプロセスAPI
 contextBridge.exposeInMainWorld("main", {
   getConfig: () => ipcRenderer.invoke("get-config"),
-  saveConfig: (config: Partial<AperioConfig>) => ipcRenderer.invoke("save-config", config),
+  saveConfig: (config: Partial<AperioConfig>) =>
+    ipcRenderer.invoke("save-config", config),
   getEventStack: () => ipcRenderer.invoke("get-event-stack-length"),
   onEventStackChanged: (cb: (length: number) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, length: number) => {
@@ -91,4 +93,7 @@ contextBridge.exposeInMainWorld("main", {
   resizeOsr: (width: number, height: number) =>
     ipcRenderer.invoke("resize-osr", width, height),
   showDialog: (id: string) => ipcRenderer.invoke("show-dialog", id),
+  getPluginNames: () => ipcRenderer.invoke("get-plugin-names"),
+  getParameterStruct: (pluginName: string) =>
+    ipcRenderer.invoke("get-parameter-struct", pluginName),
 });

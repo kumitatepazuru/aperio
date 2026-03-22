@@ -117,6 +117,14 @@ ipcMain.handle("save-config", (_, config: Partial<AperioConfig>) => {
   nativeModule.saveConfig(config);
 });
 
+ipcMain.handle("get-plugin-names", () => {
+  return nativeModule.aperioManager.getPluginNames();
+});
+
+ipcMain.handle("get-parameter-struct", (_, pluginName: string) => {
+  return nativeModule.aperioManager.getParameterStruct(pluginName);
+});
+
 // ─── Rendezvous Server ───────────────────────────────────────────────────────
 
 const rendezvousServer = new RendezvousServer();

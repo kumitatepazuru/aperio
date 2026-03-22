@@ -194,7 +194,7 @@ const _useStore = create<Store>()((set, get) => {
         rotation: 40.0,
         alpha: 1.0,
         obj: {
-          name: "TestObject",
+          name: "base.test_object",
           parameters: {},
         },
         effects: [],

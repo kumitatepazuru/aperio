@@ -32,7 +32,7 @@ except ImportError as e:
 
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import FilterGeneratorBase, GeneratorFuncReturn, GeneratorWgslReturn, ObjectGeneratorBase
-from .types.frame_structure import LayerStructure
+from .types.frame_structure import LayerStructure, RequestStructureParameter
 
 executor = ThreadPoolExecutor()
 
@@ -230,6 +230,14 @@ class PluginManager:
             result.append({filter_plugin.name: filter_plugin.display_name})
         
         return result
+    
+    def get_parameter_struct(self, plugin_name: str) -> list[RequestStructureParameter]:
+        if plugin_name in self.object_plugins:
+            return self.object_plugins[plugin_name].request_args_struct
+        elif plugin_name in self.filter_plugins:
+            return self.filter_plugins[plugin_name].request_args_struct
+        else:
+            raise ValueError(f"Plugin {plugin_name} is not registered as object or filter plugin")
 
     def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
                              width: int, height: int) -> gpu_util.PyImageGenerateBuilder | None:

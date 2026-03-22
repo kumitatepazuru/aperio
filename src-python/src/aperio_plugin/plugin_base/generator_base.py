@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from gpu_util import PyCompiledFunc, PyCompiledWgsl, PyImageGenerator
 
 from . import SubPluginBase
+from ..types.frame_structure import RequestStructureParameter
 
 @dataclass
 class GeneratorWgslReturn:
@@ -19,7 +20,22 @@ class GeneratorFuncReturn:
     output_width: int
     output_height: int
 
-class ObjectGeneratorBase(SubPluginBase):
+class GeneratorBase(SubPluginBase):
+    """
+    フレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
+    ジェネレーターは、フレーム生成のためのロジックを実装するクラスで、オブジェクトジェネレーターとフィルタージェネレーターの2種類がある。
+    オブジェクトジェネレーターは、前提となる映像データがない状態でフレームを生成するためのもので、フィルタージェネレーターは、前提となる映像データが必要な状態でフレームを生成するためのものである。
+    ジェネレーターは、生成時に必要な情報を引数として受け取り、生成されたフレームデータを返却する。
+    """
+
+    def __init__(self, generator: PyImageGenerator):
+        """
+        フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
+        """
+        super().__init__()
+        self.request_args_struct: list[RequestStructureParameter] = []  # ジェネレーターに渡される引数の構造体。必要に応じてサブクラスでオーバーライドする。
+
+class ObjectGeneratorBase(GeneratorBase):
     """
     オブジェクトを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
     オブジェクトは前提となる映像データがないため、生成時に必要な情報はオブジェクト自体の引数のみになる。
@@ -31,7 +47,7 @@ class ObjectGeneratorBase(SubPluginBase):
         """
         フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """
-        super().__init__()
+        super().__init__(generator)
 
     def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
         """
@@ -49,7 +65,7 @@ class ObjectGeneratorBase(SubPluginBase):
         raise NotImplementedError("Subclasses must implement this method")
 
 
-class FilterGeneratorBase(SubPluginBase):
+class FilterGeneratorBase(GeneratorBase):
     """
     フィルターを適用してフレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
     フィルターは前提となる映像データが必要なため、生成時に元のフレームデータを引数として受け取る。
@@ -61,7 +77,7 @@ class FilterGeneratorBase(SubPluginBase):
         """
         フィルター生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """
-        super().__init__()
+        super().__init__(generator)
 
     def generate(self, frame_number: int, filter_args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
         """

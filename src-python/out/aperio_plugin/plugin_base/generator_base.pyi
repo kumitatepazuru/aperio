@@ -1,4 +1,5 @@
 from . import SubPluginBase as SubPluginBase
+from ..types.frame_structure import RequestStructureParameter as RequestStructureParameter
 from dataclasses import dataclass
 from gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
 
@@ -16,7 +17,20 @@ class GeneratorFuncReturn:
     output_width: int
     output_height: int
 
-class ObjectGeneratorBase(SubPluginBase):
+class GeneratorBase(SubPluginBase):
+    """
+    フレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
+    ジェネレーターは、フレーム生成のためのロジックを実装するクラスで、オブジェクトジェネレーターとフィルタージェネレーターの2種類がある。
+    オブジェクトジェネレーターは、前提となる映像データがない状態でフレームを生成するためのもので、フィルタージェネレーターは、前提となる映像データが必要な状態でフレームを生成するためのものである。
+    ジェネレーターは、生成時に必要な情報を引数として受け取り、生成されたフレームデータを返却する。
+    """
+    request_args_struct: list[RequestStructureParameter]
+    def __init__(self, generator: PyImageGenerator) -> None:
+        """
+        フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
+        """
+
+class ObjectGeneratorBase(GeneratorBase):
     """
     オブジェクトを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
     オブジェクトは前提となる映像データがないため、生成時に必要な情報はオブジェクト自体の引数のみになる。
@@ -41,7 +55,7 @@ class ObjectGeneratorBase(SubPluginBase):
             GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
         """
 
-class FilterGeneratorBase(SubPluginBase):
+class FilterGeneratorBase(GeneratorBase):
     """
     フィルターを適用してフレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
     フィルターは前提となる映像データが必要なため、生成時に元のフレームデータを引数として受け取る。

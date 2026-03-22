@@ -1,6 +1,7 @@
+import gpu_util
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import FilterGeneratorBase, ObjectGeneratorBase
-from .types.frame_structure import LayerStructure as LayerStructure
+from .types.frame_structure import LayerStructure as LayerStructure, RequestStructureParameter as RequestStructureParameter
 from _typeshed import Incomplete
 from typing import Callable
 
@@ -82,9 +83,10 @@ class PluginManager:
         Returns:
             list[dict[str, str]]: 登録されているプラグインのnameとdisplay_nameの対応表のリスト
         """
-    def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> None:
+    def get_parameter_struct(self, plugin_name: str) -> list[RequestStructureParameter]: ...
+    def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> None:
         """
-        指定されたフレーム構造に基づいてフレームを生成するメソッド。
+        指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
         Args:
             frame_number (int): 生成するフレームの番号
@@ -92,6 +94,18 @@ class PluginManager:
             width (int): フレームの幅
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
+        """
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> None:
+        """
+        指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
+
+        Args:
+            frame_number (int): 生成するフレームの番号
+            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            width (int): フレームの幅
+            height (int): フレームの高さ
+            texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
+            format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
         """
     def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
         """
