@@ -10,7 +10,7 @@ import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
-import { LayerStructure, NodeSharedTextureFormat } from "native";
+import { AperioConfig, LayerStructure, NodeSharedTextureFormat } from "native";
 import setMenu from "./menu";
 
 const fileName = fileURLToPath(import.meta.url);
@@ -112,6 +112,10 @@ ipcMain.handle("resize-osr", (_, width: number, height: number) => {
 
 ipcMain.handle("show-dialog", (_, id: string) => showDialog(id));
 setMenu(showDialog);
+
+ipcMain.handle("save-config", (_, config: Partial<AperioConfig>) => {
+  nativeModule.saveConfig(config);
+});
 
 // ─── Rendezvous Server ───────────────────────────────────────────────────────
 

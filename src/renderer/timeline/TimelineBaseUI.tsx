@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import frameToDate from "@/utils/frameToDate";
 import useStore, { getCurrentFrameCount } from "@shared/store";
 import { useShallow } from "zustand/shallow";
@@ -37,26 +43,28 @@ const TimelineBaseUI = ({
       pause: state.pause,
     })),
   );
-  const [currentFrameCount, setCurrentFrameCount] = useState(
-    getCurrentFrameCount(),
-  );
+  const [currentFrameCount, setCurrentFrameCount] = useState(0);
 
   const graduationRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const moveLine = useCallback((clientX: number) => {
-    if (!graduationRef.current) return;
+  const moveLine = useCallback(
+    (clientX: number) => {
+      if (!graduationRef.current) return;
 
       const rect = graduationRef.current.getBoundingClientRect();
       const clickedX = clientX - rect.left;
       const frame = Math.max(0, Math.round(clickedX / zoomLevels[zoom]));
       pause(frame);
-  }, [pause, zoom, zoomLevels]);
+    },
+    [pause, zoom, zoomLevels],
+  );
 
   useEffect(() => {
     if (!isDragging) return;
 
-    const handleMouseMove = (event: globalThis.MouseEvent) => moveLine(event.clientX);
+    const handleMouseMove = (event: globalThis.MouseEvent) =>
+      moveLine(event.clientX);
 
     const handleMouseUp = () => {
       setIsDragging(false);
@@ -78,14 +86,15 @@ const TimelineBaseUI = ({
 
   useEffect(() => {
     // 再生中はcurrentFrameCountを更新し続ける
-    const update = () => {
+    // 読み込み後すぐも呼ばれるため、これで初期のcurrentFrameCountもセットされる
+    const update = async () => {
+      setCurrentFrameCount(await getCurrentFrameCount());
       if (viewerState.state === "playing") {
-        setCurrentFrameCount(getCurrentFrameCount());
         requestAnimationFrame(update);
       }
     };
     update();
-  }, [viewerState.state, getCurrentFrameCount]);
+  }, [viewerState.state]);
 
   return (
     <div

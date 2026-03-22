@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import FrameManager from "../bridge";
-import useStore, { getCurrentFrameCount, getFrameStruct } from "@shared/store";
+import useStore, { getCurrentFrameCount, getFrameStruct, getStoreState } from "@shared/store";
 import { useShallow } from "zustand/shallow";
 import {
   useBufferPreviewWebGPU,
@@ -93,8 +93,8 @@ const useFrameBufferRenderer = () => {
 
   // フレームループ
   const frameLoop = useCallback(async () => {
-    const isPlaying = useStore.getState().viewerState.state === "playing";
-    const currentFrameCount = getCurrentFrameCount();
+    const isPlaying = (await getStoreState()).viewerState.state === "playing";
+    const currentFrameCount = await getCurrentFrameCount();
     // 前回と同じフレームならスキップ
     // TODO: この前に音声1ブロック分の生成・再生処理を入れる
     if (!resources) {
@@ -115,7 +115,7 @@ const useFrameBufferRenderer = () => {
         currentFrameCount,
         frameState.width,
         frameState.height,
-        getFrameStruct(),
+        await getFrameStruct(),
       );
       const uint8Data = new Uint8Array(data);
 

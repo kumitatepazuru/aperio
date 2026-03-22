@@ -1,9 +1,9 @@
 import { webContents } from "electron";
 
 /** ハートビートが来なくなってから死亡判定するまでのms */
-const HEARTBEAT_TIMEOUT_MS = 6000;
+const HEARTBEAT_TIMEOUT_MS = 2000;
 /** 死亡チェックの実行間隔ms */
-const HEARTBEAT_CHECK_INTERVAL_MS = 3000;
+const HEARTBEAT_CHECK_INTERVAL_MS = 500;
 
 type ClientEntry = {
   webContentsId: number;
@@ -56,6 +56,7 @@ export class RendezvousServer {
     });
 
     const master = this.getMasterExcluding(clientId);
+    console.log(`${requesterWebContentsId}: Registered clientId ${clientId}. Master: ${master?.clientId ?? null}`);
     return {
       clientId,
       masterId: master?.clientId ?? null,
@@ -69,6 +70,9 @@ export class RendezvousServer {
     // 欠番IDまたはdead状態のハートビート → 新IDで再登録
     if (!entry || !entry.alive) {
       const newId = this.nextId++;
+      console.log(
+        `${requesterWebContentsId}: Received heartbeat from unknown or dead clientId ${clientId}. Registering as new clientId ${newId}.`,
+      );
       this.clients.set(newId, {
         webContentsId: requesterWebContentsId,
         lastHeartbeat: Date.now(),
@@ -113,6 +117,7 @@ export class RendezvousServer {
   }
 
   private notifyClientDied(deadClientId: number): void {
+    console.log(`Client ${deadClientId} is considered dead. Notifying others.`);
     for (const [, entry] of this.clients) {
       if (!entry.alive) continue;
       const wc = webContents.fromId(entry.webContentsId);

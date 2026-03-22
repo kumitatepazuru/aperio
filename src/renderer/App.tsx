@@ -1,13 +1,17 @@
+import { Suspense } from "react";
 import Dock from "./dock/Dock";
 import FrameRenderer from "./frameRenderer/FrameRenderer";
 import Timeline from "./timeline/Timeline";
+import Loading from "@shared/Loading";
 
 function App() {
   return (
-    <Dock>
-      <FrameRenderer />
-      <Timeline />
-    </Dock>
+    <Suspense fallback={<Loading />}>
+      <Dock>
+        <FrameRenderer />
+        <Timeline />
+      </Dock>
+    </Suspense>
   );
 }
 

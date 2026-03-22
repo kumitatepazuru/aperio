@@ -43,19 +43,54 @@ export type SyncableState = Pick<
 
 type ChannelMessage =
   | { type: "state"; data: Partial<SyncableState> }
-  /** 新クライアントが初回同期を開始。全クライアントのsetをキューイング */
+  /** 新クライアントが初回同期を開始。全クライアントのget/setをブロック */
   | { type: "sync-lock" }
-  /** 初回同期完了。全クライアントのキューを drain */
+  /** 初回同期完了。全クライアントのキューを drain してブロック解除 */
   | { type: "sync-unlock" };
 
 const channel = new BroadcastChannel("aperio-store-sync");
 
 // ─── グローバルロック ─────────────────────────────────────────────────────────
-// 初回同期中は全クライアントのsetをキューイングする。
-// BroadcastChannelはsenderには届かないためself側は acquireSyncLock/releaseSyncLock で直接操作する。
+// 初回同期中は全クライアントの get/set をブロックする。
+//
+// get のブロック方法:
+//   - useStore (React hook):       syncReadyPromise を throw → React Suspense が待機
+//   - useStore.getState() / getStoreState(): 同上。呼び出し元は catch して await するか
+//                                   Suspense に委譲する。
+//   - getCurrentFrameCount / getFrameStruct: async で syncReadyPromise を await してから
+//                                   _useStore.getState() を直接参照する。
+//
+// set のブロック方法:
+//   - setQueue に積み、drain 時に順番に適用する。
+//
+// drainQueue → Promise resolve の順を守ることで、resolve 後の再レンダリング・
+// await 再開時には最新 state が揃っている。
 
 let globalLockCount = 0;
+/** ロック中のみ存在。解除時に resolve される。 */
+let syncReadyPromise: Promise<void> | null = null;
+let syncReadyResolve: (() => void) | null = null;
 const setQueue: Array<() => void> = [];
+
+function incrementLock() {
+  if (globalLockCount === 0) {
+    syncReadyPromise = new Promise<void>((resolve) => {
+      syncReadyResolve = resolve;
+    });
+  }
+  globalLockCount++;
+}
+
+function decrementLock() {
+  globalLockCount--;
+  if (globalLockCount === 0) {
+    drainQueue();
+    const resolve = syncReadyResolve;
+    syncReadyPromise = null;
+    syncReadyResolve = null;
+    resolve?.();
+  }
+}
 
 function drainQueue() {
   const items = setQueue.splice(0);
@@ -64,24 +99,22 @@ function drainQueue() {
 
 /** 自分がロックを取得し、他クライアントにもロックを通知する */
 function acquireSyncLock() {
-  globalLockCount++;
+  incrementLock();
   channel.postMessage({ type: "sync-lock" } satisfies ChannelMessage);
 }
 
-/** ロックを解放し、他クライアントにも解放を通知。自分のキューもdrainする */
+/** ロックを解放し、他クライアントにも解放を通知。キューをdrainしてPromiseを解決する */
 function releaseSyncLock() {
   channel.postMessage({ type: "sync-unlock" } satisfies ChannelMessage);
-  globalLockCount--;
-  if (globalLockCount === 0) drainQueue();
+  decrementLock();
 }
 
-// ─── Store ───────────────────────────────────────────────────────────────────
+// ─── Internal Store ──────────────────────────────────────────────────────────
 
-const useStore = create<Store>()((set, get) => {
+const _useStore = create<Store>()((set, get) => {
   channel.onmessage = (e: MessageEvent<ChannelMessage>) => {
     const msg = e.data;
     if (msg.type === "state") {
-      // ロック中は他クライアントからのsetもキューイング
       const apply = () => set(msg.data);
       if (globalLockCount > 0) {
         setQueue.push(apply);
@@ -89,10 +122,9 @@ const useStore = create<Store>()((set, get) => {
         apply();
       }
     } else if (msg.type === "sync-lock") {
-      globalLockCount++;
+      incrementLock();
     } else if (msg.type === "sync-unlock") {
-      globalLockCount--;
-      if (globalLockCount === 0) drainQueue();
+      decrementLock();
     }
   };
 
@@ -100,7 +132,10 @@ const useStore = create<Store>()((set, get) => {
   const syncSet = (partial: Partial<SyncableState>) => {
     const apply = () => {
       set(partial);
-      channel.postMessage({ type: "state", data: partial } satisfies ChannelMessage);
+      channel.postMessage({
+        type: "state",
+        data: partial,
+      } satisfies ChannelMessage);
     };
     if (globalLockCount > 0) {
       setQueue.push(apply);
@@ -110,11 +145,10 @@ const useStore = create<Store>()((set, get) => {
   };
 
   return {
-    // get関数は呼び出し元rendererのローカルで実行される
     fps: 60,
     frameState: {
-      width: 3840,
-      height: 2160,
+      width: 1920,
+      height: 1080,
     },
     viewerState: {
       state: "paused",
@@ -179,23 +213,58 @@ const useStore = create<Store>()((set, get) => {
   };
 });
 
-export const getCurrentFrameCount = () => {
-  const { viewerState, fps } = useStore.getState();
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+/**
+ * Suspense-aware な zustand hook（default export）。
+ * - useStore() / useStore(selector): ロック中は syncReadyPromise を throw → Suspense 待機
+ * - useStore.getState(): バグリスクが高いため無効化。必要なら waitForStoreState() を使うこと。
+ * - useStore.setState() / .subscribe(): _useStore に直接委譲
+ */
+const useStore = Object.assign(
+  (selector?: (state: Store) => unknown) => {
+    if (syncReadyPromise !== null) throw syncReadyPromise;
+    return selector !== undefined ? _useStore(selector) : _useStore();
+  },
+  {
+    setState: _useStore.setState.bind(_useStore),
+    subscribe: _useStore.subscribe.bind(_useStore),
+  },
+) as {
+  // 直接呼び出すとバグのもとになるため、型レベルで無効化。
+  // vscodeのtsプラグインだとこれでエラーになるがtsに定義された動作ではないためかなりハック的。
+  // TODO: 解決方法がわかり次第より安定した無効化実装に書き換え
+    getState: () => void; 
+} & typeof _useStore;
+
+/**
+ * ロック中は syncReadyPromise を await してから state を取得する async ユーティリティ。
+ * React 外で「ロックが解けるまで待ってから処理したい」ケースに使う。
+ */
+export async function getStoreState(): Promise<Store> {
+  if (syncReadyPromise) await syncReadyPromise;
+  return _useStore.getState();
+}
+
+export const getCurrentFrameCount = async (): Promise<number> => {
+  const { viewerState, fps } = await getStoreState();
   if (viewerState.state === "playing") {
     const elapsedTime = (Date.now() - viewerState.changeTime) / 1000;
     return viewerState.beginFrame + Math.floor(elapsedTime * fps);
-  } else {
-    return viewerState.beginFrame;
   }
+  return viewerState.beginFrame;
 };
 
-export const getFrameStruct = () => {
-  const currentFrame = getCurrentFrameCount();
-  return useStore
-    .getState()
-    .timelineLayers.filter((layer) => {
-      return currentFrame >= layer.from && currentFrame <= layer.to;
-    })
+export const getFrameStruct = async () => {
+  const state = await getStoreState();
+  const { viewerState, fps } = state;
+  const currentFrame =
+    viewerState.state === "playing"
+      ? viewerState.beginFrame +
+        Math.floor(((Date.now() - viewerState.changeTime) / 1000) * fps)
+      : viewerState.beginFrame;
+  return state.timelineLayers
+    .filter((layer) => currentFrame >= layer.from && currentFrame <= layer.to)
     .sort((a, b) => a.layer - b.layer);
 };
 
@@ -208,7 +277,8 @@ let syncTargetClientId: number | null = null;
 let masterDeathSignal: (() => void) | null = null;
 
 function getSyncableState(): SyncableState {
-  const s = useStore.getState();
+  // 内部呼び出し（provideState ハンドラ）なのでロックを bypass して直接取得する
+  const s = _useStore.getState();
   return {
     fps: s.fps,
     viewerState: s.viewerState,
@@ -222,17 +292,15 @@ function getSyncableState(): SyncableState {
  * ランデブーサーバーに master を問い合わせて state を1回取得試行する。
  * - 成功（state 取得）→ true
  * - master なし or 自分が master → true（同期不要）
- * - タイムアウト or master 死亡通知 → false（呼び出し元がリトライ）
+ * - master 死亡通知 → false（呼び出し元がリトライ）
  */
 async function trySyncOnce(): Promise<boolean> {
   const master = await window.rendezvous.getMaster();
   if (!master.masterId || !master.masterWebContentsId) {
-    // master なし → 自分が master 扱いで同期不要
     console.log("No master found. This client will be the master.");
     return true;
   }
   if (master.masterId === myClientId) {
-    // 自分が master → 同期不要
     console.log("This client is the master. No need to sync.");
     return true;
   }
@@ -255,7 +323,7 @@ async function trySyncOnce(): Promise<boolean> {
   if (state) {
     // ロックを保持したまま直接 set（syncSet を経由しない＝再キューイングしない）
     console.log("State received from master. Sync complete.");
-    useStore.setState(state);
+    _useStore.setState(state);
     return true;
   }
   console.log("Failed to get state from master. Will retry.");
@@ -265,19 +333,23 @@ async function trySyncOnce(): Promise<boolean> {
 async function initRendezvousSync(): Promise<void> {
   // state 要求が来たら現在の state を返す（自分が master 候補のとき）
   window.rendezvous.onProvideState((requesterId) => {
-    console.log(`State requested by client ${requesterId}. Providing current state.`);
-    window.rendezvous.stateResponse(requesterId, getSyncableState());
+    console.log(
+      `State requested by client ${requesterId}. Providing current state.`,
+    );
+    void window.rendezvous.stateResponse(requesterId, getSyncableState());
   });
 
   // master 死亡通知: 同期待機中なら即時中断して再試行させる
   window.rendezvous.onClientDied((deadClientId) => {
-    console.log(`Client ${deadClientId} died. Checking if it was the sync target.`);
+    console.log(
+      `Client ${deadClientId} died. Checking if it was the sync target.`,
+    );
     if (syncTargetClientId === deadClientId && masterDeathSignal) {
       masterDeathSignal();
     }
   });
 
-  // ロックをすぐに取得: register 完了前の set も含めてすべてキューイング
+  // ロックをすぐに取得: register 完了前の get/set も含めてすべてブロック
   acquireSyncLock();
 
   try {
@@ -287,12 +359,12 @@ async function initRendezvousSync(): Promise<void> {
     // ハートビート送信（2秒ごと）
     setInterval(() => {
       if (myClientId === null) return;
-      window.rendezvous.heartbeat(myClientId).then((result) => {
+      void window.rendezvous.heartbeat(myClientId).then((result) => {
         if (result.clientId !== myClientId) {
           myClientId = result.clientId;
         }
       });
-    }, 2000);
+    }, 1000);
 
     if (masterId !== null) {
       // master がいる間はリトライし続ける
@@ -302,12 +374,12 @@ async function initRendezvousSync(): Promise<void> {
       }
     }
   } finally {
-    // 成功・失敗どちらでも必ずロック解放 → キュードrainで通常動作再開
+    // 成功・失敗どちらでも必ずロック解放 → drain → Promise resolve → get/set 再開
     releaseSyncLock();
   }
 }
 
-initRendezvousSync();
+void initRendezvousSync();
 
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -11,11 +11,11 @@ const Buttons = () => {
     })),
   );
 
-  const handlePlayPause = () => {
+  const handlePlayPause = async () => {
     if (state.state === "playing") {
       pause();
     } else {
-      play(getCurrentFrameCount());
+      play(await getCurrentFrameCount());
     }
   };
 

@@ -13,6 +13,7 @@ import {
   NodeOffscreenSharedTextureInfo,
   AperioManager,
   AperioConfigManager,
+  AperioConfig,
 } from "native";
 
 const TIMEOUT_MS = 5000;
@@ -166,5 +167,9 @@ export class NativeModule {
 
   private notifyEventStackChanged() {
     this.onEventStackChanged?.(this.eventStack ? performance.now() : 0);
+  }
+
+  saveConfig(config: Partial<AperioConfig>) {
+    this.configManager.setConfig({ ...this.configManager.config, ...config });
   }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import useStore, { getCurrentFrameCount, getFrameStruct } from "@shared/store";
+import useStore, { getCurrentFrameCount, getFrameStruct, getStoreState } from "@shared/store";
 import {
   useExternalTexturePreviewWebGPU,
   type ExternalTextureWebGPUResources,
@@ -79,12 +79,12 @@ const useFrameTextureRenderer = () => {
 
   // フレームループ
   const frameLoop = useCallback(async () => {
-    const currentFrameCount = getCurrentFrameCount();
+    const currentFrameCount = await getCurrentFrameCount();
     // TODO: この前に音声1ブロック分の生成・再生処理を入れる
     if (previousFrameCount.current === currentFrameCount) {
       // フレームが前回と同じならスキップ
       animationFrameReserve.current =
-        useStore.getState().viewerState.state === "playing"
+        (await getStoreState()).viewerState.state === "playing"
           ? requestAnimationFrame(frameLoop)
           : null;
       return;
@@ -93,7 +93,7 @@ const useFrameTextureRenderer = () => {
     try {
       await window.frame.getFrameSharedTexture(
         currentFrameCount,
-        getFrameStruct(),
+        await getFrameStruct(),
       );
       previousFrameCount.current = currentFrameCount;
     } catch (error) {
@@ -120,7 +120,7 @@ const useFrameTextureRenderer = () => {
       }
 
       animationFrameReserve.current =
-        useStore.getState().viewerState.state === "playing"
+        (await getStoreState()).viewerState.state === "playing"
           ? requestAnimationFrame(frameLoop)
           : null;
     };
