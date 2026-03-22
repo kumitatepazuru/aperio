@@ -1,5 +1,4 @@
 import { useShallow } from "zustand/shallow";
-import Buttons from "./Buttons";
 import useStore from "@shared/store";
 import { useMemo, useRef, useState, type WheelEvent } from "react";
 import useContentSize from "@/hooks/useContentSize";
@@ -136,42 +135,38 @@ const Timeline = () => {
   };
 
   return (
-    <div className="flex flex-col h-full p-2 gap-3">
-      <Buttons />
+    <div className="h-full p-2 overflow-hidden">
+      <div
+        ref={topScrollRef}
+        className="h-4 overflow-x-scroll overflow-y-hidden"
+        onScroll={handleTopScroll}
+      >
+        <div style={{ width: totalScrollableWidth, height: 1 }} />
+      </div>
 
-      <div className="flex-1 overflow-hidden">
-        <div
-          ref={topScrollRef}
-          className="h-4 overflow-x-scroll overflow-y-hidden"
-          onScroll={handleTopScroll}
+      <div
+        ref={contentRef}
+        className="h-[calc(100%-1rem)] overflow-x-hidden overflow-y-scroll"
+        onWheel={handleBodyWheel}
+      >
+        <TimelineBaseUI
+          zoom={zoom}
+          zoomLevels={ZoomLevels}
+          horizontalScroll={horizontalScroll}
+          onZoomChange={setZoom}
+          maxVisibleLayers={maxVisibleLayers}
+          layerHeight={LayerHeight}
+          contentWidth={contentWidth}
+          graduationInterval={graduationInterval}
+          visibleGraduationIndices={visibleGraduationIndices}
+          visibleVerticalLineIndices={visibleVerticalLineIndices}
         >
-          <div style={{ width: totalScrollableWidth, height: 1 }} />
-        </div>
-
-        <div
-          ref={contentRef}
-          className="h-[calc(100%-1rem)] overflow-x-hidden overflow-y-scroll"
-          onWheel={handleBodyWheel}
-        >
-          <TimelineBaseUI
-            zoom={zoom}
-            zoomLevels={ZoomLevels}
-            horizontalScroll={horizontalScroll}
-            onZoomChange={setZoom}
-            maxVisibleLayers={maxVisibleLayers}
-            layerHeight={LayerHeight}
-            contentWidth={contentWidth}
+          <LayerContents
+            zoomLevelPxPerFrame={ZoomLevels[zoom]}
             graduationInterval={graduationInterval}
-            visibleGraduationIndices={visibleGraduationIndices}
-            visibleVerticalLineIndices={visibleVerticalLineIndices}
-          >
-            <LayerContents
-              zoomLevelPxPerFrame={ZoomLevels[zoom]}
-              graduationInterval={graduationInterval}
-              layerHeight={LayerHeight}
-            />
-          </TimelineBaseUI>
-        </div>
+            layerHeight={LayerHeight}
+          />
+        </TimelineBaseUI>
       </div>
     </div>
   );

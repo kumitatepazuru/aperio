@@ -2,6 +2,7 @@ import type { FC, Ref } from "react";
 import useFrameBufferRenderer from "./useFrameBufferRenderer";
 import useFrameTextureRenderer from "./useFrameTextureRenderer";
 import useStore from "@shared/store";
+import Buttons from "./Buttons";
 
 const config = await window.main.getConfig();
 
@@ -33,10 +34,19 @@ const FrameBufferRenderer = () => {
 };
 
 const FrameRenderer = () => {
-  return config.fastPreview ? (
-    <FrameTextureRenderer />
-  ) : (
-    <FrameBufferRenderer />
+  return (
+    <div className="flex flex-col gap-3 h-full p-2">
+      <div className="flex-1 min-h-0">
+        {config.fastPreview ? (
+          <FrameTextureRenderer />
+        ) : (
+          <FrameBufferRenderer />
+        )}
+      </div>
+      <div>
+        <Buttons />
+      </div>
+    </div>
   );
 };
 
