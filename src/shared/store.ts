@@ -170,9 +170,9 @@ const _useStore = create<Store>()((set, get) => {
         to: 1000,
         x: 500,
         y: 500,
-        scale: 3.0,
+        scale: 300.0,
         rotation: 40.0,
-        alpha: 1.0,
+        alpha: 100.0,
         obj: {
           name: "base.test_object",
           parameters: {

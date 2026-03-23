@@ -309,12 +309,12 @@ class PluginManager:
                 rotation_rad = math.radians(layer["rotation"])
                 cos_theta = math.cos(rotation_rad)
                 sin_theta = math.sin(rotation_rad)
-                alpha = layer["alpha"]
+                alpha = layer["alpha"] / 100  # 0-100 -> 0-1
                 rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
 
                 fmt = "<iiff"  # x, y, scale, alpha
                 fmt += "4f"  # rotation_matrix (2x2 floats)
-                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"], alpha, *rotation_matrix)
+                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"] / 100, alpha, *rotation_matrix)
                 params.append(params_bytes)
 
             # builderを作成

@@ -71,8 +71,6 @@ const ParameterEditor = () => {
     const updatedValues = {
       ...values,
       position: undefined,
-      scale: (values.scale as number) / 100, // 0-100% -> 0-1
-      alpha: (values.alpha as number) / 100, // 0-100% -> 0-1
       x: position.x,
       y: position.y,
     };
@@ -133,8 +131,10 @@ const ParameterEditor = () => {
       {selectedItem ? (
         <div>
           <h2 className="text-lg font-bold mb-2">{selectedItem.obj.name}</h2>
-          {baseElement}
-          {objElement}
+          <div className="flex flex-col gap-3">
+            {baseElement}
+            {objElement}
+          </div>
         </div>
       ) : null}
     </div>

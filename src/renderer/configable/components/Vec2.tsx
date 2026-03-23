@@ -9,7 +9,7 @@ type Props = {
 };
 
 const Vec2 = ({ value, suffix, isInt, onChange }: Props) => (
-  <div className="flex gap-2">
+  <div className="flex flex-col gap-2">
     <NumberInput
       value={value.x}
       isInt={isInt}

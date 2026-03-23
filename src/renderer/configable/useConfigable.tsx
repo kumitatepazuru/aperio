@@ -104,7 +104,7 @@ export function useConfigable(
       {node}
       <button
         onClick={() => handleReset(param)}
-        className="btn btn-square btn-sm"
+        className="btn btn-square btn-sm h-full"
       >
         <LuUndo2 />
       </button>
@@ -112,7 +112,7 @@ export function useConfigable(
   );
 
   const element = (
-    <div className="grid grid-cols-[auto_1fr_auto] gap-2 items-center">
+    <div className="grid grid-cols-[5em_1fr_auto] gap-2 items-center">
       {structures.map((param) => {
         const id = param.id;
         const value = values[id] ?? getDefaultValue(param);
