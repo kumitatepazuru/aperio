@@ -25,6 +25,7 @@ const useFrameTextureRenderer = () => {
   const viewerState = useStore((state) => state.viewerState);
   const frameState = useStore((state) => state.frameState);
   const previousFrameCount = useRef<number | null>(null);
+  const timelineLayers = useStore((state) => state.timelineLayers);
 
   // VideoFrameを描画する関数
   const renderVideoFrame = (
@@ -141,7 +142,7 @@ const useFrameTextureRenderer = () => {
         cancelAnimationFrame(animationFrameReserve.current);
       }
     };
-  }, [viewerState, frameState, resources, frameLoop]);
+  }, [viewerState, frameState, resources, frameLoop, timelineLayers]);
 
   return canvasRef;
 };

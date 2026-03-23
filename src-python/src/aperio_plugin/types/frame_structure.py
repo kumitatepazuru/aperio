@@ -30,7 +30,7 @@ class LayerStructure(TypedDict):
 class FloatParam:
     id: str
     title: str
-    value: float
+    default_value: float
     suffix: Optional[str] = None
 
 
@@ -38,7 +38,7 @@ class FloatParam:
 class IntParam:
     id: str
     title: str
-    value: int
+    default_value: int
     suffix: Optional[str] = None
 
 
@@ -46,15 +46,15 @@ class IntParam:
 class BoolParam:
     id: str
     title: str
-    value: bool
+    default_value: bool
 
 
 @dataclass
 class Vec2IntParam:
     id: str
     title: str
-    x: int
-    y: int
+    default_x: int
+    default_y: int
     suffix: Optional[str] = None
 
 
@@ -62,8 +62,8 @@ class Vec2IntParam:
 class Vec2FloatParam:
     id: str
     title: str
-    x: float
-    y: float
+    default_x: float
+    default_y: float
     suffix: Optional[str] = None
 
 
@@ -71,9 +71,9 @@ class Vec2FloatParam:
 class Vec3IntParam:
     id: str
     title: str
-    x: int
-    y: int
-    z: int
+    default_x: int
+    default_y: int
+    default_z: int
     suffix: Optional[str] = None
 
 
@@ -81,9 +81,9 @@ class Vec3IntParam:
 class Vec3FloatParam:
     id: str
     title: str
-    x: float
-    y: float
-    z: float
+    default_x: float
+    default_y: float
+    default_z: float
     suffix: Optional[str] = None
 
 
@@ -91,10 +91,10 @@ class Vec3FloatParam:
 class Vec4IntParam:
     id: str
     title: str
-    x: int
-    y: int
-    z: int
-    w: int
+    default_x: int
+    default_y: int
+    default_z: int
+    default_w: int
     suffix: Optional[str] = None
 
 
@@ -102,10 +102,10 @@ class Vec4IntParam:
 class Vec4FloatParam:
     id: str
     title: str
-    x: float
-    y: float
-    z: float
-    w: float
+    default_x: float
+    default_y: float
+    default_z: float
+    default_w: float
     suffix: Optional[str] = None
 
 
@@ -113,17 +113,17 @@ class Vec4FloatParam:
 class StringParam:
     id: str
     title: str
-    value: str
+    default_value: str
 
 
 @dataclass
 class ColorParam:
     id: str
     title: str
-    r: int  # u8: 0-255
-    g: int  # u8: 0-255
-    b: int  # u8: 0-255
-    a: int  # u8: 0-255
+    default_r: int  # u8: 0-255
+    default_g: int  # u8: 0-255
+    default_b: int  # u8: 0-255
+    default_a: int  # u8: 0-255
     use_alpha: bool
 
 
@@ -131,7 +131,8 @@ class ColorParam:
 class ListParam:
     id: str
     title: str
-    values: list[str] = field(default_factory=list)
+    values: dict[str, str]  # key: valueのペア
+    default_key: str
 
 
 RequestStructureParameter = Union[

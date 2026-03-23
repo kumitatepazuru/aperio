@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use napi_derive::napi;
 use pyo3::{
@@ -25,86 +27,87 @@ pub enum RequestStructureParameter {
     Float {
         id: String,
         title: String,
-        value: f64,
+        default_value: f64,
         suffix: Option<String>,
     },
     Int {
         id: String,
         title: String,
-        value: i64,
+        default_value: i64,
         suffix: Option<String>,
     },
     Bool {
         id: String,
         title: String,
-        value: bool,
+        default_value: bool,
     },
     Vec2Int {
         id: String,
         title: String,
-        x: i32,
-        y: i32,
+        default_x: i32,
+        default_y: i32,
         suffix: Option<String>,
     },
     Vec2Float {
         id: String,
         title: String,
-        x: f64,
-        y: f64,
+        default_x: f64,
+        default_y: f64,
         suffix: Option<String>,
     },
     Vec3Int {
         id: String,
         title: String,
-        x: i32,
-        y: i32,
-        z: i32,
+        default_x: i32,
+        default_y: i32,
+        default_z: i32,
         suffix: Option<String>,
     },
     Vec3Float {
         id: String,
         title: String,
-        x: f64,
-        y: f64,
-        z: f64,
+        default_x: f64,
+        default_y: f64,
+        default_z: f64,
         suffix: Option<String>,
     },
     Vec4Int {
         id: String,
         title: String,
-        x: i32,
-        y: i32,
-        z: i32,
-        w: i32,
+        default_x: i32,
+        default_y: i32,
+        default_z: i32,
+        default_w: i32,
         suffix: Option<String>,
     },
     Vec4Float {
         id: String,
         title: String,
-        x: f64,
-        y: f64,
-        z: f64,
-        w: f64,
+        default_x: f64,
+        default_y: f64,
+        default_z: f64,
+        default_w: f64,
         suffix: Option<String>,
     },
     String {
         id: String,
         title: String,
-        value: String,
+        default_value: String,
     },
     Color {
         id: String,
         title: String,
-        r: u8,
-        g: u8,
-        b: u8,
-        a: u8,
+        default_r: u8,
+        default_g: u8,
+        default_b: u8,
+        default_a: u8,
         use_alpha: bool,
     },
     List {
         id: String,
         title: String,
-        values: Vec<String>,
+        values: HashMap<String, String>, // key: valueのペア
+        default_key: String,
     },
 }
 
@@ -124,75 +127,88 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RequestStructureParameter {
             "FloatParam" => variant!(Float {
                 id,
                 title,
-                value,
+                default_value,
                 suffix
             }),
             "IntParam" => variant!(Int {
                 id,
                 title,
-                value,
+                default_value,
                 suffix
             }),
-            "BoolParam" => variant!(Bool { id, title, value }),
+            "BoolParam" => variant!(Bool {
+                id,
+                title,
+                default_value
+            }),
             "Vec2IntParam" => variant!(Vec2Int {
                 id,
                 title,
-                x,
-                y,
+                default_x,
+                default_y,
                 suffix
             }),
             "Vec2FloatParam" => variant!(Vec2Float {
                 id,
                 title,
-                x,
-                y,
+                default_x,
+                default_y,
                 suffix
             }),
             "Vec3IntParam" => variant!(Vec3Int {
                 id,
                 title,
-                x,
-                y,
-                z,
+                default_x,
+                default_y,
+                default_z,
                 suffix
             }),
             "Vec3FloatParam" => variant!(Vec3Float {
                 id,
                 title,
-                x,
-                y,
-                z,
+                default_x,
+                default_y,
+                default_z,
                 suffix
             }),
             "Vec4IntParam" => variant!(Vec4Int {
                 id,
                 title,
-                x,
-                y,
-                z,
-                w,
+                default_x,
+                default_y,
+                default_z,
+                default_w,
                 suffix
             }),
             "Vec4FloatParam" => variant!(Vec4Float {
                 id,
                 title,
-                x,
-                y,
-                z,
-                w,
+                default_x,
+                default_y,
+                default_z,
+                default_w,
                 suffix
             }),
-            "StringParam" => variant!(String { id, title, value }),
+            "StringParam" => variant!(String {
+                id,
+                title,
+                default_value
+            }),
             "ColorParam" => variant!(Color {
                 id,
                 title,
-                r,
-                g,
-                b,
-                a,
+                default_r,
+                default_g,
+                default_b,
+                default_a,
                 use_alpha
             }),
-            "ListParam" => variant!(List { id, title, values }),
+            "ListParam" => variant!(List {
+                id,
+                title,
+                values,
+                default_key
+            }),
             _ => Err(PyValueError::new_err(format!(
                 "Unknown RequestStructureParameter type: {}",
                 class_name
@@ -204,7 +220,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RequestStructureParameter {
 #[napi(object)]
 pub struct GenerateStructure {
     pub name: String,
-    pub parameters: serde_json::Value,
+    pub parameters: HashMap<String, serde_json::Value>,
 }
 
 #[napi(object)]
@@ -227,7 +243,12 @@ impl<'a, 'py> IntoPyObject<'py> for &'a GenerateStructure {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let dict = PyDict::new(py);
         dict.set_item("name", &self.name)?;
-        dict.set_item("parameters", json_to_pyobject(py, &self.parameters)?)?;
+
+        let params_dict = PyDict::new(py);
+        for (k, v) in &self.parameters {
+            params_dict.set_item(k, json_to_pyobject(py, v)?)?;
+        }
+        dict.set_item("parameters", params_dict)?;
         Ok(dict.into_bound_py_any(py)?)
     }
 }

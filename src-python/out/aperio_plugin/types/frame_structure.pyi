@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as field
 from typing import TypedDict
 
 @dataclass
@@ -26,95 +26,96 @@ class LayerStructure(TypedDict):
 class FloatParam:
     id: str
     title: str
-    value: float
+    default_value: float
     suffix: str | None = ...
 
 @dataclass
 class IntParam:
     id: str
     title: str
-    value: int
+    default_value: int
     suffix: str | None = ...
 
 @dataclass
 class BoolParam:
     id: str
     title: str
-    value: bool
+    default_value: bool
 
 @dataclass
 class Vec2IntParam:
     id: str
     title: str
-    x: int
-    y: int
+    default_x: int
+    default_y: int
     suffix: str | None = ...
 
 @dataclass
 class Vec2FloatParam:
     id: str
     title: str
-    x: float
-    y: float
+    default_x: float
+    default_y: float
     suffix: str | None = ...
 
 @dataclass
 class Vec3IntParam:
     id: str
     title: str
-    x: int
-    y: int
-    z: int
+    default_x: int
+    default_y: int
+    default_z: int
     suffix: str | None = ...
 
 @dataclass
 class Vec3FloatParam:
     id: str
     title: str
-    x: float
-    y: float
-    z: float
+    default_x: float
+    default_y: float
+    default_z: float
     suffix: str | None = ...
 
 @dataclass
 class Vec4IntParam:
     id: str
     title: str
-    x: int
-    y: int
-    z: int
-    w: int
+    default_x: int
+    default_y: int
+    default_z: int
+    default_w: int
     suffix: str | None = ...
 
 @dataclass
 class Vec4FloatParam:
     id: str
     title: str
-    x: float
-    y: float
-    z: float
-    w: float
+    default_x: float
+    default_y: float
+    default_z: float
+    default_w: float
     suffix: str | None = ...
 
 @dataclass
 class StringParam:
     id: str
     title: str
-    value: str
+    default_value: str
 
 @dataclass
 class ColorParam:
     id: str
     title: str
-    r: int
-    g: int
-    b: int
-    a: int
+    default_r: int
+    default_g: int
+    default_b: int
+    default_a: int
     use_alpha: bool
 
 @dataclass
 class ListParam:
     id: str
     title: str
-    values: list[str] = field(default_factory=list)
+    values: dict[str, str]
+    default_key: str
 RequestStructureParameter = FloatParam | IntParam | BoolParam | Vec2IntParam | Vec2FloatParam | Vec3IntParam | Vec3FloatParam | Vec4IntParam | Vec4FloatParam | StringParam | ColorParam | ListParam

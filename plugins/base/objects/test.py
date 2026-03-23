@@ -37,15 +37,18 @@ class TestObject(ObjectGeneratorBase):
             self.shader = PyCompiledWgsl("test", f.read(), generator, None)
         
         self.request_args_struct = [
-            Vec2IntParam(id="position", title="テキスト位置", x=50, y=50),
+            Vec2IntParam(id="text_pos", title="テキスト位置", default_x=50, default_y=50, suffix="px"),
         ]
 
     def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn:
         ret, img = self.frame.read()
         if not ret:
             raise RuntimeError("Failed to read frame from videotestsrc")
+        position = obj_args.get("text_pos")
+        if position is None:
+            raise ValueError("text_pos argument is required")
 
-        cv2.putText(img, f"Frame: {frame_number}", (50, 50),
+        cv2.putText(img, f"Frame: {frame_number}", (position["x"], position["y"]),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
         
         # float32に変換

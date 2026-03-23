@@ -22,21 +22,28 @@ type Store = {
     height: number;
   };
   viewerState: ViewerState;
+  timelineLayers: TimelineLayerStructure[];
+  pluginNames?: { [key: string]: string }[];
+  selectedItemId: string | null;
   play: (beginFrame: number) => void;
   pause: (beginFrame?: number) => void;
   setFrameState: (frameState: { width: number; height: number }) => void;
   getPluginNames: () => { [key: string]: string }[];
   setFrameCount: (frame: number) => void;
   setFps: (fps: number) => void;
-  timelineLayers: TimelineLayerStructure[];
   setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
-  pluginNames?: { [key: string]: string }[];
+  setSelectedItemId: (id: string | null) => void;
 };
 
 // 同期対象の直列化可能なstateのみ
 export type SyncableState = Pick<
   Store,
-  "fps" | "viewerState" | "timelineLayers" | "pluginNames" | "frameState"
+  | "fps"
+  | "viewerState"
+  | "timelineLayers"
+  | "pluginNames"
+  | "frameState"
+  | "selectedItemId"
 >;
 
 // ─── BroadcastChannel ────────────────────────────────────────────────────────
@@ -155,6 +162,28 @@ const _useStore = create<Store>()((set, get) => {
       changeTime: Date.now(),
       beginFrame: 0,
     },
+    timelineLayers: [
+      {
+        id: uuidv4(),
+        layer: 0,
+        from: 0,
+        to: 1000,
+        x: 500,
+        y: 500,
+        scale: 3.0,
+        rotation: 40.0,
+        alpha: 1.0,
+        obj: {
+          name: "base.test_object",
+          parameters: {
+            text_pos: { x: 500, y: 500 },
+          },
+        },
+        effects: [],
+      },
+    ],
+    pluginNames: undefined,
+    selectedItemId: null,
     play: (beginFrame: number) =>
       syncSet({
         viewerState: {
@@ -182,26 +211,7 @@ const _useStore = create<Store>()((set, get) => {
         },
       }),
     setFps: (fps) => syncSet({ fps }),
-    timelineLayers: [
-      {
-        id: uuidv4(),
-        layer: 0,
-        from: 0,
-        to: 1000,
-        x: 500,
-        y: 500,
-        scale: 3.0,
-        rotation: 40.0,
-        alpha: 1.0,
-        obj: {
-          name: "base.test_object",
-          parameters: {},
-        },
-        effects: [],
-      },
-    ],
     setTimelineLayers: (layers) => syncSet({ timelineLayers: layers }),
-    pluginNames: undefined,
     getPluginNames: () => {
       let names = get().pluginNames;
       if (!names) {
@@ -210,6 +220,7 @@ const _useStore = create<Store>()((set, get) => {
       }
       return names;
     },
+    setSelectedItemId: (id: string | null) => syncSet({ selectedItemId: id }),
   };
 });
 
@@ -234,7 +245,7 @@ const useStore = Object.assign(
   // 直接呼び出すとバグのもとになるため、型レベルで無効化。
   // vscodeのtsプラグインだとこれでエラーになるがtsに定義された動作ではないためかなりハック的。
   // TODO: 解決方法がわかり次第より安定した無効化実装に書き換え
-    getState: () => void; 
+  getState: () => void;
 } & typeof _useStore;
 
 /**
@@ -285,6 +296,7 @@ function getSyncableState(): SyncableState {
     timelineLayers: s.timelineLayers,
     pluginNames: s.pluginNames,
     frameState: s.frameState,
+    selectedItemId: s.selectedItemId,
   };
 }
 

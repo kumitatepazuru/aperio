@@ -16,7 +16,7 @@ type DragState = {
   startLayer: number;
 };
 
-type LayerContentsProps = {
+type LayerItemsProps = {
   zoomLevelPxPerFrame: number;
   graduationInterval: number;
   layerHeight: number;
@@ -39,20 +39,21 @@ const snapFrame = (
   return Math.round(rawFrame);
 };
 
-const LayerContents = ({
+const LayerItems = ({
   zoomLevelPxPerFrame,
   graduationInterval,
   layerHeight,
-}: LayerContentsProps) => {
-  const { timelineLayers, setTimelineLayers } = useStore(
+}: LayerItemsProps) => {
+  const { timelineLayers, setTimelineLayers, setSelectedItemId } = useStore(
     useShallow((state) => ({
       timelineLayers: state.timelineLayers,
       setTimelineLayers: state.setTimelineLayers,
+      setSelectedItemId: state.setSelectedItemId,
     })),
   );
   const dragStateRef = useRef<DragState | null>(null);
 
-  const beginLayerDrag = useCallback(
+  const beginItemDrag = useCallback(
     (
       event: MouseEvent<HTMLDivElement>,
       layerId: string,
@@ -171,18 +172,19 @@ const LayerContents = ({
       >
         <div
           className="bg-primary w-full h-full rounded border border-primary relative cursor-grab active:cursor-grabbing active:bg-primary/70"
-          onMouseDown={(event) =>
-            beginLayerDrag(event, layer.id, "move", {
+          onMouseDown={(event) => {
+            setSelectedItemId(layer.id);
+            beginItemDrag(event, layer.id, "move", {
               from: layer.from,
               to: layer.to,
               layer: layer.layer,
-            })
-          }
+            });
+          }}
         >
           <div
             className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize"
             onMouseDown={(event) =>
-              beginLayerDrag(event, layer.id, "resize-start", {
+              beginItemDrag(event, layer.id, "resize-start", {
                 from: layer.from,
                 to: layer.to,
                 layer: layer.layer,
@@ -192,7 +194,7 @@ const LayerContents = ({
           <div
             className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize"
             onMouseDown={(event) =>
-              beginLayerDrag(event, layer.id, "resize-end", {
+              beginItemDrag(event, layer.id, "resize-end", {
                 from: layer.from,
                 to: layer.to,
                 layer: layer.layer,
@@ -205,4 +207,4 @@ const LayerContents = ({
   });
 };
 
-export default LayerContents;
+export default LayerItems;

@@ -2,7 +2,7 @@ import { useShallow } from "zustand/shallow";
 import useStore from "@shared/store";
 import { useMemo, useRef, useState, type WheelEvent } from "react";
 import useContentSize from "@/hooks/useContentSize";
-import LayerContents from "./LayerContents";
+import LayerItems from "./LayerItems";
 import TimelineBaseUI from "./TimelineBaseUI";
 
 const ZoomLevels = [20, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02]; // フレームあたりのピクセル数
@@ -161,7 +161,7 @@ const Timeline = () => {
           visibleGraduationIndices={visibleGraduationIndices}
           visibleVerticalLineIndices={visibleVerticalLineIndices}
         >
-          <LayerContents
+          <LayerItems
             zoomLevelPxPerFrame={ZoomLevels[zoom]}
             graduationInterval={graduationInterval}
             layerHeight={LayerHeight}
