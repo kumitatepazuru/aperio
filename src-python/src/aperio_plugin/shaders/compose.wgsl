@@ -30,8 +30,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     return;
   }
 
-  // このピクセルの最終的な色。初期値は透明な黒 (背景)
-  var final_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+  // このピクセルの最終的な色。初期値は黒 (背景)
+  var final_color = vec4<f32>(0.0, 0.0, 0.0, 255.0);
 
   let num_layers = arrayLength(&layer_params_array);
   
