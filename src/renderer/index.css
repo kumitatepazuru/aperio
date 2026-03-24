@@ -3,6 +3,10 @@
   themes: light --default;
 }
 
+body {
+  user-select: none;
+}
+
 .widget {
   min-width: 50px;
   min-height: 50px;

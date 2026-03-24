@@ -1,5 +1,7 @@
+import { FloatingBase, Reference, Floating } from "@shared/Floating";
 import type { ColorValue } from "../types";
-import NumberInput from "./NumberInput";
+import { checkerStyle, toColor } from "./color/helpers";
+import ColorPickerPanel from "./color/ColorPickerPanel";
 
 type Props = {
   value: ColorValue;
@@ -7,39 +9,28 @@ type Props = {
   onChange: (value: ColorValue) => void;
 };
 
-const toHex = (v: number) =>
-  Math.round(v * 255)
-    .toString(16)
-    .padStart(2, "0");
-
-const Color = ({ value, useAlpha, onChange }: Props) => {
-  const hexColor = `#${toHex(value.r)}${toHex(value.g)}${toHex(value.b)}`;
-
-  return (
-    <div>
-      <input
-        type="color"
-        value={hexColor}
-        onChange={(e) => {
-          const hex = e.target.value;
-          const r = parseInt(hex.slice(1, 3), 16) / 255;
-          const g = parseInt(hex.slice(3, 5), 16) / 255;
-          const b = parseInt(hex.slice(5, 7), 16) / 255;
-          onChange({ ...value, r, g, b });
-        }}
-      />
-      {useAlpha && (
-        <NumberInput
-          value={value.a}
-          min={0}
-          max={1}
-          onChange={(a) =>
-            onChange({ ...value, a: Math.max(0, Math.min(1, a)) })
-          }
+const Color = ({ value, useAlpha, onChange }: Props) => (
+  <FloatingBase>
+    <Reference click className="inline-flex items-center gap-2 cursor-pointer">
+      <div className="w-12 h-6 rounded border border-base-content/30 relative overflow-hidden shrink-0">
+        <div className="absolute inset-0" style={checkerStyle} />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: useAlpha
+              ? `rgba(${value[0] * 255} ${value[1] * 255} ${value[2] * 255} / ${value[3]})`
+              : `rgb(${value[0] * 255} ${value[1] * 255} ${value[2] * 255})`,
+          }}
         />
-      )}
-    </div>
-  );
-};
+      </div>
+      <span className="text-sm font-mono">
+        {toColor(value).toString({ format: "hex" })}
+      </span>
+    </Reference>
+    <Floating>
+      <ColorPickerPanel value={value} useAlpha={useAlpha} onChange={onChange} />
+    </Floating>
+  </FloatingBase>
+);
 
 export default Color;

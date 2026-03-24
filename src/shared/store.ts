@@ -176,7 +176,8 @@ const _useStore = create<Store>()((set, get) => {
         obj: {
           name: "base.test_object",
           parameters: {
-            text_pos: { x: 500, y: 500 },
+            text_pos: [50, 50],
+            text_color: [1, 0, 0, 1],
           },
         },
         effects: [],
