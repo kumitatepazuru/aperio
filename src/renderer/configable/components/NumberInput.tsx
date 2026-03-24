@@ -81,7 +81,7 @@ const NumberInput = ({
       onMouseDown={onLabelMouseDown}
     >
       {prefix && <span>{prefix}</span>}
-      <div className="relative">
+      <div className="relative grow">
         {/* Hidden mirror span to measure value text width */}
         {suffix && (
           <div className="absolute">

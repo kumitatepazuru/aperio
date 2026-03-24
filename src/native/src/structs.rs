@@ -44,49 +44,37 @@ pub enum RequestStructureParameter {
     Vec2Int {
         id: String,
         title: String,
-        default_x: i32,
-        default_y: i32,
+        default_value: (i32, i32),
         suffix: Option<String>,
     },
     Vec2Float {
         id: String,
         title: String,
-        default_x: f64,
-        default_y: f64,
+        default_value: (f64, f64),
         suffix: Option<String>,
     },
     Vec3Int {
         id: String,
         title: String,
-        default_x: i32,
-        default_y: i32,
-        default_z: i32,
+        default_value: (i32, i32, i32),
         suffix: Option<String>,
     },
     Vec3Float {
         id: String,
         title: String,
-        default_x: f64,
-        default_y: f64,
-        default_z: f64,
+        default_value: (f64, f64, f64),
         suffix: Option<String>,
     },
     Vec4Int {
         id: String,
         title: String,
-        default_x: i32,
-        default_y: i32,
-        default_z: i32,
-        default_w: i32,
+        default_value: (i32, i32, i32, i32),
         suffix: Option<String>,
     },
     Vec4Float {
         id: String,
         title: String,
-        default_x: f64,
-        default_y: f64,
-        default_z: f64,
-        default_w: f64,
+        default_value: (f64, f64, f64, f64),
         suffix: Option<String>,
     },
     String {
@@ -97,10 +85,7 @@ pub enum RequestStructureParameter {
     Color {
         id: String,
         title: String,
-        default_r: u8,
-        default_g: u8,
-        default_b: u8,
-        default_a: u8,
+        default_value: (f64, f64, f64, f64), // RGBA形式で0.0〜1.0の範囲
         use_alpha: bool,
     },
     List {
@@ -144,49 +129,37 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RequestStructureParameter {
             "Vec2IntParam" => variant!(Vec2Int {
                 id,
                 title,
-                default_x,
-                default_y,
+                default_value,
                 suffix
             }),
             "Vec2FloatParam" => variant!(Vec2Float {
                 id,
                 title,
-                default_x,
-                default_y,
+                default_value,
                 suffix
             }),
             "Vec3IntParam" => variant!(Vec3Int {
                 id,
                 title,
-                default_x,
-                default_y,
-                default_z,
+                default_value,
                 suffix
             }),
             "Vec3FloatParam" => variant!(Vec3Float {
                 id,
                 title,
-                default_x,
-                default_y,
-                default_z,
+                default_value,
                 suffix
             }),
             "Vec4IntParam" => variant!(Vec4Int {
                 id,
                 title,
-                default_x,
-                default_y,
-                default_z,
-                default_w,
+                default_value,
                 suffix
             }),
             "Vec4FloatParam" => variant!(Vec4Float {
                 id,
                 title,
-                default_x,
-                default_y,
-                default_z,
-                default_w,
+                default_value,
                 suffix
             }),
             "StringParam" => variant!(String {
@@ -197,10 +170,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RequestStructureParameter {
             "ColorParam" => variant!(Color {
                 id,
                 title,
-                default_r,
-                default_g,
-                default_b,
-                default_a,
+                default_value,
                 use_alpha
             }),
             "ListParam" => variant!(List {

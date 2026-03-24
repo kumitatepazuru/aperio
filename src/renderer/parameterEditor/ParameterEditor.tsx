@@ -11,8 +11,7 @@ const BaseParameter: RequestStructureParameter[] = [
     type: "Vec2Int",
     id: "position",
     title: "位置",
-    defaultX: 0,
-    defaultY: 0,
+    defaultValue: [0, 0],
     suffix: "px",
   },
   {
@@ -56,7 +55,7 @@ const ParameterEditor = () => {
   const baseParams: Record<string, ConfigableValue> | null = useMemo(() => {
     if (!selectedItem) return null;
     return {
-      position: { x: selectedItem.x, y: selectedItem.y },
+      position: [selectedItem.x, selectedItem.y],
       scale: selectedItem.scale,
       rotation: selectedItem.rotation,
       alpha: selectedItem.alpha,
@@ -71,8 +70,8 @@ const ParameterEditor = () => {
     const updatedValues = {
       ...values,
       position: undefined,
-      x: position.x,
-      y: position.y,
+      x: position[0],
+      y: position[1],
     };
     const timeline = (await getStoreState()).timelineLayers;
     setTimelineLayers(

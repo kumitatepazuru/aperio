@@ -46,54 +46,42 @@ class BoolParam:
 class Vec2IntParam:
     id: str
     title: str
-    default_x: int
-    default_y: int
+    default_value: tuple[int, int]
     suffix: str | None = ...
 
 @dataclass
 class Vec2FloatParam:
     id: str
     title: str
-    default_x: float
-    default_y: float
+    default_value: tuple[float, float]
     suffix: str | None = ...
 
 @dataclass
 class Vec3IntParam:
     id: str
     title: str
-    default_x: int
-    default_y: int
-    default_z: int
+    default_value: tuple[int, int, int]
     suffix: str | None = ...
 
 @dataclass
 class Vec3FloatParam:
     id: str
     title: str
-    default_x: float
-    default_y: float
-    default_z: float
+    default_value: tuple[float, float, float]
     suffix: str | None = ...
 
 @dataclass
 class Vec4IntParam:
     id: str
     title: str
-    default_x: int
-    default_y: int
-    default_z: int
-    default_w: int
+    default_value: tuple[int, int, int, int]
     suffix: str | None = ...
 
 @dataclass
 class Vec4FloatParam:
     id: str
     title: str
-    default_x: float
-    default_y: float
-    default_z: float
-    default_w: float
+    default_value: tuple[float, float, float, float]
     suffix: str | None = ...
 
 @dataclass
@@ -106,10 +94,7 @@ class StringParam:
 class ColorParam:
     id: str
     title: str
-    default_r: int
-    default_g: int
-    default_b: int
-    default_a: int
+    default_value: tuple[float, float, float, float]
     use_alpha: bool
 
 @dataclass

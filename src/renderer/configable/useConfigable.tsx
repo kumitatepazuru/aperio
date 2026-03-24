@@ -31,25 +31,14 @@ function getDefaultValue(param: RequestStructureParameter): ConfigableValue {
       return param.defaultKey;
     case "Vec2Int":
     case "Vec2Float":
-      return { x: param.defaultX, y: param.defaultY };
+      return [param.defaultValue[0], param.defaultValue[1]];
     case "Vec3Int":
     case "Vec3Float":
-      return { x: param.defaultX, y: param.defaultY, z: param.defaultZ };
+      return [param.defaultValue[0], param.defaultValue[1], param.defaultValue[2]];
     case "Vec4Int":
     case "Vec4Float":
-      return {
-        x: param.defaultX,
-        y: param.defaultY,
-        z: param.defaultZ,
-        w: param.defaultW,
-      };
     case "Color":
-      return {
-        r: param.defaultR,
-        g: param.defaultG,
-        b: param.defaultB,
-        a: param.defaultA,
-      };
+      return [param.defaultValue[0], param.defaultValue[1], param.defaultValue[2], param.defaultValue[3]];
   }
 }
 

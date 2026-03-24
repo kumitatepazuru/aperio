@@ -2,7 +2,7 @@ import os
 import site
 import sys
 
-from aperio_plugin.types.frame_structure import Vec2IntParam
+from aperio_plugin.types.frame_structure import ColorParam, Vec2IntParam
 import cv2
 from gpu_util import PyCompiledWgsl, PyImageGenerator
 import numpy as np
@@ -37,7 +37,8 @@ class TestObject(ObjectGeneratorBase):
             self.shader = PyCompiledWgsl("test", f.read(), generator, None)
         
         self.request_args_struct = [
-            Vec2IntParam(id="text_pos", title="テキスト位置", default_x=50, default_y=50, suffix="px"),
+            Vec2IntParam(id="text_pos", title="テキスト位置", default_value=(50, 50), suffix="px"),
+            ColorParam(id="text_color", title="テキスト色", default_value=(1.0, 1.0, 1.0, 1.0), use_alpha=False),
         ]
 
     def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn:
@@ -45,11 +46,15 @@ class TestObject(ObjectGeneratorBase):
         if not ret:
             raise RuntimeError("Failed to read frame from videotestsrc")
         position = obj_args.get("text_pos")
+        text_color = obj_args.get("text_color")
         if position is None:
             raise ValueError("text_pos argument is required")
+        if text_color is None:
+            raise ValueError("text_color argument is required")
+        text_color = [int(c * 255) for c in text_color]  # RGBAを整数に変換
 
-        cv2.putText(img, f"Frame: {frame_number}", (position["x"], position["y"]),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(img, f"Frame: {frame_number}", (position[0], position[1]),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (text_color[2], text_color[1], text_color[0]), 2, cv2.LINE_AA) # OpenCVはBGR形式なので、テキストカラーをBGRの順番で指定
         
         # float32に変換
         img = img.astype(np.float32) / 255.0        

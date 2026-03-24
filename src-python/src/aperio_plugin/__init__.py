@@ -324,8 +324,7 @@ class PluginManager:
 
         except Exception as e:
             import traceback
-            traceback.print_exc()
-            raise RuntimeError(f"Failed to build frame pipeline: {e}")  
+            raise RuntimeError(f"Failed to build frame pipeline: {traceback.format_exc()}") from e
 
         return builder
     

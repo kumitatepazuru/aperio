@@ -11,18 +11,18 @@ type Props = {
 const Vec2 = ({ value, suffix, isInt, onChange }: Props) => (
   <div className="flex flex-col gap-2">
     <NumberInput
-      value={value.x}
+      value={value[0]}
       isInt={isInt}
       prefix="X"
       suffix={suffix}
-      onChange={(x) => onChange({ ...value, x })}
+      onChange={(x) => onChange([x, value[1]])}
     />
     <NumberInput
-      value={value.y}
+      value={value[1]}
       isInt={isInt}
       prefix="Y"
       suffix={suffix}
-      onChange={(y) => onChange({ ...value, y })}
+      onChange={(y) => onChange([value[0], y])}
     />
   </div>
 );

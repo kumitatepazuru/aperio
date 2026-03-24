@@ -53,8 +53,7 @@ class BoolParam:
 class Vec2IntParam:
     id: str
     title: str
-    default_x: int
-    default_y: int
+    default_value: tuple[int, int]
     suffix: Optional[str] = None
 
 
@@ -62,8 +61,7 @@ class Vec2IntParam:
 class Vec2FloatParam:
     id: str
     title: str
-    default_x: float
-    default_y: float
+    default_value: tuple[float, float]
     suffix: Optional[str] = None
 
 
@@ -71,9 +69,7 @@ class Vec2FloatParam:
 class Vec3IntParam:
     id: str
     title: str
-    default_x: int
-    default_y: int
-    default_z: int
+    default_value: tuple[int, int, int]
     suffix: Optional[str] = None
 
 
@@ -81,9 +77,7 @@ class Vec3IntParam:
 class Vec3FloatParam:
     id: str
     title: str
-    default_x: float
-    default_y: float
-    default_z: float
+    default_value: tuple[float, float, float]
     suffix: Optional[str] = None
 
 
@@ -91,10 +85,7 @@ class Vec3FloatParam:
 class Vec4IntParam:
     id: str
     title: str
-    default_x: int
-    default_y: int
-    default_z: int
-    default_w: int
+    default_value: tuple[int, int, int, int]
     suffix: Optional[str] = None
 
 
@@ -102,10 +93,7 @@ class Vec4IntParam:
 class Vec4FloatParam:
     id: str
     title: str
-    default_x: float
-    default_y: float
-    default_z: float
-    default_w: float
+    default_value: tuple[float, float, float, float]
     suffix: Optional[str] = None
 
 
@@ -120,10 +108,7 @@ class StringParam:
 class ColorParam:
     id: str
     title: str
-    default_r: int  # u8: 0-255
-    default_g: int  # u8: 0-255
-    default_b: int  # u8: 0-255
-    default_a: int  # u8: 0-255
+    default_value: tuple[float, float, float, float]  # RGBA形式で0.0〜1.0の範囲
     use_alpha: bool
 
 
