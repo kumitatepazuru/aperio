@@ -1,5 +1,4 @@
-export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
-export type DisplayMode = "0-1" | "0-255";
+import type { ColorSpace } from "@shared/store";
 
 export const CS_SPACE_ID: Record<ColorSpace, string> = {
   HSV: "hsv",

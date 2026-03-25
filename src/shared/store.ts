@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import type { LayerStructure } from "native";
 import { create } from "zustand";
+import type { ColorValue } from "@/configable/types";
 
 export type TimelineLayerStructure = LayerStructure & {
   id: string; // UUIDが期待される
@@ -15,6 +16,9 @@ type ViewerState = {
   beginFrame: number; // 再生開始フレーム
 };
 
+export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
+export type DisplayMode = "0-1" | "0-255";
+
 type Store = {
   fps: number;
   frameState: {
@@ -25,6 +29,11 @@ type Store = {
   timelineLayers: TimelineLayerStructure[];
   pluginNames?: { [key: string]: string }[];
   selectedItemId: string | null;
+  colorPicker: {
+    colorSpace: ColorSpace;
+    displayMode: DisplayMode;
+    history: ColorValue[];
+  };
   play: (beginFrame: number) => void;
   pause: (beginFrame?: number) => void;
   setFrameState: (frameState: { width: number; height: number }) => void;
@@ -33,6 +42,7 @@ type Store = {
   setFps: (fps: number) => void;
   setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
   setSelectedItemId: (id: string | null) => void;
+  setColorPicker: (colorPicker: Store["colorPicker"]) => void;
 };
 
 // 同期対象の直列化可能なstateのみ
@@ -44,6 +54,7 @@ export type SyncableState = Pick<
   | "pluginNames"
   | "frameState"
   | "selectedItemId"
+  | "colorPicker"
 >;
 
 // ─── BroadcastChannel ────────────────────────────────────────────────────────
@@ -185,6 +196,11 @@ const _useStore = create<Store>()((set, get) => {
     ],
     pluginNames: undefined,
     selectedItemId: null,
+    colorPicker: {
+      colorSpace: "HSV",
+      displayMode: "0-255",
+      history: [],
+    },
     play: (beginFrame: number) =>
       syncSet({
         viewerState: {
@@ -222,6 +238,8 @@ const _useStore = create<Store>()((set, get) => {
       return names;
     },
     setSelectedItemId: (id: string | null) => syncSet({ selectedItemId: id }),
+    setColorPicker: (colorPicker: Store["colorPicker"]) =>
+      syncSet({ colorPicker }),
   };
 });
 
@@ -298,6 +316,7 @@ function getSyncableState(): SyncableState {
     pluginNames: s.pluginNames,
     frameState: s.frameState,
     selectedItemId: s.selectedItemId,
+    colorPicker: s.colorPicker,
   };
 }
 

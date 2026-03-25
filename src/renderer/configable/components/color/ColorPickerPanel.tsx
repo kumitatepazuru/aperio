@@ -10,16 +10,13 @@ import {
   nan0,
   toColor,
 } from "./helpers";
-import {
-  CS_LABELS,
-  CS_RANGE,
-  CS_SPACE_ID,
-  type ColorSpace,
-  type DisplayMode,
-} from "./types";
+import { CS_LABELS, CS_RANGE, CS_SPACE_ID } from "./types";
 import ColorNumberInput from "./ColorNumberInput";
 import ColorSwatch from "./ColorSwatch";
 import SwatchPalette from "./SwatchPalette";
+import type { ColorSpace, DisplayMode } from "@shared/store";
+import { useShallow } from "zustand/shallow";
+import useStore from "@shared/store";
 
 type Props = {
   value: ColorValue;
@@ -28,9 +25,6 @@ type Props = {
 };
 
 export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("0-1");
-  const [colorSpace, setColorSpace] = useState<ColorSpace>("HSV");
-  const [history, setHistory] = useState<ColorValue[]>([]);
   const [hexFocused, setHexFocused] = useState(false);
   const [hexDraft, setHexDraft] = useState("");
 
@@ -38,6 +32,14 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
   const hueRef = useRef<HTMLDivElement>(null);
   const draggingSV = useRef(false);
   const draggingHue = useRef(false);
+
+  const { colorPicker, setColorPicker } = useStore(
+    useShallow((state) => ({
+      colorPicker: state.colorPicker,
+      setColorPicker: state.setColorPicker,
+    })),
+  );
+  const { colorSpace, displayMode, history } = colorPicker;
 
   // ─── HSV for SV/Hue picker ──────────────────────────────────────────────
 
@@ -121,16 +123,8 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
     is255 ? Math.round(c * 255) : parseFloat(c.toFixed(4));
   const unFmtRgb = (dv: number) => (is255 ? dv / 255 : dv);
 
-  const fmtCS = (val: number, idx: 0 | 1 | 2) => {
-    if (!is255) return parseFloat(val.toFixed(4));
-    const [mn, mx] = csRanges[idx];
-    return Math.round(((val - mn) / (mx - mn)) * 255);
-  };
-  const unFmtCS = (dv: number, idx: 0 | 1 | 2) => {
-    if (!is255) return dv;
-    const [mn, mx] = csRanges[idx];
-    return (dv / 255) * (mx - mn) + mn;
-  };
+  const fmtCS = (val: number) => parseFloat(val.toFixed(4));
+  const unFmtCS = (dv: number) => dv;
 
   // ─── HEX ────────────────────────────────────────────────────────────────
 
@@ -285,7 +279,10 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
                 className="btn btn-xs btn-square"
                 title="現在の色を履歴に追加"
                 onClick={() =>
-                  setHistory((prev) => [[...value] as ColorValue, ...prev])
+                  setColorPicker({
+                    ...colorPicker,
+                    history: [value, ...history],
+                  })
                 }
               >
                 +
@@ -312,7 +309,9 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
                   <button
                     key={m}
                     className={`join-item btn btn-xs flex-1 ${displayMode === m ? "btn-primary" : ""}`}
-                    onClick={() => setDisplayMode(m)}
+                    onClick={() =>
+                      setColorPicker({ ...colorPicker, displayMode: m })
+                    }
                   >
                     {m}
                   </button>
@@ -366,7 +365,9 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
                     <button
                       key={cs}
                       className={`join-item btn btn-xs flex-1 ${colorSpace === cs ? "btn-primary" : ""}`}
-                      onClick={() => setColorSpace(cs)}
+                      onClick={() =>
+                        setColorPicker({ ...colorPicker, colorSpace: cs })
+                      }
                     >
                       {cs}
                     </button>
@@ -376,17 +377,14 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
               {csLabels.map((label, idx) => (
                 <ColorNumberInput
                   key={colorSpace + label + idx}
-                  value={fmtCS(csCoords[idx], idx as 0 | 1 | 2)}
-                  min={is255 ? 0 : csRanges[idx][0]}
-                  max={is255 ? 255 : csRanges[idx][1]}
-                  isInt={is255}
+                  value={fmtCS(csCoords[idx])}
+                  min={csRanges[idx][0]}
+                  max={csRanges[idx][1]}
+                  isInt={false}
                   prefix={label}
                   gradientCss={csGradients[idx]}
                   onChange={(dv) =>
-                    handleCSChange(
-                      idx as 0 | 1 | 2,
-                      unFmtCS(dv, idx as 0 | 1 | 2),
-                    )
+                    handleCSChange(idx as 0 | 1 | 2, unFmtCS(dv))
                   }
                 />
               ))}
