@@ -7,13 +7,10 @@ from .objects.test import TestObject
 class AperioBasePlugin(MainPluginBase):
     def __init__(self, manager, generator):
         super().__init__(manager, generator)
-        self.name = "AperioBasePlugin"
-        self.display_name = "Aperio Base Plugin"
+        self.name = "base"
+        self.display_name = "基本"
         self.description = "This is a plugin that provides basic filters/objects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
 
-        manager.register_sub_plugin(
-            TestObject(generator)
-        )
-        print(f"{self.display_name} initialized.")
+        manager.register_sub_plugin(self, TestObject(generator))

@@ -1,4 +1,9 @@
-import { contextBridge, ipcRenderer, sharedTexture } from "electron";
+import {
+  contextBridge,
+  ipcRenderer,
+  IpcRendererEvent,
+  sharedTexture,
+} from "electron";
 import { AperioConfig, type LayerStructure } from "native";
 
 export type SyncedStoreState = {
@@ -62,13 +67,13 @@ contextBridge.exposeInMainWorld("rendezvous", {
   stateResponse: (requesterId: number, state: unknown) =>
     ipcRenderer.invoke("rendezvous:state-response", requesterId, state),
   onProvideState: (cb: (requesterWebContentsId: number) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, id: number) => cb(id);
+    const listener = (_: IpcRendererEvent, id: number) => cb(id);
     ipcRenderer.on("rendezvous:provide-state", listener);
     return () =>
       ipcRenderer.removeListener("rendezvous:provide-state", listener);
   },
   onClientDied: (cb: (deadClientId: number) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, id: number) => cb(id);
+    const listener = (_: IpcRendererEvent, id: number) => cb(id);
     ipcRenderer.on("rendezvous:client-died", listener);
     return () => ipcRenderer.removeListener("rendezvous:client-died", listener);
   },
@@ -81,7 +86,7 @@ contextBridge.exposeInMainWorld("main", {
     ipcRenderer.invoke("save-config", config),
   getEventStack: () => ipcRenderer.invoke("get-event-stack-length"),
   onEventStackChanged: (cb: (length: number) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, length: number) => {
+    const listener = (_event: IpcRendererEvent, length: number) => {
       cb(length);
     };
     ipcRenderer.on("event-stack-length-changed", listener);
@@ -93,7 +98,20 @@ contextBridge.exposeInMainWorld("main", {
   resizeOsr: (width: number, height: number) =>
     ipcRenderer.invoke("resize-osr", width, height),
   showDialog: (id: string) => ipcRenderer.invoke("show-dialog", id),
+  openContextMenu: (id: string) => ipcRenderer.invoke("context-menu-open", id),
+  onAddObject: (cb: (objName: string) => void) => {
+    const listener = (_event: IpcRendererEvent, objName: string) => {
+      cb(objName);
+    };
+    ipcRenderer.on("add-object", listener);
+
+    return () => {
+      ipcRenderer.removeListener("add-object", listener);
+    };
+  },
   getPluginNames: () => ipcRenderer.invoke("get-plugin-names"),
-  getParameterStruct: (pluginName: string) =>
-    ipcRenderer.invoke("get-parameter-struct", pluginName),
+  requestParameterStruct: (pluginName: string, params: Record<string, unknown>) =>
+    ipcRenderer.invoke("request-parameter-struct", pluginName, params),
+  requestNewGenerator: (pluginName: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke("request-new-generator", pluginName, args),
 });

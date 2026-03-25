@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field as field
+from dataclasses import dataclass
 from typing import TypedDict
 
 @dataclass
@@ -102,5 +102,5 @@ class ListParam:
     id: str
     title: str
     values: dict[str, str]
-    default_key: str
+    default_value: str
 RequestStructureParameter = FloatParam | IntParam | BoolParam | Vec2IntParam | Vec2FloatParam | Vec3IntParam | Vec3FloatParam | Vec4IntParam | Vec4FloatParam | StringParam | ColorParam | ListParam

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, TypedDict, Union
 
 
@@ -117,7 +117,7 @@ class ListParam:
     id: str
     title: str
     values: dict[str, str]  # key: valueのペア
-    default_key: str
+    default_value: str
 
 
 RequestStructureParameter = Union[

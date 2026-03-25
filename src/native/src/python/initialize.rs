@@ -1,5 +1,6 @@
 use crate::util::get_data_dir;
 use crate::Dirs;
+use crate::python::logger;
 use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::{PyDict, PyModule};
@@ -25,6 +26,9 @@ pub fn initialize_python(dir: &Dirs) -> Result<Py<PyAny>> {
         let m = PyModule::new(py, "gpu_util")?;
         gpu_util::gpu_util(&m)?;
         modules.set_item("gpu_util", m)?;
+        let m = PyModule::new(py, "logger")?;
+        logger::logger(&m)?;
+        modules.set_item("logger", m)?;
 
         // プラグインマネージャーのパスをsys.pathに追加
         let sys_path = sys.getattr("path")?;

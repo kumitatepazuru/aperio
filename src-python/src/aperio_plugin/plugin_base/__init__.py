@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from gpu_util import PyImageGenerator
 
 if TYPE_CHECKING:
+    from .generator_base import FilterGeneratorBase, ObjectGeneratorBase
     from .. import PluginManager
+
+
+@dataclass
+class PluginNameInfo:
+    base_plugin: dict[str, str]
+    object_plugins: dict[str, str]
+    filter_plugins: dict[str, str]
 
 
 class PluginBase:

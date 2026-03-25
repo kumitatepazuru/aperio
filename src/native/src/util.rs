@@ -1,9 +1,12 @@
+use crate::Dirs;
+use anyhow::Result;
+use pyo3::{
+    types::{PyAnyMethods, PyDict, PyList, PyListMethods},
+    Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python,
+};
+use serde_json::Value;
 use std::path::PathBuf;
 use std::str::FromStr;
-use anyhow::Result;
-use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python, types::{PyAnyMethods, PyDict, PyList, PyListMethods}};
-use serde_json::Value;
-use crate::Dirs;
 
 pub fn get_data_dir(dirs: &Dirs) -> Result<PathBuf> {
     let appdata_dir = PathBuf::from_str(&dirs.data_dir)?;

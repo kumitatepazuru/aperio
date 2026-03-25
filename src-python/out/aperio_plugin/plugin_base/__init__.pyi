@@ -1,6 +1,14 @@
 from .. import PluginManager
+from .generator_base import FilterGeneratorBase as FilterGeneratorBase, ObjectGeneratorBase as ObjectGeneratorBase
 from _typeshed import Incomplete
+from dataclasses import dataclass
 from gpu_util import PyImageGenerator as PyImageGenerator
+
+@dataclass
+class PluginInfo:
+    base_plugin: dict[str, MainPluginBase]
+    object_plugins: dict[str, ObjectGeneratorBase]
+    filter_plugins: dict[str, FilterGeneratorBase]
 
 class PluginBase:
     """

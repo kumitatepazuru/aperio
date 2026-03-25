@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
-    structs::{Dirs, LayerStructure, RequestStructureParameter},
-    util::get_local_data_dir,
+    structs::{
+        Dirs, LayerStructure, NewGeneratorReturn, PluginNameInfo, RequestStructureParameter,
+    },
+    util::{get_local_data_dir, json_to_pyobject},
 };
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
@@ -152,10 +152,10 @@ impl AperioManager {
     }
 
     #[napi]
-    pub fn get_plugin_names(&self) -> napi::Result<Vec<HashMap<String, String>>> {
+    pub fn get_plugin_names(&self) -> napi::Result<PluginNameInfo> {
         let pl_manager = &self.plmanager;
 
-        let result = Python::attach(|py| -> PyResult<Vec<HashMap<String, String>>> {
+        let result = Python::attach(|py| -> PyResult<PluginNameInfo> {
             let pl_manager = pl_manager.bind(py);
             let names = pl_manager.call_method0("get_plugin_names")?;
             Ok(names.extract()?)
@@ -166,15 +166,42 @@ impl AperioManager {
     }
 
     #[napi]
-    pub fn get_parameter_struct(
+    pub fn request_new_generator(
         &self,
         plugin_name: String,
+        args: serde_json::Value,
+    ) -> napi::Result<NewGeneratorReturn> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<NewGeneratorReturn> {
+            let pl_manager = pl_manager.bind(py);
+            let gen_info = pl_manager.call_method1(
+                "request_new_generator",
+                (plugin_name, json_to_pyobject(py, &args)?),
+            )?;
+            Ok(gen_info.extract()?)
+        })
+        .map_err(|e| {
+            napi::Error::from_reason(format!("Failed to request new generator: {:?}", e))
+        })?;
+
+        Ok(result)
+    }
+
+    #[napi]
+    pub fn request_parameter_struct(
+        &self,
+        plugin_name: String,
+        params: serde_json::Value,
     ) -> napi::Result<Vec<RequestStructureParameter>> {
         let pl_manager = &self.plmanager;
 
         let result = Python::attach(|py| -> PyResult<Vec<RequestStructureParameter>> {
             let pl_manager = pl_manager.bind(py);
-            let struct_info = pl_manager.call_method1("get_parameter_struct", (plugin_name,))?;
+            let struct_info = pl_manager.call_method1(
+                "request_parameter_struct",
+                (plugin_name, json_to_pyobject(py, &params)?),
+            )?;
             Ok(struct_info.extract()?)
         })
         .map_err(|e| {

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 
 from gpu_util import PyCompiledFunc, PyCompiledWgsl, PyImageGenerator
@@ -20,6 +21,11 @@ class GeneratorFuncReturn:
     output_width: int
     output_height: int
 
+@dataclass
+class NewGeneratorReturn:
+    duration_frames: int
+    structure: list[RequestStructureParameter]
+
 class GeneratorBase(SubPluginBase):
     """
     フレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
@@ -33,7 +39,47 @@ class GeneratorBase(SubPluginBase):
         フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """
         super().__init__()
-        self.request_args_struct: list[RequestStructureParameter] = []  # ジェネレーターに渡される引数の構造体。必要に応じてサブクラスでオーバーライドする。
+
+    def on_new(self, args: dict) -> NewGeneratorReturn:
+        """
+        新しくオブジェクトまたはフィルターが生成されたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
+
+        Args:
+            args (dict): 初回オブジェクト生成に必要な任意の引数群
+
+        Returns:
+            NewGeneratorReturn: 新しいオブジェクトまたはフィルターの情報
+        """
+        
+        raise NotImplementedError("Subclasses must implement this method")
+    
+    def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
+        """
+        オブジェクトのパラメーター構造がリクエストされたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
+
+        Args:
+            params (dict): 現在のオブジェクトまたはフィルターのパラメータ群。古いRequestStructureParameterを基に構成されている。
+
+        Returns:
+            list[RequestStructureParameter]: オブジェクトのパラメーター構造
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
+        """
+        フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
+
+        Args:
+            frame_number (int): 生成するフレームの番号
+            args (dict): フレーム生成に必要な引数群
+            width (int): 生成するフレームの幅
+            height (int): 生成するフレームの高さ
+
+        Returns:
+            GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
 
 class ObjectGeneratorBase(GeneratorBase):
     """
@@ -43,26 +89,7 @@ class ObjectGeneratorBase(GeneratorBase):
     // TODO: より詳細な説明を書く
     """
 
-    def __init__(self, generator: PyImageGenerator):
-        """
-        フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
-        """
-        super().__init__(generator)
-
-    def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
-        """
-        フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
-
-        Args:
-            frame_number (int): 生成するフレームの番号
-            obj_args (dict): オブジェクト生成に必要な引数群
-            width (int): 生成するフレームの幅
-            height (int): 生成するフレームの高さ
-
-        Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
-        """
-        raise NotImplementedError("Subclasses must implement this method")
+    pass
 
 
 class FilterGeneratorBase(GeneratorBase):
@@ -73,23 +100,4 @@ class FilterGeneratorBase(GeneratorBase):
     // TODO: より詳細な説明を書く
     """
 
-    def __init__(self, generator: PyImageGenerator):
-        """
-        フィルター生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
-        """
-        super().__init__(generator)
-
-    def generate(self, frame_number: int, filter_args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
-        """
-        フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
-
-        Args:
-            frame_number (int): 生成するフレームの番号
-            filter_args (dict): フィルター適用に必要な引数群
-            width (int): 生成するフレームの幅
-            height (int): 生成するフレームの高さ
-
-        Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
-        """
-        raise NotImplementedError("Subclasses must implement this method")
+    pass

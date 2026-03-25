@@ -92,7 +92,7 @@ pub enum RequestStructureParameter {
         id: String,
         title: String,
         values: HashMap<String, String>, // key: valueのペア
-        default_key: String,
+        default_value: String,
     },
 }
 
@@ -177,7 +177,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RequestStructureParameter {
                 id,
                 title,
                 values,
-                default_key
+                default_value
             }),
             _ => Err(PyValueError::new_err(format!(
                 "Unknown RequestStructureParameter type: {}",
@@ -231,4 +231,19 @@ impl<'py> IntoPyObject<'py> for GenerateStructure {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         (&self).into_pyobject(py)
     }
+}
+
+#[napi(object)]
+#[derive(FromPyObject)]
+pub struct NewGeneratorReturn {
+    pub duration_frames: i32,
+    pub structure: Vec<RequestStructureParameter>,
+}
+
+#[napi(object)]
+#[derive(FromPyObject)]
+pub struct PluginNameInfo {
+    pub base_plugin: HashMap<String, String>,
+    pub object_plugins: HashMap<String, String>,
+    pub filter_plugins: HashMap<String, String>,
 }

@@ -12,6 +12,7 @@ import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
 import { AperioConfig, LayerStructure, NodeSharedTextureFormat } from "native";
 import setMenu from "./menu";
+import { registerContextMenuIpc } from "./contextMenu";
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
@@ -112,6 +113,7 @@ ipcMain.handle("resize-osr", (_, width: number, height: number) => {
 
 ipcMain.handle("show-dialog", (_, id: string) => showDialog(id));
 setMenu(showDialog);
+registerContextMenuIpc(nativeModule);
 
 ipcMain.handle("save-config", (_, config: Partial<AperioConfig>) => {
   nativeModule.saveConfig(config);
@@ -121,9 +123,22 @@ ipcMain.handle("get-plugin-names", () => {
   return nativeModule.aperioManager.getPluginNames();
 });
 
-ipcMain.handle("get-parameter-struct", (_, pluginName: string) => {
-  return nativeModule.aperioManager.getParameterStruct(pluginName);
-});
+ipcMain.handle(
+  "request-new-generator",
+  (_, pluginName: string, args: Record<string, unknown>) => {
+    return nativeModule.aperioManager.requestNewGenerator(pluginName, args);
+  },
+);
+
+ipcMain.handle(
+  "request-parameter-struct",
+  (_, pluginName: string, params: Record<string, unknown>) => {
+    return nativeModule.aperioManager.requestParameterStruct(
+      pluginName,
+      params,
+    );
+  },
+);
 
 // ─── Rendezvous Server ───────────────────────────────────────────────────────
 
@@ -248,7 +263,7 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(dirName, "./preload.js"),
       sandbox: false,
-    }
+    },
   });
   dialogWin.setMenu(null);
 
@@ -274,7 +289,7 @@ async function createWindow() {
   dialogWin.on("close", (e) => {
     e.preventDefault();
     dialogWin?.hide();
-  });  
+  });
 }
 
 app.whenReady().then(createWindow);

@@ -2,12 +2,12 @@ import os
 import site
 import sys
 
-from aperio_plugin.types.frame_structure import ColorParam, Vec2IntParam
 import cv2
 from gpu_util import PyCompiledWgsl, PyImageGenerator
 import numpy as np
 
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, ObjectGeneratorBase
+from aperio_plugin.types.frame_structure import BoolParam, ColorParam, RequestStructureParameter, Vec2IntParam
+from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, NewGeneratorReturn, ObjectGeneratorBase
 
 
 class TestObject(ObjectGeneratorBase):
@@ -35,26 +35,36 @@ class TestObject(ObjectGeneratorBase):
         current_dir = os.path.dirname(__file__)
         with open(os.path.join(current_dir, "test.wgsl"), "r") as f:
             self.shader = PyCompiledWgsl("test", f.read(), generator, None)
-        
-        self.request_args_struct = [
+
+        self.base_structure: list[RequestStructureParameter] = [
+            BoolParam("draw_text", "フレームテキストを描画", False),
+        ]
+
+    def on_new(self, args: dict) -> NewGeneratorReturn:
+        return NewGeneratorReturn(duration_frames=300, structure=self.base_structure)
+    
+    def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
+        if params.get("draw_text", False):
+            return self.base_structure + [
             Vec2IntParam(id="text_pos", title="テキスト位置", default_value=(50, 50), suffix="px"),
             ColorParam(id="text_color", title="テキスト色", default_value=(1.0, 1.0, 1.0, 1.0), use_alpha=False),
         ]
+        else:
+            return self.base_structure
+        
 
-    def generate(self, frame_number: int, obj_args: dict, width: int, height: int) -> GeneratorWgslReturn:
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn:
         ret, img = self.frame.read()
         if not ret:
             raise RuntimeError("Failed to read frame from videotestsrc")
-        position = obj_args.get("text_pos")
-        text_color = obj_args.get("text_color")
-        if position is None:
-            raise ValueError("text_pos argument is required")
-        if text_color is None:
-            raise ValueError("text_color argument is required")
-        text_color = [int(c * 255) for c in text_color]  # RGBAを整数に変換
+        
+        if args.get("draw_text", False):
+            position = args.get("text_pos", [50, 50])
+            text_color = args.get("text_color", (1.0, 1.0, 1.0, 1.0))
+            text_color = [int(c * 255) for c in text_color]  # RGBAを整数に変換
 
-        cv2.putText(img, f"Frame: {frame_number}", (position[0], position[1]),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (text_color[2], text_color[1], text_color[0]), 2, cv2.LINE_AA) # OpenCVはBGR形式なので、テキストカラーをBGRの順番で指定
+            cv2.putText(img, f"Frame: {frame_number}", (position[0], position[1]),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (text_color[2], text_color[1], text_color[0]), 2, cv2.LINE_AA) # OpenCVはBGR形式なので、テキストカラーをBGRの順番で指定
         
         # float32に変換
         img = img.astype(np.float32) / 255.0        

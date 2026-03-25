@@ -2,6 +2,7 @@ import {
   type FrameLayerStructure,
   type AperioConfig,
   type RequestStructureParameter,
+  type NewGeneratorReturn,
 } from "native";
 import { sharedTexture } from "electron";
 import type { SyncableState } from "../shared/store";
@@ -49,11 +50,18 @@ declare global {
     };
     main: {
       getPluginNames: () => Record<string, string>[];
-      getParameterStruct: (
+      requestNewGenerator: (
         pluginName: string,
+        args: Record<string, unknown>,
+      ) => Promise<NewGeneratorReturn>;
+      requestParameterStruct: (
+        pluginName: string,
+        params: Record<string, unknown>,
       ) => Promise<RequestStructureParameter[]>;
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
+      openContextMenu: (id: string) => Promise<void>;
+      onAddObject: (cb: (objName: string) => void) => () => void;
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
       resizeOsr: (width: number, height: number) => Promise<void>;

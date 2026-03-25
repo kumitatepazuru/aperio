@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from "uuid";
 import type { LayerStructure } from "native";
 import { create } from "zustand";
 import type { ColorValue } from "@/configable/types";
@@ -173,27 +172,7 @@ const _useStore = create<Store>()((set, get) => {
       changeTime: Date.now(),
       beginFrame: 0,
     },
-    timelineLayers: [
-      {
-        id: uuidv4(),
-        layer: 0,
-        from: 0,
-        to: 1000,
-        x: 500,
-        y: 500,
-        scale: 300.0,
-        rotation: 40.0,
-        alpha: 100.0,
-        obj: {
-          name: "base.test_object",
-          parameters: {
-            text_pos: [50, 50],
-            text_color: [1, 0, 0, 1],
-          },
-        },
-        effects: [],
-      },
-    ],
+    timelineLayers: [],
     pluginNames: undefined,
     selectedItemId: null,
     colorPicker: {

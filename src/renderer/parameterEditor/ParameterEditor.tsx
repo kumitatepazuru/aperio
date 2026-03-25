@@ -38,9 +38,7 @@ const BaseParameter: RequestStructureParameter[] = [
 ];
 
 const ParameterEditor = () => {
-  const [structures, setStructures] = useState<
-    Record<string, RequestStructureParameter[]>
-  >({});
+  const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
   const { timelineLayers, setTimelineLayers, selectedItemId } = useStore(
     useShallow((state) => ({
       timelineLayers: state.timelineLayers,
@@ -101,7 +99,7 @@ const ParameterEditor = () => {
   );
 
   const { element: objElement } = useConfigable(
-    structures[selectedItem?.obj.name ?? ""] ?? [],
+    structures,
     selectedItem?.obj.parameters ?? {},
     selectedItemId ?? undefined,
     handleObjChange,
@@ -110,20 +108,18 @@ const ParameterEditor = () => {
   useEffect(() => {
     if (!selectedItemId || !selectedItem) return;
 
-    const pluginNames = [];
-    pluginNames.push(selectedItem.obj.name);
-    pluginNames.push(...selectedItem.effects.map((effect) => effect.name));
-
-    // 取得されてなかったら構造体を取得する
-    pluginNames.forEach((pluginName) => {
-      if (structures[pluginName]) return;
-
-      window.main.getParameterStruct(pluginName).then((struct) => {
-        console.log("get struct", struct);
-        setStructures((prev) => ({ ...prev, [pluginName]: struct }));
-      });
-    });
-  }, [selectedItem, selectedItemId, structures]);
+    (async () => {
+      try {
+        const struct = await window.main.requestParameterStruct(
+          selectedItem.obj.name,
+          selectedItem.obj.parameters,
+        );
+        setStructures(struct);
+      } catch (error) {
+        console.error("Error fetching parameter structure:", error);
+      }
+    })();
+  }, [selectedItem, selectedItemId]);
 
   return (
     <div className="p-2">

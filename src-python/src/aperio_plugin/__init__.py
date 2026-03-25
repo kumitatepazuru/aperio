@@ -3,11 +3,11 @@ import hashlib
 import math
 import os.path
 import shutil
-from concurrent.futures.thread import ThreadPoolExecutor
 import struct
-import time
 from typing import Callable
 import gpu_util
+# TODO: stubを生成するように
+import logger # type: ignore
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
@@ -30,11 +30,9 @@ except ImportError as e:
                       "\n3. For Linux: Make sure that libpython is preloaded as RTLD_GLOBAL correctly. In linux, libpython must be able to be seen globally because of policy of manylinux."
                       "\n  Try add the environment LD_PRELOAD to specify the path to libpython3.x.so explicitly.") from e
 
-from .plugin_base import MainPluginBase, SubPluginBase
-from .plugin_base.generator_base import FilterGeneratorBase, GeneratorFuncReturn, GeneratorWgslReturn, ObjectGeneratorBase
+from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
+from .plugin_base.generator_base import FilterGeneratorBase, GeneratorFuncReturn, GeneratorWgslReturn, NewGeneratorReturn, ObjectGeneratorBase
 from .types.frame_structure import LayerStructure, RequestStructureParameter
-
-executor = ThreadPoolExecutor()
 
 
 class PluginManager:
@@ -70,9 +68,9 @@ class PluginManager:
         # openCLが使えるか確認して、有効化
         if cv2.ocl.haveOpenCL():
             cv2.ocl.setUseOpenCL(True)
-            print(f"OpenCV: OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
+            logger.info(f"OpenCV: OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
         else:
-            print("OpenCV: OpenCL is not available.")
+            logger.info("OpenCV: OpenCL is not available.")
 
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
@@ -89,7 +87,7 @@ class PluginManager:
         for dir in dirs:
             plugin_name = os.path.basename(dir)
             if not os.path.exists(f"{dir}/__init__.py"):
-                print(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
             __import__(f"{self.plugin_dir_name}.{plugin_name}")
 
@@ -103,20 +101,20 @@ class PluginManager:
 
         for name, plugin_cls in self.__plugins.items():
             if name in self.plugins:
-                print(f"INFO: Plugin {name} is already registered. Skipping.")
+                logger.info(f"Plugin {name} is already registered. Skipping.")
                 continue  # 既に登録されている場合はスキップ
 
             try:
                 plugin_instance = plugin_cls(self, self.generator)  # PluginManagerのインスタンスを渡す
                 self.plugins[name] = plugin_instance
-                print(f"Registered plugin: {plugin_instance.name}")
+                logger.info(f"Registered plugin: {plugin_instance.name}")
             except Exception as e:
-                print(f"Failed to load plugin {name}: {e}")
+                logger.error(f"Failed to load plugin {name}: {e}")
 
-            print("Loaded Plugins ---")
-            print("\n".join(
+            logger.info("Loaded Plugins ---")
+            logger.info("\n".join(
                 list(map(lambda n: f"{n[0]}(Object)- {n[1].get_display_info()}", self.object_plugins.items()))))
-            print("\n".join(
+            logger.info("\n".join(
                 list(map(lambda n: f"{n[0]}(Filter)- {n[1].get_display_info()}", self.filter_plugins.items()))))
 
     @classmethod
@@ -141,13 +139,18 @@ class PluginManager:
 
         return wrapper
 
-    def register_sub_plugin(self, plugin: SubPluginBase) -> None:
+    def register_sub_plugin(self, master: MainPluginBase, plugin: SubPluginBase) -> None:
         """
         サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはFilterGeneratorBaseのいずれかを継承している必要がある。
 
         Args:
+            master (MainPluginBase): マスタープラグインのインスタンス
             plugin (SubPluginBase): 登録するサブプラグインのインスタンス
         """
+
+        master_name = master.name
+        if not plugin.name.startswith(master_name + "."):
+            raise ValueError(f"Sub plugin name {plugin.name} should start with '{master_name}.'. Please rename the plugin or check the master plugin name.")
 
         if isinstance(plugin, ObjectGeneratorBase):
             self.object_plugins[plugin.name] = plugin
@@ -182,16 +185,16 @@ class PluginManager:
         # TODO: URLからのダウンロードや、zipファイルの解凍などもここで行う
 
         if not os.path.exists(plugin_dir) or not os.path.isdir(plugin_dir):
-            print(f"Plugin directory {plugin_dir} does not exist.")
+            logger.error(f"Plugin directory {plugin_dir} does not exist.")
             return False
 
         plugin_name = os.path.basename(plugin_dir)
         if plugin_name in self.plugins:
             # 既に登録されている場合は__init__.pyのハッシュ値を比較して、異なる場合のみ更新する
             # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
-            print(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
+            logger.info(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
             if not os.path.exists(f"{plugin_dir}/__init__.py"):
-                print(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 return False
 
             with open(f"{plugin_dir}/__init__.py", "rb") as f:
@@ -199,43 +202,70 @@ class PluginManager:
                 with open(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py", "rb") as ef:
                     existing_hash = hashlib.sha256(ef.read()).hexdigest()
                     if new_hash == existing_hash:
-                        print(f"Plugin {plugin_name} is completely same. Skipping.")
+                        logger.info(f"Plugin {plugin_name} is completely same. Skipping.")
                         return True
 
         shutil.copytree(plugin_dir, f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}", dirs_exist_ok=True)
 
         # プラグインを再読み込みして登録する
         if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
-            print(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
+            logger.warn(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
             return False
         __import__(f"{self.plugin_dir_name}.{plugin_name}")
-        print(f"Plugin {plugin_name} has been added/updated.")
+        logger.info(f"Plugin {plugin_name} has been added/updated.")
 
         self.__load_plugins()
         return True
     
-    def get_plugin_names(self) -> list[dict[str, str]]:
+    def get_plugin_names(self) -> PluginNameInfo:
         """
         登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
 
         Returns:
-            list[dict[str, str]]: 登録されているプラグインのnameとdisplay_nameの対応表のリスト
+            PluginNameInfo: 登録されているプラグインのnameとdisplay_nameの対応表
         """
-        result = []
-        for plugin in self.plugins.values():
-            result.append({plugin.name: plugin.display_name})
-        for obj_plugin in self.object_plugins.values():
-            result.append({obj_plugin.name: obj_plugin.display_name})
-        for filter_plugin in self.filter_plugins.values():
-            result.append({filter_plugin.name: filter_plugin.display_name})
+        result = PluginNameInfo(
+            base_plugin={plugin.name: plugin.display_name for plugin in self.plugins.values()},
+            object_plugins={name: plugin.display_name for name, plugin in self.object_plugins.items()},
+            filter_plugins={name: plugin.display_name for name, plugin in self.filter_plugins.items()}
+        )
         
         return result
     
-    def get_parameter_struct(self, plugin_name: str) -> list[RequestStructureParameter]:
+    def request_new_generator(self, plugin_name: str, args: dict) -> NewGeneratorReturn:
+        """
+        指定されたジェネレーターを新規に生成するための情報を取得するメソッド。
+
+        Args:
+            plugin_name (str): 生成するジェネレーターの名前
+            args (dict): ジェネレーターの初期化に必要な任意の引数群
+
+        Returns:
+            NewGeneratorReturn: 新しく生成されたジェネレーターの情報
+        """
         if plugin_name in self.object_plugins:
-            return self.object_plugins[plugin_name].request_args_struct
+            return self.object_plugins[plugin_name].on_new(args)
         elif plugin_name in self.filter_plugins:
-            return self.filter_plugins[plugin_name].request_args_struct
+            return self.filter_plugins[plugin_name].on_new(args)
+        else:
+            raise ValueError(f"Plugin {plugin_name} is not registered as object or filter plugin")
+    
+    def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]:
+        """
+        指定されたジェネレーターのパラメーター構造を改めてリクエストするメソッド。
+
+        Args:
+            plugin_name (str): パラメーター構造をリクエストするジェネレーターの名前
+            params (dict): 現在のジェネレーターのパラメータ群。古いRequestStructureParameterを基に構成されている。
+
+        Returns:
+            list[RequestStructureParameter]: ジェネレーターのパラメーター構造
+        """
+
+        if plugin_name in self.object_plugins:
+            return self.object_plugins[plugin_name].on_request_structure(params)
+        elif plugin_name in self.filter_plugins:
+            return self.filter_plugins[plugin_name].on_request_structure(params)
         else:
             raise ValueError(f"Plugin {plugin_name} is not registered as object or filter plugin")
 
@@ -324,7 +354,8 @@ class PluginManager:
 
         except Exception as e:
             import traceback
-            raise RuntimeError(f"Failed to build frame pipeline: {traceback.format_exc()}") from e
+            logger.error(traceback.format_exc())
+            raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
         return builder
     
@@ -362,34 +393,3 @@ class PluginManager:
 
         if builder is not None:
             self.generator.generate_shared_texture(builder, texture_handle, format)
-
-
-    def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
-        """
-        指定された数だけフレームをmultithreadingで生成するメソッド。make_frameと同じ引数を受け取り、amountで指定された数だけフレームを生成してリストで返す。
-
-        Args:
-            start_frame_number (int): 生成を開始するフレームの番号
-            amount (int): 生成するフレームの数
-            *args: make_frameに渡す引数
-            **kwargs: make_frameに渡すキーワード引数
-
-        Returns:
-            list[np.ndarray]: 生成されたフレームのリスト
-        """
-        try:
-            if not isinstance(amount, int) or amount <= 0:
-                raise ValueError("amount must be a positive integer")
-
-            frames = []
-            futures = [executor.submit(self.make_frame_buf, start_frame_number + i, *args, **kwargs)
-                       for i in range(amount)]
-            for future in futures:
-                frames.append(future.result())
-
-
-            return frames
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            raise RuntimeError(f"Failed to make frames: {e}")

@@ -1,5 +1,5 @@
 import type { RequestStructureParameter } from "native";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { LuUndo2 } from "react-icons/lu";
 import type {
   ColorValue,
@@ -28,7 +28,7 @@ function getDefaultValue(param: RequestStructureParameter): ConfigableValue {
     case "String":
       return param.defaultValue;
     case "List":
-      return param.defaultKey;
+      return param.defaultValue;
     case "Vec2Int":
     case "Vec2Float":
       return [param.defaultValue[0], param.defaultValue[1]];
@@ -68,11 +68,13 @@ export function useConfigable(
   const initialValuesRef = useRef(initialValues);
   initialValuesRef.current = initialValues;
 
-  const handleChange = (id: string, value: ConfigableValue) => {
-    const next = { ...values, [id]: value };
-    setValues(next);
-    onChange?.(next);
-  };
+  const handleChange = useCallback((id: string, value: ConfigableValue) => {
+    setValues((prev) => {
+      const next = { ...prev, [id]: value };
+      onChange?.(next);
+      return next;
+    });
+  }, [onChange]);
 
   const handleReset = (param: RequestStructureParameter) => {
     handleChange(param.id, getDefaultValue(param));
@@ -80,8 +82,16 @@ export function useConfigable(
 
   useEffect(() => {
     // structuresまたはアイテムが変わったときに、valuesを初期化する
-    setValues(initValues(structures, initialValuesRef.current));
-  }, [structures, resetKey]);
+    const initial = initialValuesRef.current;
+    setValues(initValues(structures, initial));
+
+    // parametersに不足しているキーをデフォルト値で補完する
+    for (const param of structures) {
+      if (!(param.id in initial)) {
+        handleChange(param.id, getDefaultValue(param));
+      }
+    }
+  }, [structures, resetKey, handleChange]);
 
   const wrap = (
     id: string,
