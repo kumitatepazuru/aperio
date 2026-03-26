@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ColorValue } from "../../types";
 import ColorSwatch from "./ColorSwatch";
 import {
@@ -12,7 +13,7 @@ type Props = {
   onChange: (value: ColorValue) => void;
 };
 
-export default function SwatchPalette({ onChange }: Props) {
+export default memo(function SwatchPalette({ onChange }: Props) {
   return (
     <div className="flex flex-col gap-1">
       {/* Header row: shade labels */}
@@ -40,7 +41,7 @@ export default function SwatchPalette({ onChange }: Props) {
               const cv = oklchToColorValue(shades[shade]);
               return (
                 <ColorSwatch
-                  key={shade}
+                  key={`${name}-${shade}`}
                   color={cv}
                   onClick={() => onChange(cv)}
                   containAlpha={false}
@@ -67,4 +68,4 @@ export default function SwatchPalette({ onChange }: Props) {
       </div>
     </div>
   );
-}
+});

@@ -110,9 +110,7 @@ const NumberInput = ({
             if (!isNaN(v)) onChange(v);
           }}
           onBlur={() => {
-            const v = isInt
-              ? parseInt(inputStr, 10)
-              : parseFloat(inputStr);
+            const v = isInt ? parseInt(inputStr, 10) : parseFloat(inputStr);
             if (isNaN(v)) {
               onChange(valueAtFocus.current);
               setInputStr(String(valueAtFocus.current));

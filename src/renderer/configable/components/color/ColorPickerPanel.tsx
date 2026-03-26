@@ -27,6 +27,7 @@ type Props = {
 export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
   const [hexFocused, setHexFocused] = useState(false);
   const [hexDraft, setHexDraft] = useState("");
+  const [isPaletteTab, setIsPaletteTab] = useState(false);
 
   const svRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLDivElement>(null);
@@ -196,6 +197,7 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
         className="tab w-0"
         aria-label="詳細"
         defaultChecked
+        onChange={() => setIsPaletteTab(false)}
       />
       {/* ── Detail view ────────────────────────────────────────────────── */}
       <div className="tab-content pt-4">
@@ -433,9 +435,10 @@ export default function ColorPickerPanel({ value, useAlpha, onChange }: Props) {
         name="color_panel"
         aria-label="色見本から"
         className="tab w-0"
+        onChange={() => setIsPaletteTab(true)}
       />
       <div className="tab-content pt-4">
-        <SwatchPalette onChange={onChange} />
+        {isPaletteTab && <SwatchPalette onChange={onChange} />}
       </div>
     </div>
   );

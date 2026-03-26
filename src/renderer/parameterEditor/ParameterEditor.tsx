@@ -2,7 +2,7 @@ import { useConfigable } from "@/configable/useConfigable";
 import type { ConfigableValue, Vec2Value } from "@/configable/types";
 import useStore, { getStoreState } from "@shared/store";
 import type { RequestStructureParameter } from "native";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useShallow } from "zustand/shallow";
 
 // TODO: ID重複の時にエラーを出す
@@ -59,6 +59,9 @@ const ParameterEditor = () => {
       alpha: selectedItem.alpha,
     };
   }, [selectedItem]);
+  const [tempStructures, setTempStructures] = useState<
+    (typeof timelineLayers)[0]["obj"]["parameters"] | null
+  >(null);
 
   const handleBaseChange = async (values: Record<string, ConfigableValue>) => {
     if (!selectedItemId) return;
@@ -80,15 +83,37 @@ const ParameterEditor = () => {
   };
 
   const handleObjChange = async (values: Record<string, ConfigableValue>) => {
-    if (!selectedItemId) return;
-    const timeline = (await getStoreState()).timelineLayers;
-    setTimelineLayers(
-      timeline.map((layer) =>
-        layer.id === selectedItemId
-          ? { ...layer, obj: { ...layer.obj, parameters: values } }
-          : layer,
-      ),
-    );
+    if (!selectedItemId || !selectedItem) return;
+
+    (async () => {
+      try {
+        const struct = await window.main.requestParameterStruct(
+          selectedItem.obj.name,
+          values,
+        );
+        const structForCheck = struct.map((param) => param.id);
+        if (structures.length === structForCheck.length) {
+          // 変更前と同じ構造なら更新
+          console.log("structures same, updating values");
+          const timeline = (await getStoreState()).timelineLayers;
+          setTimelineLayers(
+            timeline.map((layer) =>
+              layer.id === selectedItemId
+                ? { ...layer, obj: { ...layer.obj, parameters: values } }
+                : layer,
+            ),
+          );
+          setTempStructures(null);
+        } else {
+          // 変更前と構造が違うなら構造を更新してパラメーターは更新しない
+          console.log("structures updated");
+          setStructures(struct);
+          setTempStructures(values);
+        }
+      } catch (error) {
+        console.error("Error fetching parameter structure:", error);
+      }
+    })();
   };
 
   const { element: baseElement } = useConfigable(
@@ -100,26 +125,11 @@ const ParameterEditor = () => {
 
   const { element: objElement } = useConfigable(
     structures,
-    selectedItem?.obj.parameters ?? {},
+    tempStructures ?? selectedItem?.obj.parameters ?? {},
     selectedItemId ?? undefined,
     handleObjChange,
+    handleObjChange,
   );
-
-  useEffect(() => {
-    if (!selectedItemId || !selectedItem) return;
-
-    (async () => {
-      try {
-        const struct = await window.main.requestParameterStruct(
-          selectedItem.obj.name,
-          selectedItem.obj.parameters,
-        );
-        setStructures(struct);
-      } catch (error) {
-        console.error("Error fetching parameter structure:", error);
-      }
-    })();
-  }, [selectedItem, selectedItemId]);
 
   return (
     <div className="p-2">

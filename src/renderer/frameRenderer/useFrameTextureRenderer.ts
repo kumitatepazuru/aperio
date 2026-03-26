@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
-import useStore, { getCurrentFrameCount, getFrameStruct, getStoreState } from "@shared/store";
+import useStore, {
+  getCurrentFrameCount,
+  getFrameStruct,
+  getStoreState,
+} from "@shared/store";
 import {
   useExternalTexturePreviewWebGPU,
   type ExternalTextureWebGPUResources,
