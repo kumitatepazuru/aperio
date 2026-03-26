@@ -270,7 +270,8 @@ async function createWindow() {
   if (isDev) {
     // Vite の dev サーバに接続
     const url =
-      process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173/renderer/";
+      process.env.VITE_DEV_SERVER_URL ??
+      "http://localhost:5173/renderer/?debug";
     await win.loadURL(url);
     await osrWin?.loadURL("http://localhost:5173/osr/");
     win.webContents.openDevTools({ mode: "detach" });
