@@ -94,7 +94,6 @@ const ParameterEditor = () => {
         const structForCheck = struct.map((param) => param.id);
         if (structures.length === structForCheck.length) {
           // 変更前と同じ構造なら更新
-          console.log("structures same, updating values");
           const timeline = (await getStoreState()).timelineLayers;
           setTimelineLayers(
             timeline.map((layer) =>
@@ -106,7 +105,6 @@ const ParameterEditor = () => {
           setTempStructures(null);
         } else {
           // 変更前と構造が違うなら構造を更新してパラメーターは更新しない
-          console.log("structures updated");
           setStructures(struct);
           setTempStructures(values);
         }

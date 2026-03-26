@@ -44,7 +44,6 @@ function initValues(
   initial: Record<string, ConfigableValue>,
 ): Record<string, ConfigableValue> {
   const record: Record<string, ConfigableValue> = {};
-  console.log("initValues structures", structures, "initial", initial);
   for (const param of structures) {
     record[param.id] =
       param.id in initial ? initial[param.id] : getDefaultValue(param);
