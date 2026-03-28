@@ -1,6 +1,6 @@
+from .plugin_base.generator_base import *
 import gpu_util
-from .plugin_base import MainPluginBase, PluginInfo, SubPluginBase
-from .plugin_base.generator_base import FilterGeneratorBase, NewGeneratorReturn, ObjectGeneratorBase
+from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
 from .types.frame_structure import LayerStructure as LayerStructure, RequestStructureParameter as RequestStructureParameter
 from _typeshed import Incomplete
 from typing import Callable
@@ -75,25 +75,46 @@ class PluginManager:
         Returns:
             bool: プラグインが正常に追加または更新された場合はTrue、それ以外の場合はFalse
         """
-    def get_plugin_names(self) -> PluginInfo:
+    def get_plugin_names(self) -> PluginNameInfo:
         """
         登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
 
         Returns:
-            PluginInfo: 登録されているプラグインのnameとdisplay_nameの対応表
+            PluginNameInfo: 登録されているプラグインのnameとdisplay_nameの対応表
         """
-    def request_new_generator(self, plugin_name: str, args: dict) -> NewGeneratorReturn:
+    def request_new_object_generator(self, plugin_name: str, args: dict) -> NewObjectGeneratorReturn:
         """
-        指定されたジェネレーターを新規に生成するための情報を取得するメソッド。
+        指定されたオブジェクトジェネレーターを新規に生成するための情報を取得するメソッド。
 
         Args:
-            plugin_name (str): 生成するジェネレーターの名前
-            args (dict): ジェネレーターの初期化に必要な任意の引数群
+            plugin_name (str): 生成するオブジェクトジェネレーターの名前
+            args (dict): オブジェクトジェネレーターの初期化に必要な任意の引数群
 
         Returns:
-            NewGeneratorReturn: 新しく生成されたジェネレーターの情報
+            NewObjectGeneratorReturn: 新しく生成されたオブジェクトジェネレーターの情報
         """
-    def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]: ...
+    def request_new_filter_generator(self, plugin_name: str, args: dict) -> NewFilterGeneratorReturn:
+        """
+        指定されたフィルタージェネレーターを新規に生成するための情報を取得するメソッド。
+
+        Args:
+            plugin_name (str): 生成するフィルタージェネレーターの名前
+            args (dict): フィルタージェネレーターの初期化に必要な任意の引数群
+
+        Returns:
+            NewFilterGeneratorReturn: 新しく生成されたフィルタージェネレーターの情報
+        """
+    def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]:
+        """
+        指定されたジェネレーターのパラメーター構造を改めてリクエストするメソッド。
+
+        Args:
+            plugin_name (str): パラメーター構造をリクエストするジェネレーターの名前
+            params (dict): 現在のジェネレーターのパラメータ群。古いRequestStructureParameterを基に構成されている。
+
+        Returns:
+            list[RequestStructureParameter]: ジェネレーターのパラメーター構造
+        """
     def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> None:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。

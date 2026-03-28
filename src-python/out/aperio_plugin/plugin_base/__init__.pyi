@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from gpu_util import PyImageGenerator as PyImageGenerator
 
 @dataclass
-class PluginInfo:
-    base_plugin: dict[str, MainPluginBase]
-    object_plugins: dict[str, ObjectGeneratorBase]
-    filter_plugins: dict[str, FilterGeneratorBase]
+class PluginNameInfo:
+    base_plugin: dict[str, str]
+    object_plugins: dict[str, str]
+    filter_plugins: dict[str, str]
 
 class PluginBase:
     """

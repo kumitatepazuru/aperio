@@ -31,7 +31,7 @@ except ImportError as e:
                       "\n  Try add the environment LD_PRELOAD to specify the path to libpython3.x.so explicitly.") from e
 
 from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
-from .plugin_base.generator_base import FilterGeneratorBase, GeneratorFuncReturn, GeneratorWgslReturn, NewGeneratorReturn, ObjectGeneratorBase
+from .plugin_base.generator_base import *
 from .types.frame_structure import LayerStructure, RequestStructureParameter
 
 
@@ -232,24 +232,39 @@ class PluginManager:
         
         return result
     
-    def request_new_generator(self, plugin_name: str, args: dict) -> NewGeneratorReturn:
+    def request_new_object_generator(self, plugin_name: str, args: dict) -> NewObjectGeneratorReturn:
         """
-        指定されたジェネレーターを新規に生成するための情報を取得するメソッド。
+        指定されたオブジェクトジェネレーターを新規に生成するための情報を取得するメソッド。
 
         Args:
-            plugin_name (str): 生成するジェネレーターの名前
-            args (dict): ジェネレーターの初期化に必要な任意の引数群
+            plugin_name (str): 生成するオブジェクトジェネレーターの名前
+            args (dict): オブジェクトジェネレーターの初期化に必要な任意の引数群
 
         Returns:
-            NewGeneratorReturn: 新しく生成されたジェネレーターの情報
+            NewObjectGeneratorReturn: 新しく生成されたオブジェクトジェネレーターの情報
         """
         if plugin_name in self.object_plugins:
             return self.object_plugins[plugin_name].on_new(args)
-        elif plugin_name in self.filter_plugins:
-            return self.filter_plugins[plugin_name].on_new(args)
         else:
-            raise ValueError(f"Plugin {plugin_name} is not registered as object or filter plugin")
-    
+            raise ValueError(f"Plugin {plugin_name} is not registered as an object plugin")
+
+    def request_new_filter_generator(self, plugin_name: str, args: dict) -> NewFilterGeneratorReturn:
+        """
+        指定されたフィルタージェネレーターを新規に生成するための情報を取得するメソッド。
+
+        Args:
+            plugin_name (str): 生成するフィルタージェネレーターの名前
+            args (dict): フィルタージェネレーターの初期化に必要な任意の引数群
+
+        Returns:
+            NewFilterGeneratorReturn: 新しく生成されたフィルタージェネレーターの情報
+        """
+
+        if plugin_name in self.filter_plugins:
+            return self.filter_plugins[plugin_name].on_new()
+        else:
+            raise ValueError(f"Plugin {plugin_name} is not registered as a filter plugin")
+
     def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]:
         """
         指定されたジェネレーターのパラメーター構造を改めてリクエストするメソッド。
@@ -350,7 +365,7 @@ class PluginManager:
             # builderを作成
             builder = gpu_util.PyImageGenerateBuilder() \
                 .add_parallel_wgsl(layer_builders) \
-                .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
+                .add_wgsl(self.compose_wgsl, b"".join(params), width, height) # TODO: render Passを使っての高速化と簡潔化を試みる
 
         except Exception as e:
             import traceback

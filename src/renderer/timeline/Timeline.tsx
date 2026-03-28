@@ -162,7 +162,7 @@ const Timeline = () => {
         async (objName) => {
           console.log("Add object from context menu:", objName);
 
-          const structure = await window.main.requestNewGenerator(objName, {});
+          const structure = await window.main.requestNewObjectGenerator(objName, {});
           const defaultParams: Record<string, unknown> = {};
           structure.structure.forEach((param) => {
             defaultParams[param.id] = param.defaultValue;

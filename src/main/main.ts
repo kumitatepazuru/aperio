@@ -124,9 +124,16 @@ ipcMain.handle("get-plugin-names", () => {
 });
 
 ipcMain.handle(
-  "request-new-generator",
+  "request-new-object-generator",
   (_, pluginName: string, args: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestNewGenerator(pluginName, args);
+    return nativeModule.aperioManager.requestNewObjectGenerator(pluginName, args);
+  },
+);
+
+ipcMain.handle(
+  "request-new-filter-generator",
+  (_, pluginName: string) => {
+    return nativeModule.aperioManager.requestNewFilterGenerator(pluginName);
   },
 );
 

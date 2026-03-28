@@ -18,8 +18,12 @@ class GeneratorFuncReturn:
     output_height: int
 
 @dataclass
-class NewGeneratorReturn:
+class NewObjectGeneratorReturn:
     duration_frames: int
+    structure: list[RequestStructureParameter]
+
+@dataclass
+class NewFilterGeneratorReturn:
     structure: list[RequestStructureParameter]
 
 class GeneratorBase(SubPluginBase):
@@ -32,16 +36,6 @@ class GeneratorBase(SubPluginBase):
     def __init__(self, generator: PyImageGenerator) -> None:
         """
         フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
-        """
-    def on_new(self, args: dict) -> NewGeneratorReturn:
-        """
-        新しくオブジェクトまたはフィルターが生成されたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
-
-        Args:
-            args (dict): 初回オブジェクト生成に必要な任意の引数群
-
-        Returns:
-            NewGeneratorReturn: 新しいオブジェクトまたはフィルターの情報
         """
     def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
         """
@@ -74,6 +68,17 @@ class ObjectGeneratorBase(GeneratorBase):
     
     // TODO: より詳細な説明を書く
     """
+    def on_new(self, args: dict) -> NewObjectGeneratorReturn:
+        """
+        新しくオブジェクトが生成されたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
+
+        Args:
+            args (dict): 初回オブジェクト生成に必要な任意の引数群
+
+        Returns:
+            NewObjectGeneratorReturn: 新しいオブジェクトの情報
+        """
+
 class FilterGeneratorBase(GeneratorBase):
     """
     フィルターを適用してフレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
@@ -81,3 +86,10 @@ class FilterGeneratorBase(GeneratorBase):
 
     // TODO: より詳細な説明を書く
     """
+    def on_new(self) -> NewFilterGeneratorReturn:
+        """
+        新しくフィルターが生成されたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
+
+        Returns:
+            NewFilterGeneratorReturn: 新しいフィルターの情報
+        """

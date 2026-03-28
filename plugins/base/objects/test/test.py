@@ -7,7 +7,7 @@ from gpu_util import PyCompiledWgsl, PyImageGenerator
 import numpy as np
 
 from aperio_plugin.types.frame_structure import BoolParam, ColorParam, RequestStructureParameter, Vec2IntParam
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, NewGeneratorReturn, ObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
 
 
 class TestObject(ObjectGeneratorBase):
@@ -29,7 +29,7 @@ class TestObject(ObjectGeneratorBase):
         print("--------------------------")
 
         self.name = "base.test_object"
-        self.display_name = "Test Object"
+        self.display_name = "テストオブジェクト"
         self.description = "This is a test object that generates frames using OpenCV and GStreamer videotestsrc."
 
         current_dir = os.path.dirname(__file__)
@@ -40,8 +40,8 @@ class TestObject(ObjectGeneratorBase):
             BoolParam("draw_text", "フレームテキストを描画", False),
         ]
 
-    def on_new(self, args: dict) -> NewGeneratorReturn:
-        return NewGeneratorReturn(duration_frames=300, structure=self.base_structure)
+    def on_new(self, args: dict) -> NewObjectGeneratorReturn:
+        return NewObjectGeneratorReturn(duration_frames=300, structure=self.base_structure)
     
     def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
         if params.get("draw_text", False):

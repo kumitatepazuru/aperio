@@ -1,6 +1,8 @@
 from aperio_plugin import PluginManager
 from aperio_plugin.plugin_base import MainPluginBase
-from .objects.test import TestObject
+
+from .filters.blur.blur import BlurFilter
+from .objects.test.test import TestObject
 
 
 @PluginManager.plugin
@@ -14,3 +16,4 @@ class AperioBasePlugin(MainPluginBase):
         self.author = "Aperio"
 
         manager.register_sub_plugin(self, TestObject(generator))
+        manager.register_sub_plugin(self, BlurFilter(generator))

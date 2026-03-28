@@ -235,8 +235,14 @@ impl<'py> IntoPyObject<'py> for GenerateStructure {
 
 #[napi(object)]
 #[derive(FromPyObject)]
-pub struct NewGeneratorReturn {
+pub struct NewObjectGeneratorReturn {
     pub duration_frames: i32,
+    pub structure: Vec<RequestStructureParameter>,
+}
+
+#[napi(object)]
+#[derive(FromPyObject)]
+pub struct NewFilterGeneratorReturn {
     pub structure: Vec<RequestStructureParameter>,
 }
 

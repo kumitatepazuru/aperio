@@ -2,7 +2,8 @@ use crate::{
     app_config::{AperioConfig, AperioConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
     structs::{
-        Dirs, LayerStructure, NewGeneratorReturn, PluginNameInfo, RequestStructureParameter,
+        Dirs, LayerStructure, NewFilterGeneratorReturn, NewObjectGeneratorReturn, PluginNameInfo,
+        RequestStructureParameter,
     },
     util::{get_local_data_dir, json_to_pyobject},
 };
@@ -166,23 +167,43 @@ impl AperioManager {
     }
 
     #[napi]
-    pub fn request_new_generator(
+    pub fn request_new_object_generator(
         &self,
         plugin_name: String,
         args: serde_json::Value,
-    ) -> napi::Result<NewGeneratorReturn> {
+    ) -> napi::Result<NewObjectGeneratorReturn> {
         let pl_manager = &self.plmanager;
 
-        let result = Python::attach(|py| -> PyResult<NewGeneratorReturn> {
+        let result = Python::attach(|py| -> PyResult<NewObjectGeneratorReturn> {
             let pl_manager = pl_manager.bind(py);
             let gen_info = pl_manager.call_method1(
-                "request_new_generator",
+                "request_new_object_generator",
                 (plugin_name, json_to_pyobject(py, &args)?),
             )?;
             Ok(gen_info.extract()?)
         })
         .map_err(|e| {
-            napi::Error::from_reason(format!("Failed to request new generator: {:?}", e))
+            napi::Error::from_reason(format!("Failed to request new object generator: {:?}", e))
+        })?;
+
+        Ok(result)
+    }
+
+    #[napi]
+    pub fn request_new_filter_generator(
+        &self,
+        plugin_name: String,
+    ) -> napi::Result<NewFilterGeneratorReturn> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<NewFilterGeneratorReturn> {
+            let pl_manager = pl_manager.bind(py);
+            let gen_info =
+                pl_manager.call_method1("request_new_filter_generator", (plugin_name,))?;
+            Ok(gen_info.extract()?)
+        })
+        .map_err(|e| {
+            napi::Error::from_reason(format!("Failed to request new filter generator: {:?}", e))
         })?;
 
         Ok(result)

@@ -2,7 +2,8 @@ import {
   type FrameLayerStructure,
   type AperioConfig,
   type RequestStructureParameter,
-  type NewGeneratorReturn,
+  type NewFilterGeneratorReturn,
+  type NewObjectGeneratorReturn,
 } from "native";
 import { sharedTexture } from "electron";
 import type { SyncableState } from "../shared/store";
@@ -50,10 +51,13 @@ declare global {
     };
     main: {
       getPluginNames: () => Record<string, string>[];
-      requestNewGenerator: (
+      requestNewObjectGenerator: (
         pluginName: string,
         args: Record<string, unknown>,
-      ) => Promise<NewGeneratorReturn>;
+      ) => Promise<NewObjectGeneratorReturn>;
+      requestNewFilterGenerator: (
+        pluginName: string,
+      ) => Promise<NewFilterGeneratorReturn>;
       requestParameterStruct: (
         pluginName: string,
         params: Record<string, unknown>,
