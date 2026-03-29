@@ -1,5 +1,5 @@
 from .. import PluginManager
-from .generator_base import FilterGeneratorBase as FilterGeneratorBase, ObjectGeneratorBase as ObjectGeneratorBase
+from .generator_base import EffectGeneratorBase as EffectGeneratorBase, ObjectGeneratorBase as ObjectGeneratorBase
 from _typeshed import Incomplete
 from dataclasses import dataclass
 from gpu_util import PyImageGenerator as PyImageGenerator
@@ -8,7 +8,7 @@ from gpu_util import PyImageGenerator as PyImageGenerator
 class PluginNameInfo:
     base_plugin: dict[str, str]
     object_plugins: dict[str, str]
-    filter_plugins: dict[str, str]
+    effect_plugins: dict[str, str]
 
 class PluginBase:
     """

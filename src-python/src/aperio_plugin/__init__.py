@@ -43,7 +43,7 @@ class PluginManager:
     __plugins: dict[str, type[MainPluginBase]] = {}  # 登録されたプラグインのクラスを保持する辞書
     plugins: dict[str, MainPluginBase] = {}  # 登録されたプラグインのインスタンスを保持する辞書
     object_plugins: dict[str, ObjectGeneratorBase] = {}
-    filter_plugins: dict[str, FilterGeneratorBase] = {}
+    effect_plugins: dict[str, EffectGeneratorBase] = {}
 
     def __init__(self, data_dir: str, plugin_dir_name="plugins"):
         """
@@ -119,7 +119,7 @@ class PluginManager:
             logger.info("\n".join(
                 list(map(lambda n: f"{n[0]}(Object)- {n[1].get_display_info()}", self.object_plugins.items()))))
             logger.info("\n".join(
-                list(map(lambda n: f"{n[0]}(Filter)- {n[1].get_display_info()}", self.filter_plugins.items()))))
+                list(map(lambda n: f"{n[0]}(Effect)- {n[1].get_display_info()}", self.effect_plugins.items()))))
 
     @classmethod
     def plugin(cls, func: type[MainPluginBase]) -> Callable:
@@ -145,7 +145,7 @@ class PluginManager:
 
     def register_sub_plugin(self, master: MainPluginBase, plugin: SubPluginBase) -> None:
         """
-        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはFilterGeneratorBaseのいずれかを継承している必要がある。
+        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはEffectGeneratorBaseのいずれかを継承している必要がある。
 
         Args:
             master (MainPluginBase): マスタープラグインのインスタンス
@@ -158,10 +158,10 @@ class PluginManager:
 
         if isinstance(plugin, ObjectGeneratorBase):
             self.object_plugins[plugin.name] = plugin
-        elif isinstance(plugin, FilterGeneratorBase):
-            self.filter_plugins[plugin.name] = plugin
+        elif isinstance(plugin, EffectGeneratorBase):
+            self.effect_plugins[plugin.name] = plugin
         else:
-            raise TypeError("The plugin must be a subclass of ObjectGeneratorBase or FilterGeneratorBase")
+            raise TypeError("The plugin must be a subclass of ObjectGeneratorBase or EffectGeneratorBase")
 
     def check_plugin_exists(self, plugin_name: str) -> bool:
         """
@@ -236,7 +236,7 @@ class PluginManager:
         result = PluginNameInfo(
             base_plugin={plugin.name: plugin.display_name for plugin in self.plugins.values()},
             object_plugins={name: plugin.display_name for name, plugin in self.object_plugins.items()},
-            filter_plugins={name: plugin.display_name for name, plugin in self.filter_plugins.items()}
+            effect_plugins={name: plugin.display_name for name, plugin in self.effect_plugins.items()}
         )
         
         return result
@@ -257,21 +257,21 @@ class PluginManager:
         else:
             raise ValueError(f"Plugin {plugin_name} is not registered as an object plugin")
 
-    def request_new_filter_generator(self, plugin_name: str) -> NewFilterGeneratorReturn:
+    def request_new_effect_generator(self, plugin_name: str) -> NewEffectGeneratorReturn:
         """
-        指定されたフィルタージェネレーターを新規に生成するための情報を取得するメソッド。
+        指定されたエフェクトジェネレーターを新規に生成するための情報を取得するメソッド。
 
         Args:
-            plugin_name (str): 生成するフィルタージェネレーターの名前
+            plugin_name (str): 生成するエフェクトジェネレーターの名前
 
         Returns:
-            NewFilterGeneratorReturn: 新しく生成されたフィルタージェネレーターの情報
+            NewEffectGeneratorReturn: 新しく生成されたエフェクトジェネレーターの情報
         """
 
-        if plugin_name in self.filter_plugins:
-            return self.filter_plugins[plugin_name].on_new()
+        if plugin_name in self.effect_plugins:
+            return self.effect_plugins[plugin_name].on_new()
         else:
-            raise ValueError(f"Plugin {plugin_name} is not registered as a filter plugin")
+            raise ValueError(f"Plugin {plugin_name} is not registered as an effect plugin")
 
     def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]:
         """
@@ -287,10 +287,10 @@ class PluginManager:
 
         if plugin_name in self.object_plugins:
             return self.object_plugins[plugin_name].on_request_structure(params)
-        elif plugin_name in self.filter_plugins:
-            return self.filter_plugins[plugin_name].on_request_structure(params)
+        elif plugin_name in self.effect_plugins:
+            return self.effect_plugins[plugin_name].on_request_structure(params)
         else:
-            raise ValueError(f"Plugin {plugin_name} is not registered as object or filter plugin")
+            raise ValueError(f"Plugin {plugin_name} is not registered as object or effect plugin")
 
     def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
                              width: int, height: int) -> gpu_util.PyImageGenerateBuilder | None:
@@ -343,11 +343,11 @@ class PluginManager:
 
                 # エフェクト適用
                 for effect in layer["effects"]:
-                    if effect["name"] not in self.filter_plugins:
-                        raise ValueError(f"Filter plugin {effect['name']} is not registered")
+                    if effect["name"] not in self.effect_plugins:
+                        raise ValueError(f"Effect plugin {effect['name']} is not registered")
 
-                    filter_plugin = self.filter_plugins[effect["name"]]
-                    layer_frame = filter_plugin.generate(frame_number, effect["parameters"], width, height)
+                    effect_plugin = self.effect_plugins[effect["name"]]
+                    layer_frame = effect_plugin.generate(frame_number, effect["parameters"], width, height)
                     if isinstance(layer_frame, GeneratorWgslReturn):
                         layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                          layer_frame.output_width, layer_frame.output_height)

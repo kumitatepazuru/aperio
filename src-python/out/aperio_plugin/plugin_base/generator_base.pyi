@@ -23,14 +23,14 @@ class NewObjectGeneratorReturn:
     structure: list[RequestStructureParameter]
 
 @dataclass
-class NewFilterGeneratorReturn:
+class NewEffectGeneratorReturn:
     structure: list[RequestStructureParameter]
 
 class GeneratorBase(SubPluginBase):
     """
     フレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
-    ジェネレーターは、フレーム生成のためのロジックを実装するクラスで、オブジェクトジェネレーターとフィルタージェネレーターの2種類がある。
-    オブジェクトジェネレーターは、前提となる映像データがない状態でフレームを生成するためのもので、フィルタージェネレーターは、前提となる映像データが必要な状態でフレームを生成するためのものである。
+    ジェネレーターは、フレーム生成のためのロジックを実装するクラスで、オブジェクトジェネレーターとエフェクトジェネレーターの2種類がある。
+    オブジェクトジェネレーターは、前提となる映像データがない状態でフレームを生成するためのもので、エフェクトジェネレーターは、前提となる映像データが必要な状態でフレームを生成するためのものである。
     ジェネレーターは、生成時に必要な情報を引数として受け取り、生成されたフレームデータを返却する。
     """
     def __init__(self, generator: PyImageGenerator) -> None:
@@ -42,7 +42,7 @@ class GeneratorBase(SubPluginBase):
         オブジェクトのパラメーター構造がリクエストされたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
 
         Args:
-            params (dict): 現在のオブジェクトまたはフィルターのパラメータ群。古いRequestStructureParameterを基に構成されている。
+            params (dict): 現在のオブジェクトまたはエフェクトのパラメータ群。古いRequestStructureParameterを基に構成されている。
 
         Returns:
             list[RequestStructureParameter]: オブジェクトのパラメーター構造
@@ -79,17 +79,17 @@ class ObjectGeneratorBase(GeneratorBase):
             NewObjectGeneratorReturn: 新しいオブジェクトの情報
         """
 
-class FilterGeneratorBase(GeneratorBase):
+class EffectGeneratorBase(GeneratorBase):
     """
-    フィルターを適用してフレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
-    フィルターは前提となる映像データが必要なため、生成時に元のフレームデータを引数として受け取る。
+    エフェクトを適用してフレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
+    エフェクトは前提となる映像データが必要なため、生成時に元のフレームデータを引数として受け取る。
 
     // TODO: より詳細な説明を書く
     """
-    def on_new(self) -> NewFilterGeneratorReturn:
+    def on_new(self) -> NewEffectGeneratorReturn:
         """
-        新しくフィルターが生成されたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
+        新しくエフェクトが生成されたときに呼び出されるメソッド。サブクラスで必ずオーバーライドする必要がある。
 
         Returns:
-            NewFilterGeneratorReturn: 新しいフィルターの情報
+            NewEffectGeneratorReturn: 新しいエフェクトの情報
         """

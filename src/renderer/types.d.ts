@@ -2,7 +2,7 @@ import {
   type FrameLayerStructure,
   type AperioConfig,
   type RequestStructureParameter,
-  type NewFilterGeneratorReturn,
+  type NewEffectGeneratorReturn,
   type NewObjectGeneratorReturn,
   type PluginNameInfo,
 } from "native";
@@ -56,9 +56,9 @@ declare global {
         pluginName: string,
         args: Record<string, unknown>,
       ) => Promise<NewObjectGeneratorReturn>;
-      requestNewFilterGenerator: (
+      requestNewEffectGenerator: (
         pluginName: string,
-      ) => Promise<NewFilterGeneratorReturn>;
+      ) => Promise<NewEffectGeneratorReturn>;
       requestParameterStruct: (
         pluginName: string,
         params: Record<string, unknown>,

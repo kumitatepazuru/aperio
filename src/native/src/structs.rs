@@ -242,7 +242,7 @@ pub struct NewObjectGeneratorReturn {
 
 #[napi(object)]
 #[derive(FromPyObject)]
-pub struct NewFilterGeneratorReturn {
+pub struct NewEffectGeneratorReturn {
     pub structure: Vec<RequestStructureParameter>,
 }
 
@@ -251,5 +251,5 @@ pub struct NewFilterGeneratorReturn {
 pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
     pub object_plugins: HashMap<String, String>,
-    pub filter_plugins: HashMap<String, String>,
+    pub effect_plugins: HashMap<String, String>,
 }

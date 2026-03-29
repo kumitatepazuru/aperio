@@ -1,24 +1,24 @@
 import os
 import struct
 
-from aperio_plugin.plugin_base.generator_base import FilterGeneratorBase, GeneratorWgslReturn, NewFilterGeneratorReturn
+from aperio_plugin.plugin_base.generator_base import EffectGeneratorBase, GeneratorWgslReturn, NewEffectGeneratorReturn
 from aperio_plugin.types.frame_structure import IntParam, RequestStructureParameter
 from gpu_util import PyCompiledWgsl, PyImageGenerator
 
 
-class BlurFilter(FilterGeneratorBase):
+class BlurEffect(EffectGeneratorBase):
     def __init__(self, generator: PyImageGenerator) -> None:
         super().__init__(generator)
-        self.name = "base.blur_filter"
-        self.display_name = "Blur Filter"
+        self.name = "base.blur_effect"
+        self.display_name = "Blur Effect"
         self.description = "Applies a blur effect to the input frame."
 
         current_dir = os.path.dirname(__file__)
         with open(os.path.join(current_dir, "blur.wgsl"), "r") as f:
             self.shader = PyCompiledWgsl("blur", f.read(), generator, None)
 
-    def on_new(self) -> NewFilterGeneratorReturn:
-        return NewFilterGeneratorReturn(
+    def on_new(self) -> NewEffectGeneratorReturn:
+        return NewEffectGeneratorReturn(
             structure=[
                 IntParam(
                     id="blur_radius",

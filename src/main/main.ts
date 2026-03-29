@@ -126,16 +126,16 @@ ipcMain.handle("get-plugin-names", () => {
 ipcMain.handle(
   "request-new-object-generator",
   (_, pluginName: string, args: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestNewObjectGenerator(pluginName, args);
+    return nativeModule.aperioManager.requestNewObjectGenerator(
+      pluginName,
+      args,
+    );
   },
 );
 
-ipcMain.handle(
-  "request-new-filter-generator",
-  (_, pluginName: string) => {
-    return nativeModule.aperioManager.requestNewFilterGenerator(pluginName);
-  },
-);
+ipcMain.handle("request-new-effect-generator", (_, pluginName: string) => {
+  return nativeModule.aperioManager.requestNewEffectGenerator(pluginName);
+});
 
 ipcMain.handle(
   "request-parameter-struct",

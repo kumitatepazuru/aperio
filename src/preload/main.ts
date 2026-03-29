@@ -110,10 +110,14 @@ contextBridge.exposeInMainWorld("main", {
     };
   },
   getPluginNames: () => ipcRenderer.invoke("get-plugin-names"),
-  requestParameterStruct: (pluginName: string, params: Record<string, unknown>) =>
-    ipcRenderer.invoke("request-parameter-struct", pluginName, params),
-  requestNewObjectGenerator: (pluginName: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke("request-new-object-generator", pluginName, args),
-  requestNewFilterGenerator: (pluginName: string) =>
-    ipcRenderer.invoke("request-new-filter-generator", pluginName),
+  requestParameterStruct: (
+    pluginName: string,
+    params: Record<string, unknown>,
+  ) => ipcRenderer.invoke("request-parameter-struct", pluginName, params),
+  requestNewObjectGenerator: (
+    pluginName: string,
+    args: Record<string, unknown>,
+  ) => ipcRenderer.invoke("request-new-object-generator", pluginName, args),
+  requestNewEffectGenerator: (pluginName: string) =>
+    ipcRenderer.invoke("request-new-effect-generator", pluginName),
 });

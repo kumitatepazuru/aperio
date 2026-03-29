@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from gpu_util import PyImageGenerator
 
 if TYPE_CHECKING:
-    from .generator_base import FilterGeneratorBase, ObjectGeneratorBase
+    from .generator_base import EffectGeneratorBase, ObjectGeneratorBase
     from .. import PluginManager
 
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class PluginNameInfo:
     base_plugin: dict[str, str]
     object_plugins: dict[str, str]
-    filter_plugins: dict[str, str]
+    effect_plugins: dict[str, str]
 
 
 class PluginBase:

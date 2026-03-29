@@ -11,7 +11,7 @@ class PluginManager:
     """
     plugins: dict[str, MainPluginBase]
     object_plugins: dict[str, ObjectGeneratorBase]
-    filter_plugins: dict[str, FilterGeneratorBase]
+    effect_plugins: dict[str, EffectGeneratorBase]
     data_dir: Incomplete
     plugin_dir_name: Incomplete
     generator: Incomplete
@@ -48,7 +48,7 @@ class PluginManager:
         """
     def register_sub_plugin(self, master: MainPluginBase, plugin: SubPluginBase) -> None:
         """
-        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはFilterGeneratorBaseのいずれかを継承している必要がある。
+        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはEffectGeneratorBaseのいずれかを継承している必要がある。
 
         Args:
             master (MainPluginBase): マスタープラグインのインスタンス
@@ -93,15 +93,15 @@ class PluginManager:
         Returns:
             NewObjectGeneratorReturn: 新しく生成されたオブジェクトジェネレーターの情報
         """
-    def request_new_filter_generator(self, plugin_name: str) -> NewFilterGeneratorReturn:
+    def request_new_effect_generator(self, plugin_name: str) -> NewEffectGeneratorReturn:
         """
-        指定されたフィルタージェネレーターを新規に生成するための情報を取得するメソッド。
+        指定されたエフェクトジェネレーターを新規に生成するための情報を取得するメソッド。
 
         Args:
-            plugin_name (str): 生成するフィルタージェネレーターの名前
+            plugin_name (str): 生成するエフェクトジェネレーターの名前
 
         Returns:
-            NewFilterGeneratorReturn: 新しく生成されたフィルタージェネレーターの情報
+            NewEffectGeneratorReturn: 新しく生成されたエフェクトジェネレーターの情報
         """
     def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]:
         """

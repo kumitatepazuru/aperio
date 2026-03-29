@@ -4,7 +4,7 @@ import { IoIosAdd } from "react-icons/io";
 import NestedMenu, { type NestedMenuItems } from "@shared/Menu";
 import BaseParameter from "./baseParameter";
 import ObjectParameter from "./ObjectParameter";
-import FilterParameter from "./FilterParameter";
+import EffectParameter from "./EffectParameter";
 
 const ParameterEditor = () => {
   const selectedItemId = useStore((state) => state.selectedItemId);
@@ -13,16 +13,16 @@ const ParameterEditor = () => {
     state.timelineLayers.find((layer) => layer.id === selectedItemId),
   );
 
-  const onAddFilter = async (id: string) => {
-    console.log("Add filter with ID:", id);
+  const onAddEffect = async (id: string) => {
+    console.log("Add effect with ID:", id);
 
-    const structure = await window.main.requestNewFilterGenerator(id);
+    const structure = await window.main.requestNewEffectGenerator(id);
     const defaultParams: Record<string, unknown> = {};
     structure.structure.forEach((param) => {
       defaultParams[param.id] = param.defaultValue;
     });
     const timeline = (await getStoreState()).timelineLayers;
-    const newFilter: GenerateStructure = {
+    const newEffect: GenerateStructure = {
       name: id,
       parameters: defaultParams,
     };
@@ -32,7 +32,7 @@ const ParameterEditor = () => {
         layer.id === selectedItemId
           ? {
               ...layer,
-              effects: [...layer.effects, newFilter],
+              effects: [...layer.effects, newEffect],
             }
           : layer,
       ),
@@ -41,19 +41,19 @@ const ParameterEditor = () => {
     return true; // メニューを閉じる
   };
 
-  const filterMenuItems: () => Promise<NestedMenuItems> = async () => {
+  const effectMenuItems: () => Promise<NestedMenuItems> = async () => {
     const pluginNames = await window.main.getPluginNames();
 
     return Object.entries(pluginNames.basePlugin).map(([id, value]) => ({
       id,
       type: "submenu",
       value,
-      submenu: Object.entries(pluginNames.filterPlugins).map(
-        ([filterId, filterValue]) => ({
-          id: filterId,
+      submenu: Object.entries(pluginNames.effectPlugins).map(
+        ([effectId, effectValue]) => ({
+          id: effectId,
           type: "item",
-          value: filterValue,
-          click: onAddFilter,
+          value: effectValue,
+          click: onAddEffect,
         }),
       ),
     }));
@@ -67,7 +67,7 @@ const ParameterEditor = () => {
             <h2 className="text-lg font-bold mb-2 grow">
               {selectedItem.obj.name}
             </h2>
-            <NestedMenu click items={filterMenuItems}>
+            <NestedMenu click items={effectMenuItems}>
               <button className="btn btn-sm btn-square">
                 <IoIosAdd />
               </button>
@@ -76,7 +76,7 @@ const ParameterEditor = () => {
           <div className="flex flex-col gap-3">
             <BaseParameter />
             <ObjectParameter />
-            <FilterParameter />
+            <EffectParameter />
           </div>
         </div>
       ) : null}

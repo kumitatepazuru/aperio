@@ -7,7 +7,7 @@ import useStore, {
 import type { RequestStructureParameter } from "native";
 import { useState } from "react";
 
-const FilterParameter = () => {
+const EffectParameter = () => {
   const [structures, setStructures] = useState<RequestStructureParameter[][]>(
     [],
   );
@@ -76,4 +76,4 @@ const FilterParameter = () => {
   ));
 };
 
-export default FilterParameter;
+export default EffectParameter;
