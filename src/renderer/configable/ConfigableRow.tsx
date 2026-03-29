@@ -1,6 +1,6 @@
 import { memo, type ReactNode } from "react";
 import { LuUndo2 } from "react-icons/lu";
-import type { ColorValue, Vec2Value, Vec3Value, Vec4Value } from "./types";
+import { getDefaultValue, type ColorValue, type Vec2Value, type Vec3Value, type Vec4Value } from "./utils";
 import Float from "./components/Float";
 import Int from "./components/Int";
 import Bool from "./components/Bool";
@@ -11,7 +11,7 @@ import StringInput from "./components/StringInput";
 import Color from "./components/Color";
 import ListSelect from "./components/ListSelect";
 import type { UseBoundStore, StoreApi } from "zustand";
-import { getDefaultValue, type ConfigStoreState } from "./useConfigable";
+import { type ConfigStoreState } from "./Configable";
 import type { RequestStructureParameter } from "native";
 
 type UseConfigStore = UseBoundStore<StoreApi<ConfigStoreState>>;

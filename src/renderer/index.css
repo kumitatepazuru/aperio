@@ -3,7 +3,8 @@
   themes: light --default;
 }
 
-body {
+html {
+  overflow: hidden;
   user-select: none;
 }
 

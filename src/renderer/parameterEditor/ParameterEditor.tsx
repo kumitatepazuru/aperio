@@ -1,142 +1,82 @@
-import { useConfigable } from "@/configable/useConfigable";
-import type { ConfigableValue, Vec2Value } from "@/configable/types";
 import useStore, { getStoreState } from "@shared/store";
-import type { RequestStructureParameter } from "native";
-import { useMemo, useState } from "react";
-import { useShallow } from "zustand/shallow";
-
-// TODO: ID重複の時にエラーを出す
-const BaseParameter: RequestStructureParameter[] = [
-  {
-    type: "Vec2Int",
-    id: "position",
-    title: "位置",
-    defaultValue: [0, 0],
-    suffix: "px",
-  },
-  {
-    type: "Float",
-    id: "scale",
-    title: "拡大率",
-    defaultValue: 100,
-    suffix: "%",
-  },
-  {
-    type: "Float",
-    id: "rotation",
-    title: "回転",
-    defaultValue: 0,
-    suffix: "°",
-  },
-  {
-    type: "Float",
-    id: "alpha",
-    title: "透明度",
-    defaultValue: 100,
-    suffix: "%",
-  },
-];
+import type { GenerateStructure } from "native";
+import { IoIosAdd } from "react-icons/io";
+import NestedMenu, { type NestedMenuItems } from "@shared/Menu";
+import BaseParameter from "./baseParameter";
+import ObjectParameter from "./ObjectParameter";
+import FilterParameter from "./FilterParameter";
 
 const ParameterEditor = () => {
-  const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
-  const { timelineLayers, setTimelineLayers, selectedItemId } = useStore(
-    useShallow((state) => ({
-      timelineLayers: state.timelineLayers,
-      setTimelineLayers: state.setTimelineLayers,
-      selectedItemId: state.selectedItemId,
-    })),
+  const selectedItemId = useStore((state) => state.selectedItemId);
+  const setTimelineLayers = useStore((state) => state.setTimelineLayers);
+  const selectedItem = useStore((state) =>
+    state.timelineLayers.find((layer) => layer.id === selectedItemId),
   );
-  const selectedItem = useMemo(
-    () => timelineLayers.find((layer) => layer.id === selectedItemId),
-    [timelineLayers, selectedItemId],
-  );
-  const baseParams: Record<string, ConfigableValue> | null = useMemo(() => {
-    if (!selectedItem) return null;
-    return {
-      position: [selectedItem.x, selectedItem.y],
-      scale: selectedItem.scale,
-      rotation: selectedItem.rotation,
-      alpha: selectedItem.alpha,
-    };
-  }, [selectedItem]);
-  const [tempStructures, setTempStructures] = useState<
-    (typeof timelineLayers)[0]["obj"]["parameters"] | null
-  >(null);
 
-  const handleBaseChange = async (values: Record<string, ConfigableValue>) => {
-    if (!selectedItemId) return;
+  const onAddFilter = async (id: string) => {
+    console.log("Add filter with ID:", id);
 
-    // positionだけxyに分けて保存する
-    const position = values.position as Vec2Value;
-    const updatedValues = {
-      ...values,
-      position: undefined,
-      x: position[0],
-      y: position[1],
-    };
+    const structure = await window.main.requestNewFilterGenerator(id);
+    const defaultParams: Record<string, unknown> = {};
+    structure.structure.forEach((param) => {
+      defaultParams[param.id] = param.defaultValue;
+    });
     const timeline = (await getStoreState()).timelineLayers;
+    const newFilter: GenerateStructure = {
+      name: id,
+      parameters: defaultParams,
+    };
+
     setTimelineLayers(
       timeline.map((layer) =>
-        layer.id === selectedItemId ? { ...layer, ...updatedValues } : layer,
+        layer.id === selectedItemId
+          ? {
+              ...layer,
+              effects: [...layer.effects, newFilter],
+            }
+          : layer,
       ),
     );
+
+    return true; // メニューを閉じる
   };
 
-  const handleObjChange = async (values: Record<string, ConfigableValue>) => {
-    if (!selectedItemId || !selectedItem) return;
+  const filterMenuItems: () => Promise<NestedMenuItems> = async () => {
+    const pluginNames = await window.main.getPluginNames();
 
-    (async () => {
-      try {
-        const struct = await window.main.requestParameterStruct(
-          selectedItem.obj.name,
-          values,
-        );
-        const structForCheck = struct.map((param) => param.id);
-        if (structures.length === structForCheck.length) {
-          // 変更前と同じ構造なら更新
-          const timeline = (await getStoreState()).timelineLayers;
-          setTimelineLayers(
-            timeline.map((layer) =>
-              layer.id === selectedItemId
-                ? { ...layer, obj: { ...layer.obj, parameters: values } }
-                : layer,
-            ),
-          );
-          setTempStructures(null);
-        } else {
-          // 変更前と構造が違うなら構造を更新してパラメーターは更新しない
-          setStructures(struct);
-          setTempStructures(values);
-        }
-      } catch (error) {
-        console.error("Error fetching parameter structure:", error);
-      }
-    })();
+    return Object.entries(pluginNames.basePlugin).map(([id, value]) => ({
+      id,
+      type: "submenu",
+      value,
+      submenu: Object.entries(pluginNames.filterPlugins).map(
+        ([filterId, filterValue]) => ({
+          id: filterId,
+          type: "item",
+          value: filterValue,
+          click: onAddFilter,
+        }),
+      ),
+    }));
   };
-
-  const { element: baseElement } = useConfigable(
-    BaseParameter,
-    baseParams ?? {},
-    selectedItemId ?? undefined,
-    handleBaseChange,
-  );
-
-  const { element: objElement } = useConfigable(
-    structures,
-    tempStructures ?? selectedItem?.obj.parameters ?? {},
-    selectedItemId ?? undefined,
-    handleObjChange,
-    handleObjChange,
-  );
 
   return (
     <div className="p-2">
       {selectedItem ? (
         <div>
-          <h2 className="text-lg font-bold mb-2">{selectedItem.obj.name}</h2>
+          <div className="flex gap-3 items-center">
+            <h2 className="text-lg font-bold mb-2 grow">
+              {selectedItem.obj.name}
+            </h2>
+            <NestedMenu click items={filterMenuItems}>
+              <button className="btn btn-sm btn-square">
+                <IoIosAdd />
+              </button>
+            </NestedMenu>
+          </div>
           <div className="flex flex-col gap-3">
-            {baseElement}
-            {objElement}
+            <BaseParameter />
+            <ObjectParameter />
+            <FilterParameter />
           </div>
         </div>
       ) : null}

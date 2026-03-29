@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import CjsColor from "colorjs.io";
 import { CgColorPicker } from "react-icons/cg";
-import type { ColorValue } from "../../types";
+import type { ColorValue } from "../../utils";
 import {
   checkerStyle,
   clamp01,

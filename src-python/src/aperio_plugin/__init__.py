@@ -89,7 +89,11 @@ class PluginManager:
             if not os.path.exists(f"{dir}/__init__.py"):
                 logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
-            __import__(f"{self.plugin_dir_name}.{plugin_name}")
+
+            try:
+                __import__(f"{self.plugin_dir_name}.{plugin_name}")
+            except Exception as e:
+                logger.error(f"Failed to import plugin {plugin_name}: {e}")
 
         self.__load_plugins()
 
@@ -211,7 +215,12 @@ class PluginManager:
         if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
             logger.warn(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
             return False
-        __import__(f"{self.plugin_dir_name}.{plugin_name}")
+        try:
+            __import__(f"{self.plugin_dir_name}.{plugin_name}")
+        except Exception as e:
+            logger.error(f"Failed to import plugin {plugin_name}: {e}")
+            return False
+        
         logger.info(f"Plugin {plugin_name} has been added/updated.")
 
         self.__load_plugins()
@@ -248,13 +257,12 @@ class PluginManager:
         else:
             raise ValueError(f"Plugin {plugin_name} is not registered as an object plugin")
 
-    def request_new_filter_generator(self, plugin_name: str, args: dict) -> NewFilterGeneratorReturn:
+    def request_new_filter_generator(self, plugin_name: str) -> NewFilterGeneratorReturn:
         """
         指定されたフィルタージェネレーターを新規に生成するための情報を取得するメソッド。
 
         Args:
             plugin_name (str): 生成するフィルタージェネレーターの名前
-            args (dict): フィルタージェネレーターの初期化に必要な任意の引数群
 
         Returns:
             NewFilterGeneratorReturn: 新しく生成されたフィルタージェネレーターの情報

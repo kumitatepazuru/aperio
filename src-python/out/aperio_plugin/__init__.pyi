@@ -93,13 +93,12 @@ class PluginManager:
         Returns:
             NewObjectGeneratorReturn: 新しく生成されたオブジェクトジェネレーターの情報
         """
-    def request_new_filter_generator(self, plugin_name: str, args: dict) -> NewFilterGeneratorReturn:
+    def request_new_filter_generator(self, plugin_name: str) -> NewFilterGeneratorReturn:
         """
         指定されたフィルタージェネレーターを新規に生成するための情報を取得するメソッド。
 
         Args:
             plugin_name (str): 生成するフィルタージェネレーターの名前
-            args (dict): フィルタージェネレーターの初期化に必要な任意の引数群
 
         Returns:
             NewFilterGeneratorReturn: 新しく生成されたフィルタージェネレーターの情報

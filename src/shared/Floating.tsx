@@ -13,6 +13,7 @@ import {
   autoPlacement,
   autoUpdate,
   FloatingPortal,
+  shift,
   useClick,
   useDismiss,
   useFloating,
@@ -92,7 +93,11 @@ export const FloatingBase = forwardRef<FloatingHandle, FloatingBaseProps>(
       useFloating({
         open: isOpen,
         onOpenChange: handleOpenChange,
-        middleware: [autoPlacement(), arrowMiddleware({ element: arrowRef })],
+        middleware: [
+          autoPlacement(),
+          shift(),
+          arrowMiddleware({ element: arrowRef }),
+        ],
         whileElementsMounted: autoUpdate,
       });
 
@@ -221,7 +226,7 @@ export function Floating({ children, className, style }: FloatingProps) {
         {children}
         <div
           ref={arrowRef}
-          className="absolute w-2 h-2 bg-base-100 rotate-45"
+          className="absolute w-2 h-2 bg-base-200 rotate-45"
           style={{
             left: middlewareData.arrow?.x,
             top: middlewareData.arrow?.y,

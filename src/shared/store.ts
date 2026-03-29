@@ -1,6 +1,6 @@
 import type { LayerStructure } from "native";
 import { create } from "zustand";
-import type { ColorValue } from "@/configable/types";
+import type { ColorValue } from "@/configable/utils";
 
 export type TimelineLayerStructure = LayerStructure & {
   id: string; // UUIDが期待される
@@ -26,7 +26,6 @@ type Store = {
   };
   viewerState: ViewerState;
   timelineLayers: TimelineLayerStructure[];
-  pluginNames?: { [key: string]: string }[];
   selectedItemId: string | null;
   colorPicker: {
     colorSpace: ColorSpace;
@@ -36,7 +35,6 @@ type Store = {
   play: (beginFrame: number) => void;
   pause: (beginFrame?: number) => void;
   setFrameState: (frameState: { width: number; height: number }) => void;
-  getPluginNames: () => { [key: string]: string }[];
   setFrameCount: (frame: number) => void;
   setFps: (fps: number) => void;
   setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
@@ -50,7 +48,6 @@ export type SyncableState = Pick<
   | "fps"
   | "viewerState"
   | "timelineLayers"
-  | "pluginNames"
   | "frameState"
   | "selectedItemId"
   | "colorPicker"
@@ -208,14 +205,6 @@ const _useStore = create<Store>()((set, get) => {
       }),
     setFps: (fps) => syncSet({ fps }),
     setTimelineLayers: (layers) => syncSet({ timelineLayers: layers }),
-    getPluginNames: () => {
-      let names = get().pluginNames;
-      if (!names) {
-        names = window.main.getPluginNames();
-        syncSet({ pluginNames: names });
-      }
-      return names;
-    },
     setSelectedItemId: (id: string | null) => syncSet({ selectedItemId: id }),
     setColorPicker: (colorPicker: Store["colorPicker"]) =>
       syncSet({ colorPicker }),
@@ -292,7 +281,6 @@ function getSyncableState(): SyncableState {
     fps: s.fps,
     viewerState: s.viewerState,
     timelineLayers: s.timelineLayers,
-    pluginNames: s.pluginNames,
     frameState: s.frameState,
     selectedItemId: s.selectedItemId,
     colorPicker: s.colorPicker,

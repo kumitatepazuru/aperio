@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { ColorValue } from "../../types";
+import type { ColorValue } from "../../utils";
 import ColorSwatch from "./ColorSwatch";
 import {
   BLACK,

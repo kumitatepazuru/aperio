@@ -1,7 +1,9 @@
 import CjsColor from "colorjs.io";
-import type { ColorValue } from "../../types";
+import type { ColorValue } from "../../utils";
 
-export const SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
+export const SHADES = [
+  50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950,
+] as const;
 export type Shade = (typeof SHADES)[number];
 
 export type PaletteColor = {

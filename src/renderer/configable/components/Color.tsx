@@ -1,5 +1,5 @@
 import { FloatingBase, Reference, Floating } from "@shared/Floating";
-import type { ColorValue } from "../types";
+import type { ColorValue } from "../utils";
 import { checkerStyle, toColor } from "./color/helpers";
 import ColorPickerPanel from "./color/ColorPickerPanel";
 

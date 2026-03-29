@@ -21,14 +21,14 @@ export const contextMenus: Record<
       {
         label: "オブジェクトを追加",
         submenu: Object.entries(pluginNameInfo.basePlugin).map(
-          ([name, display_name]) => ({
-            label: display_name,
+          ([name, displayName]) => ({
+            label: displayName,
             submenu: Object.entries(pluginNameInfo.objectPlugins)
-              .filter(([obj_name]) => obj_name.startsWith(`${name}.`))
-              .map(([obj_name, obj_display_name]) => ({
-                label: obj_display_name,
+              .filter(([objName]) => objName.startsWith(`${name}.`))
+              .map(([objName, objDisplayName]) => ({
+                label: objDisplayName,
                 click: () => {
-                  webContents.send("add-object", obj_name);
+                  webContents.send("add-object", objName);
                 },
               })),
           }),

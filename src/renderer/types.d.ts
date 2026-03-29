@@ -4,6 +4,7 @@ import {
   type RequestStructureParameter,
   type NewFilterGeneratorReturn,
   type NewObjectGeneratorReturn,
+  type PluginNameInfo,
 } from "native";
 import { sharedTexture } from "electron";
 import type { SyncableState } from "../shared/store";
@@ -50,7 +51,7 @@ declare global {
       ) => Promise<void>;
     };
     main: {
-      getPluginNames: () => Record<string, string>[];
+      getPluginNames: () => Promise<PluginNameInfo>;
       requestNewObjectGenerator: (
         pluginName: string,
         args: Record<string, unknown>,

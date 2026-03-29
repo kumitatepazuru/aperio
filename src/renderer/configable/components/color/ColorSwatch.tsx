@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ColorValue } from "../../types";
+import type { ColorValue } from "../../utils";
 import { checkerStyle, toColor } from "./helpers";
 
 export default function ColorSwatch({

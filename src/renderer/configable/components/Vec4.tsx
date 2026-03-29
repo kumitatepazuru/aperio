@@ -1,4 +1,4 @@
-import type { Vec4Value } from "../types";
+import type { Vec4Value } from "../utils";
 import NumberInput from "./NumberInput";
 
 type Props = {

@@ -1,55 +1,20 @@
 import type { RequestStructureParameter } from "native";
-import { useEffect, useRef, useState } from "react";
-import type { ConfigableValue } from "./types";
+import { useEffect, useRef, useState, type FC } from "react";
+import { getDefaultValue, type ConfigableValue } from "./utils";
 import { create } from "zustand";
 import ConfigableRow from "./ConfigableRow";
 
-export function getDefaultValue(
-  param: RequestStructureParameter,
-): ConfigableValue {
-  switch (param.type) {
-    case "Float":
-    case "Int":
-      return param.defaultValue;
-    case "Bool":
-      return param.defaultValue;
-    case "String":
-      return param.defaultValue;
-    case "List":
-      return param.defaultValue;
-    case "Vec2Int":
-    case "Vec2Float":
-      return [param.defaultValue[0], param.defaultValue[1]];
-    case "Vec3Int":
-    case "Vec3Float":
-      return [
-        param.defaultValue[0],
-        param.defaultValue[1],
-        param.defaultValue[2],
-      ];
-    case "Vec4Int":
-    case "Vec4Float":
-    case "Color":
-      return [
-        param.defaultValue[0],
-        param.defaultValue[1],
-        param.defaultValue[2],
-        param.defaultValue[3],
-      ];
-  }
-}
-
-function initValues(
+const initValues = (
   structures: RequestStructureParameter[],
   initial: Record<string, ConfigableValue>,
-): Record<string, ConfigableValue> {
+): Record<string, ConfigableValue> => {
   const record: Record<string, ConfigableValue> = {};
   for (const param of structures) {
     record[param.id] =
       param.id in initial ? initial[param.id] : getDefaultValue(param);
   }
   return record;
-}
+};
 
 export type ConfigStoreState = {
   values: Record<string, ConfigableValue>;
@@ -57,13 +22,13 @@ export type ConfigStoreState = {
   setAll: (values: Record<string, ConfigableValue>) => void;
 };
 
-export function useConfigable(
-  structures: RequestStructureParameter[],
-  initialValues: Record<string, ConfigableValue>,
-  resetKey?: string,
-  onChange?: (values: Record<string, ConfigableValue>) => void,
-  onInit?: (values: Record<string, ConfigableValue>) => void,
-) {
+const Configable: FC<{
+  structures: RequestStructureParameter[];
+  initialValues: Record<string, ConfigableValue>;
+  resetKey?: string;
+  onChange?: (values: Record<string, ConfigableValue>) => void;
+  onInit?: (values: Record<string, ConfigableValue>) => void;
+}> = ({ structures, initialValues, resetKey, onChange, onInit }) => {
   const initialValuesRef = useRef(initialValues);
   initialValuesRef.current = initialValues;
 
@@ -107,7 +72,7 @@ export function useConfigable(
     structures.every((p) => p.id in state.values),
   );
 
-  const element = (
+  return (
     <div className="grid grid-cols-[5em_1fr_auto] gap-2 items-center text-sm">
       {allValuesReady &&
         structures.map((param) => (
@@ -119,6 +84,6 @@ export function useConfigable(
         ))}
     </div>
   );
+};
 
-  return { element, values: useConfigStore.getState().values };
-}
+export default Configable;

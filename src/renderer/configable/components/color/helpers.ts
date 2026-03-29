@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import CjsColor from "colorjs.io";
-import type { ColorValue } from "../../types";
+import type { ColorValue } from "../../utils";
 
 export const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 export const nan0 = (x: number | null) => (!x || isNaN(x) ? 0 : x);
