@@ -17,13 +17,11 @@ use crate::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
         parallel_process::handle_parallel_step, wgsl_process::handle_wgsl_step,
     },
+    resource_pool::{LruCache, ResourcePool},
     SharedTextureFormat,
 };
 use anyhow::{bail, Context, Result};
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 use wgpu::{include_wgsl, Features};
 
 // WGSLの後処理シェーダー（f32 RGBA -> u32 RRGGBBAA）
@@ -96,29 +94,15 @@ pub struct ImageGenerator {
     pub(crate) blit_f32_to_bgra8_pipeline: RenderPipeline,
     pub(crate) blit_sampler: wgpu::Sampler,
 
-    // --- パイプラインキャッシュシステム用のフィールド ---
-    // 本体。キーとパイプラインオブジェクトを格納
-    pipeline_cache: Arc<Mutex<HashMap<PipelineCacheKey, CachedPipeline>>>,
-    // LRUアルゴリズムのための順序を保持 (先頭が最新、末尾が最も古い)
-    cache_order: Arc<Mutex<VecDeque<PipelineCacheKey>>>,
-    // キャッシュの最大サイズ
-    max_cache_size: usize,
+    // --- パイプラインキャッシュ（LRU、共有読み取り専用）---
+    pipeline_cache: Arc<Mutex<LruCache<PipelineCacheKey, CachedPipeline>>>,
 
-    // --- テクスチャキャッシュシステム用のフィールド ---
-    // テクスチャキャッシュ本体
-    texture_cache: Arc<Mutex<HashMap<TextureCacheKey, Arc<wgpu::Texture>>>>,
-    // テクスチャキャッシュのLRU順序
-    texture_cache_order: Arc<Mutex<VecDeque<TextureCacheKey>>>,
-    // テクスチャキャッシュの最大サイズ
-    max_texture_cache_size: usize,
+    // --- テクスチャリソースプール ---
+    // 同一キーに対して複数インスタンスを管理し、並列パイプラインでの競合を防ぐ
+    texture_pool: Arc<Mutex<ResourcePool<TextureCacheKey, Arc<wgpu::Texture>>>>,
 
-    // --- バッファキャッシュシステム用のフィールド ---
-    // バッファキャッシュ本体
-    buffer_cache: Arc<Mutex<HashMap<BufferCacheKey, Arc<wgpu::Buffer>>>>,
-    // バッファキャッシュのLRU順序
-    buffer_cache_order: Arc<Mutex<VecDeque<BufferCacheKey>>>,
-    // バッファキャッシュの最大サイズ
-    max_buffer_cache_size: usize,
+    // --- バッファリソースプール ---
+    buffer_pool: Arc<Mutex<ResourcePool<BufferCacheKey, Arc<wgpu::Buffer>>>>,
 }
 
 impl ImageGenerator {
@@ -266,87 +250,24 @@ impl ImageGenerator {
             blit_f32_to_bgra8_pipeline,
             blit_sampler,
 
-            // キャッシュフィールドの初期化
-            pipeline_cache: Arc::new(Mutex::new(HashMap::new())),
-            cache_order: Arc::new(Mutex::new(VecDeque::new())),
-            max_cache_size: 100, // デフォルトのキャッシュサイズ
+            // パイプラインキャッシュの初期化
+            pipeline_cache: Arc::new(Mutex::new(LruCache::new(100))),
 
-            // テクスチャキャッシュの初期化
-            texture_cache: Arc::new(Mutex::new(HashMap::new())),
-            texture_cache_order: Arc::new(Mutex::new(VecDeque::new())),
-            max_texture_cache_size: 100, // デフォルトのテクスチャキャッシュサイズ
+            // テクスチャリソースプールの初期化（キーごとに最大10インスタンスを保持）
+            texture_pool: Arc::new(Mutex::new(ResourcePool::new(10))),
 
-            // バッファキャッシュの初期化
-            buffer_cache: Arc::new(Mutex::new(HashMap::new())),
-            buffer_cache_order: Arc::new(Mutex::new(VecDeque::new())),
-            max_buffer_cache_size: 100, // デフォルトのバッファキャッシュサイズ
+            // バッファリソースプールの初期化
+            buffer_pool: Arc::new(Mutex::new(ResourcePool::new(10))),
         })
     }
 
-    // --- キャッシュ管理用のメソッド ---
-
-    /// 現在のキャッシュの最大サイズを取得
-    pub fn max_cache_size(&self) -> usize {
-        self.max_cache_size
-    }
-
-    /// キャッシュの最大サイズを設定
-    /// 新しいサイズが現在のキャッシュ数より小さい場合、古いエントリが削除されます。
+    /// パイプラインキャッシュの最大サイズを設定します。
     pub fn set_max_cache_size(&mut self, size: usize) {
-        self.max_cache_size = size;
-        let mut cache_order = self.cache_order.lock().unwrap();
-
-        // キャッシュが新しい上限を超えている場合は、古いものから削除
-        while cache_order.len() > self.max_cache_size {
-            if let Some(oldest_key) = cache_order.pop_back() {
-                self.pipeline_cache.lock().unwrap().remove(&oldest_key);
-            }
-        }
+        self.pipeline_cache.lock().unwrap().set_max_size(size);
     }
 
-    // --- テクスチャキャッシュ管理用のメソッド ---
-
-    /// 現在のテクスチャキャッシュの最大サイズを取得
-    pub fn max_texture_cache_size(&self) -> usize {
-        self.max_texture_cache_size
-    }
-
-    /// テクスチャキャッシュの最大サイズを設定
-    /// 新しいサイズが現在のキャッシュ数より小さい場合、古いエントリが削除されます。
-    pub fn set_max_texture_cache_size(&mut self, size: usize) {
-        self.max_texture_cache_size = size;
-        let mut cache_order = self.texture_cache_order.lock().unwrap();
-
-        // キャッシュが新しい上限を超えている場合は、古いものから削除
-        while cache_order.len() > self.max_texture_cache_size {
-            if let Some(oldest_key) = cache_order.pop_back() {
-                self.texture_cache.lock().unwrap().remove(&oldest_key);
-            }
-        }
-    }
-
-    // --- バッファキャッシュ管理用のメソッド ---
-
-    /// 現在のバッファキャッシュの最大サイズを取得
-    pub fn max_buffer_cache_size(&self) -> usize {
-        self.max_buffer_cache_size
-    }
-
-    /// バッファキャッシュの最大サイズを設定
-    /// 新しいサイズが現在のキャッシュ数より小さい場合、古いエントリが削除されます。
-    pub fn set_max_buffer_cache_size(&mut self, size: usize) {
-        self.max_buffer_cache_size = size;
-        let mut cache_order = self.buffer_cache_order.lock().unwrap();
-
-        // キャッシュが新しい上限を超えている場合は、古いものから削除
-        while cache_order.len() > self.max_buffer_cache_size {
-            if let Some(oldest_key) = cache_order.pop_back() {
-                self.buffer_cache.lock().unwrap().remove(&oldest_key);
-            }
-        }
-    }
-
-    /// テクスチャを取得または作成するためのヘルパーメソッド
+    /// テクスチャを取得または作成するためのヘルパーメソッド。
+    /// ResourcePool により、並列パイプライン内で同じキーに対して独立したインスタンスが返されます。
     pub(crate) fn get_or_create_texture(
         &self,
         step_index: usize,
@@ -363,51 +284,27 @@ impl ImageGenerator {
             format,
             usage,
         };
-
-        // --- 1. キャッシュ検索とLRU更新 ---
-        let mut cache = self.texture_cache.lock().unwrap();
-        let mut order = self.texture_cache_order.lock().unwrap();
-
-        if let Some(cached_texture) = cache.get(&key) {
-            // ヒットした場合、LRU順序を更新
-            if let Some(pos) = order.iter().position(|k| k == &key) {
-                order.remove(pos);
-            }
-            order.push_front(key.clone());
-            return cached_texture.clone();
-        }
-
-        // --- 2. キャッシュミス: 新しくテクスチャを作成 ---
-        let texture = Arc::new(self.device.create_texture(&wgpu::TextureDescriptor {
-            label,
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage,
-            view_formats: &[],
-        }));
-
-        // --- 3. 新しいテクスチャをキャッシュに保存 & LRU更新 ---
-        cache.insert(key.clone(), texture.clone());
-        order.push_front(key.clone());
-
-        // --- 4. キャッシュサイズを超えていたら古いものを削除 ---
-        if order.len() > self.max_texture_cache_size {
-            if let Some(oldest_key) = order.pop_back() {
-                cache.remove(&oldest_key);
-            }
-        }
-
-        texture
+        let device = self.device.clone();
+        let label = label.map(|s| s.to_owned());
+        self.texture_pool.lock().unwrap().acquire(key, move || {
+            Arc::new(device.create_texture(&wgpu::TextureDescriptor {
+                label: label.as_deref(),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            }))
+        })
     }
 
-    /// バッファを取得または作成するためのヘルパーメソッド
+    /// バッファを取得または作成するためのヘルパーメソッド。
     pub(crate) fn get_or_create_buffer(
         &self,
         size: u64,
@@ -415,40 +312,16 @@ impl ImageGenerator {
         label: Option<&str>,
     ) -> Arc<wgpu::Buffer> {
         let key = BufferCacheKey { size, usage };
-
-        // --- 1. キャッシュ検索とLRU更新 ---
-        let mut cache = self.buffer_cache.lock().unwrap();
-        let mut order = self.buffer_cache_order.lock().unwrap();
-
-        if let Some(cached_buffer) = cache.get(&key) {
-            // ヒットした場合、LRU順序を更新
-            if let Some(pos) = order.iter().position(|k| k == &key) {
-                order.remove(pos);
-            }
-            order.push_front(key.clone());
-            return cached_buffer.clone();
-        }
-
-        // --- 2. キャッシュミス: 新しくバッファを作成 ---
-        let buffer = Arc::new(self.device.create_buffer(&wgpu::BufferDescriptor {
-            label,
-            size,
-            usage,
-            mapped_at_creation: false,
-        }));
-
-        // --- 3. 新しいバッファをキャッシュに保存 & LRU更新 ---
-        cache.insert(key.clone(), buffer.clone());
-        order.push_front(key.clone());
-
-        // --- 4. キャッシュサイズを超えていたら古いものを削除 ---
-        if order.len() > self.max_buffer_cache_size {
-            if let Some(oldest_key) = order.pop_back() {
-                cache.remove(&oldest_key);
-            }
-        }
-
-        buffer
+        let device = self.device.clone();
+        let label = label.map(|s| s.to_owned());
+        self.buffer_pool.lock().unwrap().acquire(key, move || {
+            Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+                label: label.as_deref(),
+                size,
+                usage,
+                mapped_at_creation: false,
+            }))
+        })
     }
 
     /// 指定されたステップリストを、与えられた初期状態から実行する内部関数。
@@ -508,6 +381,10 @@ impl ImageGenerator {
     /// 外部からは `generate_buf` または `generate_shared_texture` を通してのみ  
     /// 画像生成機能を利用できるようにしている。
     async fn generate(&self, builder: ImageGenerateBuilder) -> Result<Vec<StepOutput>> {
+        // フレーム開始時に前フレームで使用したリソースを解放して再利用可能にする
+        self.texture_pool.lock().unwrap().release_all();
+        self.buffer_pool.lock().unwrap().release_all();
+
         let (final_state_vec, encoders) = self.execute_pipeline(&builder.steps, Vec::new()).await?;
 
         self.queue.submit(encoders.into_iter().map(|e| e.finish()));
@@ -545,31 +422,19 @@ impl ImageGenerator {
         bail!("Final output is not a GPU texture or unsupported OS.");
     }
 
-    // --- パイプラインを取得または生成するためのヘルパーメソッドを追加 ---
     pub(crate) fn get_or_create_pipeline(
         &self,
         key: &PipelineCacheKey,
         shader_module: &wgpu::ShaderModule,
     ) -> Result<CachedPipeline> {
-        // --- 1. キャッシュ検索とLRU更新 ---
         let mut cache = self.pipeline_cache.lock().unwrap();
-        let mut order = self.cache_order.lock().unwrap();
-
         if let Some(cached) = cache.get(key) {
-            // ヒットした場合、LRU順序を更新 (該当キーを一度削除して先頭に追加)
-            if let Some(pos) = order.iter().position(|k| k == key) {
-                order.remove(pos);
-            }
-            order.push_front(key.clone());
-            return Ok(cached.clone());
+            return Ok(cached);
         }
 
-        // --- 2. キャッシュミス: 新しくパイプラインを生成 ---
-
-        // --- バインドグループ0 (入力/出力テクスチャ) ---
+        // キャッシュミス: 新しくパイプラインを生成
         let mut bgl_entries_group0 = Vec::new();
 
-        // Binding 0: 入力テクスチャの配列 (存在する場合)
         if key.input_texture_count > 0 {
             bgl_entries_group0.push(wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -583,8 +448,6 @@ impl ImageGenerator {
             });
         }
 
-        // Binding 0 or 1: 出力テクスチャ (常に存在)
-        // binding番号は、入力テクスチャの有無で変わる
         bgl_entries_group0.push(wgpu::BindGroupLayoutEntry {
             binding: if key.input_texture_count > 0 { 1 } else { 0 },
             visibility: wgpu::ShaderStages::COMPUTE,
@@ -596,7 +459,6 @@ impl ImageGenerator {
             count: None,
         });
 
-        // Binding 1 or 2: サンプラー (存在する場合)
         if key.has_sampler {
             bgl_entries_group0.push(wgpu::BindGroupLayoutEntry {
                 binding: if key.input_texture_count > 0 { 2 } else { 1 },
@@ -613,7 +475,6 @@ impl ImageGenerator {
                     entries: &bgl_entries_group0,
                 });
 
-        // --- バインドグループ1 (Storageパラメータ) ---
         let mut bind_group_layouts = vec![bind_group_layout_0];
         if key.has_storage {
             let bind_group_layout_1 =
@@ -653,20 +514,8 @@ impl ImageGenerator {
             },
         ));
 
-        // CachedPipelineも複数のレイアウトを保持できるように更新が必要
         let new_item = CachedPipeline { pipeline };
-
-        // --- 3. 新しいアイテムをキャッシュに保存 & LRU更新 ---
         cache.insert(key.clone(), new_item.clone());
-        order.push_front(key.clone());
-
-        // --- 4. キャッシュサイズを超えていたら古いものを削除 ---
-        if order.len() > self.max_cache_size {
-            if let Some(oldest_key) = order.pop_back() {
-                cache.remove(&oldest_key);
-            }
-        }
-
         Ok(new_item)
     }
 }
