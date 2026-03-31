@@ -23,11 +23,13 @@ class GeneratorFuncReturn:
 
 @dataclass
 class NewObjectGeneratorReturn:
+    display_name: str
     duration_frames: int
     structure: list[RequestStructureParameter]
 
 @dataclass
 class NewEffectGeneratorReturn:
+    display_name: str
     structure: list[RequestStructureParameter]
 
 class GeneratorBase(SubPluginBase):

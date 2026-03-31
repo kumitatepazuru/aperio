@@ -26,6 +26,7 @@
     "gpu:stubgen": "run-s gpu:stub && bun run scripts/pmkdir.ts src-python/out/gpu_util && mv src/gpu_util/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
   },
   "dependencies": {
+    "@dnd-kit/react": "^0.3.2",
     "@floating-ui/react": "^0.27.19",
     "@lumino/default-theme": "^2.1.11",
     "@lumino/widgets": "^2.7.2",

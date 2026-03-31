@@ -19,6 +19,7 @@ class BlurEffect(EffectGeneratorBase):
 
     def on_new(self) -> NewEffectGeneratorReturn:
         return NewEffectGeneratorReturn(
+            display_name=self.display_name,
             structure=[
                 IntParam(
                     id="blur_radius",

@@ -196,7 +196,9 @@ const Timeline = () => {
             rotation: 0.0,
             alpha: 100.0,
             obj: {
+              id: uuidv4(),
               name: objName,
+              displayName: structure.displayName,
               parameters: defaultParams,
             },
             effects: [],

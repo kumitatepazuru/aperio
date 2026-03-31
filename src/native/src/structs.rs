@@ -189,7 +189,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RequestStructureParameter {
 
 #[napi(object)]
 pub struct GenerateStructure {
-    pub name: String,
+    pub id: String, // UUIDが期待される
+    pub name: String, // オブジェクトやエフェクトの固有名でIDとは違い種類が同じであれば同じになる
+    pub display_name: String,
     pub parameters: HashMap<String, serde_json::Value>,
 }
 
@@ -236,6 +238,7 @@ impl<'py> IntoPyObject<'py> for GenerateStructure {
 #[napi(object)]
 #[derive(FromPyObject)]
 pub struct NewObjectGeneratorReturn {
+    pub display_name: String,
     pub duration_frames: i32,
     pub structure: Vec<RequestStructureParameter>,
 }
@@ -243,6 +246,7 @@ pub struct NewObjectGeneratorReturn {
 #[napi(object)]
 #[derive(FromPyObject)]
 pub struct NewEffectGeneratorReturn {
+    pub display_name: String,
     pub structure: Vec<RequestStructureParameter>,
 }
 

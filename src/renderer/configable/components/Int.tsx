@@ -8,8 +8,7 @@ type Props = {
 
 const Int = ({ value, suffix, onChange }: Props) => (
   <div>
-    <NumberInput value={value} isInt onChange={onChange} />
-    {suffix && <span>{suffix}</span>}
+    <NumberInput value={value} isInt onChange={onChange} suffix={suffix} />
   </div>
 );
 

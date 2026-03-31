@@ -37,11 +37,12 @@ class TestObject(ObjectGeneratorBase):
             self.shader = PyCompiledWgsl("test", f.read(), generator, None)
 
         self.base_structure: list[RequestStructureParameter] = [
+            BoolParam("testtest", "テスト", False),
             BoolParam("draw_text", "フレームテキストを描画", False),
         ]
 
     def on_new(self, args: dict) -> NewObjectGeneratorReturn:
-        return NewObjectGeneratorReturn(duration_frames=300, structure=self.base_structure)
+        return NewObjectGeneratorReturn(display_name=self.display_name, duration_frames=300, structure=self.base_structure)
     
     def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
         if params.get("draw_text", False):
