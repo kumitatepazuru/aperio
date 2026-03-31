@@ -44,10 +44,16 @@ const LayerItems = ({
   graduationInterval,
   layerHeight,
 }: LayerItemsProps) => {
-  const { timelineLayers, setTimelineLayers, setSelectedItemId } = useStore(
+  const {
+    timelineLayers,
+    setTimelineLayers,
+    selectedItemId,
+    setSelectedItemId,
+  } = useStore(
     useShallow((state) => ({
       timelineLayers: state.timelineLayers,
       setTimelineLayers: state.setTimelineLayers,
+      selectedItemId: state.selectedItemId,
       setSelectedItemId: state.setSelectedItemId,
     })),
   );
@@ -171,7 +177,7 @@ const LayerItems = ({
         }}
       >
         <div
-          className="bg-primary w-full h-full rounded border border-primary relative cursor-grab active:cursor-grabbing active:bg-primary/70"
+          className="bg-primary w-full h-full rounded border-2 relative cursor-grab active:cursor-grabbing active:bg-primary/70"
           onMouseDown={(event) => {
             setSelectedItemId(layer.id);
             beginItemDrag(event, layer.id, "move", {
@@ -179,6 +185,12 @@ const LayerItems = ({
               to: layer.to,
               layer: layer.layer,
             });
+          }}
+          style={{
+            borderColor:
+              selectedItemId === layer.id
+                ? "var(--color-secondary)"
+                : "var(--color-primary)",
           }}
         >
           <div

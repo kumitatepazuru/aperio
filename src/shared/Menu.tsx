@@ -134,7 +134,7 @@ const SubMenuNode = ({
     open: isOpen,
     onOpenChange: setIsOpen,
     placement: "right-start",
-    middleware: [offset({ mainAxis: 4, alignmentAxis: -4 }), flip(), shift()],
+    middleware: [flip(), shift()],
     whileElementsMounted: autoUpdate,
   });
 

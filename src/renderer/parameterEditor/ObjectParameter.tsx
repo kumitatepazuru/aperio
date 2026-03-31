@@ -9,6 +9,7 @@ import { useState } from "react";
 
 const ObjectParameter = () => {
   const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
+  // 一時的に構造を保存する。構造が変わったときに、構造は更新するがパラメーターは更新しないようにするため
   const [tempStructures, setTempStructures] = useState<
     TimelineLayerStructure["obj"]["parameters"] | null
   >(null);
@@ -31,7 +32,10 @@ const ObjectParameter = () => {
         const structForCheck = struct.map((param) => param.id);
         const structuresIds = structures.map((param) => param.id);
         // idがすべて一致するか確認
-        if (structForCheck.every((id) => structuresIds.includes(id))) {
+        if (
+          structForCheck.every((id) => structuresIds.includes(id)) &&
+          structForCheck.length === structuresIds.length
+        ) {
           // 変更前と同じ構造なら更新
           const timeline = (await getStoreState()).timelineLayers;
           setTimelineLayers(
