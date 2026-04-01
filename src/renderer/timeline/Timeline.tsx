@@ -36,10 +36,11 @@ const Timeline = () => {
   const [horizontalScroll, setHorizontalScroll] = useState(0);
   const { size, ref: contentRef } = useContentSize();
   const topScrollRef = useRef<HTMLDivElement | null>(null);
-  const { timelineLayers, setTimelineLayers } = useStore(
+  const { timelineLayers, setTimelineLayers, setSelectedItemId } = useStore(
     useShallow((state) => ({
       timelineLayers: state.timelineLayers,
       setTimelineLayers: state.setTimelineLayers,
+      setSelectedItemId: state.setSelectedItemId,
     })),
   );
   const maxVisibleFrames = useMemo(() => {
@@ -162,7 +163,10 @@ const Timeline = () => {
         async (objName) => {
           console.log("Add object from context menu:", objName);
 
-          const structure = await window.main.requestNewObjectGenerator(objName, {});
+          const structure = await window.main.requestNewObjectGenerator(
+            objName,
+            {},
+          );
           const defaultParams: Record<string, unknown> = {};
           structure.structure.forEach((param) => {
             defaultParams[param.id] = param.defaultValue;
@@ -205,6 +209,7 @@ const Timeline = () => {
           };
 
           setTimelineLayers([...timelineLayers, newLayer]);
+          setSelectedItemId(newLayer.id);
         },
       );
 
@@ -213,7 +218,7 @@ const Timeline = () => {
         removeAddObjectListener();
       };
     },
-    [setTimelineLayers, timelineLayers],
+    [setSelectedItemId, setTimelineLayers, timelineLayers],
   );
 
   return (

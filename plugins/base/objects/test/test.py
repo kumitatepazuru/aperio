@@ -37,7 +37,6 @@ class TestObject(ObjectGeneratorBase):
             self.shader = PyCompiledWgsl("test", f.read(), generator, None)
 
         self.base_structure: list[RequestStructureParameter] = [
-            BoolParam("testtest", "テスト", False),
             BoolParam("draw_text", "フレームテキストを描画", False),
         ]
 

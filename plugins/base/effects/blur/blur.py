@@ -10,7 +10,7 @@ class BlurEffect(EffectGeneratorBase):
     def __init__(self, generator: PyImageGenerator) -> None:
         super().__init__(generator)
         self.name = "base.blur_effect"
-        self.display_name = "Blur Effect"
+        self.display_name = "ブラー"
         self.description = "Applies a blur effect to the input frame."
 
         current_dir = os.path.dirname(__file__)
@@ -41,11 +41,15 @@ class BlurEffect(EffectGeneratorBase):
             ]
 
     def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn:
-        blur_radius = args.get("blur_radius", 5.0)
-        params = struct.pack("i", blur_radius)
-
+        blur_radius = args.get("blur_radius", 5)
         # ぼかしにより各辺 radius 分ずつ拡張
-        new_width = width + 2 * blur_radius
-        new_height = height + 2 * blur_radius
+        if blur_radius < 0:
+            blur_radius = 0
+            new_width = width
+            new_height = height
+        else:
+            new_width = width + 2 * blur_radius
+            new_height = height + 2 * blur_radius
+        params = struct.pack("iii", blur_radius, new_width, new_height)
 
         return GeneratorWgslReturn(self.shader, params, new_width, new_height)

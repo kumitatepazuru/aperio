@@ -10,6 +10,7 @@ import { DragDropProvider, type DragEndEvent } from "@dnd-kit/react";
 import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable";
 import { FaAngleDown, FaAngleUp, FaXmark } from "react-icons/fa6";
 import { FaAngleDoubleDown, FaAngleDoubleUp } from "react-icons/fa";
+import { MdOutlineDragHandle } from "react-icons/md";
 
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   const result = [...arr];
@@ -87,28 +88,31 @@ const SortableEffectItem = ({
   return (
     <div ref={ref} className="card card-sm bg-base-300">
       <div className="card-body">
+        <div className="absolute left-0 right-0 flex justify-center top-0 cursor-grab">
+          <MdOutlineDragHandle size="1.5em" className="text-base-content/40" />
+        </div>
         <h2 className="card-title">{effect.displayName}</h2>
-        <div className="card-actions justify-end">
+        <div className="card-actions justify-end absolute right-0 pr-4 gap-0.5">
           <button
-            className="btn btn-sm btn-circle"
+            className="btn btn-xs btn-circle"
             onClick={() => changeOrder(index * -1)}
           >
             <FaAngleDoubleUp />
           </button>
           <button
-            className="btn btn-sm btn-circle"
+            className="btn btn-xs btn-circle"
             onClick={() => changeOrder(-1)}
           >
             <FaAngleUp />
           </button>
           <button
-            className="btn btn-sm btn-circle"
+            className="btn btn-xs btn-circle"
             onClick={() => changeOrder(1)}
           >
             <FaAngleDown />
           </button>
           <button
-            className="btn btn-sm btn-circle"
+            className="btn btn-xs btn-circle"
             onClick={() =>
               changeOrder(
                 currentLayer?.effects.length
@@ -119,7 +123,7 @@ const SortableEffectItem = ({
           >
             <FaAngleDoubleDown />
           </button>
-          <button className="btn btn-sm btn-circle" onClick={deleteEffect}>
+          <button className="btn btn-xs btn-circle" onClick={deleteEffect}>
             <FaXmark />
           </button>
         </div>

@@ -177,7 +177,7 @@ const LayerItems = ({
         }}
       >
         <div
-          className="bg-primary w-full h-full rounded border-2 relative cursor-grab active:cursor-grabbing active:bg-primary/70"
+          className="bg-primary w-full h-full border-dotted border-base-100 rounded relative cursor-grab flex items-center active:cursor-grabbing active:bg-primary/70"
           onMouseDown={(event) => {
             setSelectedItemId(layer.id);
             beginItemDrag(event, layer.id, "move", {
@@ -187,10 +187,7 @@ const LayerItems = ({
             });
           }}
           style={{
-            borderColor:
-              selectedItemId === layer.id
-                ? "var(--color-secondary)"
-                : "var(--color-primary)",
+            borderWidth: selectedItemId === layer.id ? 2 : 0,
           }}
         >
           <div
@@ -213,6 +210,9 @@ const LayerItems = ({
               })
             }
           />
+          <span className="text-primary-content p-2 text-xs">
+            {layer.obj.displayName}
+          </span>
         </div>
       </div>
     );

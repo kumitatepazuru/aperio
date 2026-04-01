@@ -1,5 +1,7 @@
 struct BlurParams {
-    radius: i32
+    radius: i32,
+    new_width: i32,
+    new_height: i32
 };
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
@@ -14,9 +16,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let in_dims = vec2<i32>(textureDimensions(tex));
     let out_coord = vec2<i32>(global_id.xy);
 
-    // 出力サイズ = 入力サイズ + 2*radius (各辺 radius 分拡張)
+    // 出力サイズ
     let radius = params_array.radius;
-    let out_dims = in_dims + vec2<i32>(radius * 2);
+    let out_dims = vec2<i32>(params_array.new_width, params_array.new_height);
 
     if (out_coord.x >= out_dims.x || out_coord.y >= out_dims.y) {
         return;
@@ -26,7 +28,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let in_coord = out_coord - vec2<i32>(radius);
 
     if (radius <= 0) {
-        textureStore(outputTex, out_coord, textureLoad(tex, in_coord, 0));
+        textureStore(outputTex, out_coord, textureLoad(tex, out_coord, 0));
         return;
     }
 
