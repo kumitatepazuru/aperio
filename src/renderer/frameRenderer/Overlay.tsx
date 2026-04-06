@@ -12,6 +12,7 @@ const Overlay = () => {
   const frameState = useStore((state) => state.frameState);
   const timelineLayers = useStore((state) => state.timelineLayers);
   const setTimelineLayers = useStore((state) => state.setTimelineLayers);
+  const setSelectedItemId = useStore((state) => state.setSelectedItemId);
   const selectedItemId = useStore((state) => state.selectedItemId);
   const frameResults = frameState.frameResults;
   const {
@@ -189,11 +190,62 @@ const Overlay = () => {
     );
   };
 
+  const onDragStart = (
+    layerId: string,
+    e: React.MouseEvent<HTMLDivElement>,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const layer = timelineLayers.find((l) => l.id === layerId);
+    if (!layer) return;
+
+    const pctW = width / frameState.width;
+    const pctH = height / frameState.height;
+    const initX = layer.x;
+    const initY = layer.y;
+    const initialMouseX = e.clientX;
+    const initialMouseY = e.clientY;
+
+    const onDrag = (e: MouseEvent) => {
+      const deltaX = e.clientX - initialMouseX;
+      const deltaY = e.clientY - initialMouseY;
+
+      setTimelineLayers(
+        timelineLayers.map((l) =>
+          l.id === layerId
+            ? {
+                ...l,
+                x: Math.round(initX + deltaX / pctW),
+                y: Math.round(initY + deltaY / pctH),
+              }
+            : l,
+        ),
+      );
+    };
+
+    document.addEventListener("mousemove", onDrag);
+    document.addEventListener(
+      "mouseup",
+      () => {
+        document.removeEventListener("mousemove", onDrag);
+      },
+      { once: true },
+    );
+  };
+
+  const clearSelection = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return; // オーバーレイ自体がクリックされた場合のみ
+
+    setSelectedItemId(null);
+  };
+
   return (
-    <div ref={overlayRef} className="absolute inset-0">
+    <div ref={overlayRef} className="absolute inset-0" onClick={clearSelection}>
       {layers.map((layer) => {
         const result = frameResults[layer.id];
-        if (!result || layer.id !== selectedItemId) return;
+        if (!result) return;
+        const selected = layer.id === selectedItemId;
 
         const percentWidth = width / frameState.width;
         const percentHeight = height / frameState.height;
@@ -212,37 +264,44 @@ const Overlay = () => {
         return (
           <div
             key={layer.id}
-            className="absolute border-2 border-primary cursor-move"
+            className="absolute border-2 border-primary"
             style={{
               left: startX + offsetX,
               width: layerWidth,
               top: startY + offsetY,
               height: layerHeight,
               transform: `rotate(${-layer.rotation}deg)`,
+              opacity: selected ? 1 : 0,
+              cursor: selected ? "move" : "default",
             }}
+            onMouseDown={(e) => selected ? onDragStart(layer.id, e) : setSelectedItemId(layer.id)}
           >
-            <div
-              className="btn btn-circle absolute -top-8 left-[50%] -translate-x-[50%] w-6 h-6 cursor-grab active:cursor-grabbing"
-              onMouseDown={(e) => onRotateStart(layer.id, e)}
-            >
-              <FaArrowRotateRight size="0.8rem" />
-            </div>
-            <div
-              className="absolute top-0 left-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary -translate-[50%] cursor-nwse-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "nw", 0, 0, e)}
-            />
-            <div
-              className="absolute top-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary -translate-y-[50%] translate-x-[50%] cursor-nesw-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "ne", 0, 0, e)}
-            />
-            <div
-              className="absolute bottom-0 left-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary translate-y-[50%] -translate-x-[50%] cursor-nesw-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "sw", 0, 0, e)}
-            />
-            <div
-              className="absolute bottom-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary translate-[50%] cursor-nwse-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "se", 0, 0, e)}
-            />
+            {selected && (
+              <>
+                <div
+                  className="btn btn-circle absolute -top-8 left-[50%] -translate-x-[50%] w-6 h-6 cursor-grab active:cursor-grabbing"
+                  onMouseDown={(e) => onRotateStart(layer.id, e)}
+                >
+                  <FaArrowRotateRight size="0.8rem" />
+                </div>
+                <div
+                  className="absolute top-0 left-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary -translate-[50%] cursor-nwse-resize"
+                  onMouseDown={(e) => onScaleStart(layer.id, "nw", 0, 0, e)}
+                />
+                <div
+                  className="absolute top-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary -translate-y-[50%] translate-x-[50%] cursor-nesw-resize"
+                  onMouseDown={(e) => onScaleStart(layer.id, "ne", 0, 0, e)}
+                />
+                <div
+                  className="absolute bottom-0 left-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary translate-y-[50%] -translate-x-[50%] cursor-nesw-resize"
+                  onMouseDown={(e) => onScaleStart(layer.id, "sw", 0, 0, e)}
+                />
+                <div
+                  className="absolute bottom-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary translate-[50%] cursor-nwse-resize"
+                  onMouseDown={(e) => onScaleStart(layer.id, "se", 0, 0, e)}
+                />
+              </>
+            )}
           </div>
         );
       })}

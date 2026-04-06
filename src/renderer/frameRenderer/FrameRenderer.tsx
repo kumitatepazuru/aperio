@@ -45,7 +45,7 @@ const FrameBufferRenderer = () => {
 
 const FrameRenderer = () => {
   return (
-    <div className="flex flex-col gap-3 h-full p-2">
+    <div className="flex flex-col gap-3 h-full">
       <div className="flex-1 min-h-0">
         {config.fastPreview ? (
           <FrameTextureRenderer />
