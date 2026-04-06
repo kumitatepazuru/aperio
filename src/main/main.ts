@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   IpcMainInvokeEvent,
   ipcMain,
+  screen,
   webContents,
 } from "electron";
 import { RendezvousServer } from "./rendezvousServer";
@@ -108,7 +109,14 @@ ipcMain.handle("get-event-stack-length", () => {
 });
 
 ipcMain.handle("resize-osr", (_, width: number, height: number) => {
-  osrWin?.setSize(width, height, false);
+  if (!osrWin) return;
+  // setSize()は論理ピクセルを受け取るが、coded_sizeは物理ピクセルで返されるため、
+  // desired_size / scaleFactor を論理サイズとして渡すことで
+  // 物理テクスチャサイズ = ユーザーが指定したフレーム解像度になる。
+  const display = screen.getDisplayMatching(osrWin.getBounds());
+  const sf = display.scaleFactor;
+  console.log(`Resizing OSR window to ${width}x${height} (scale factor: ${sf})`);
+  osrWin.setSize(Math.round(width / sf), Math.round(height / sf), false);
 });
 
 ipcMain.handle("show-dialog", (_, id: string) => showDialog(id));
