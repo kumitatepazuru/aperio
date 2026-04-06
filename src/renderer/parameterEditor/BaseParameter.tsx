@@ -75,8 +75,7 @@ const BaseParameter = () => {
   return (
     <Configable
       structures={BaseParameterStructure}
-      initialValues={baseParams ?? {}}
-      resetKey={selectedItemId ?? undefined}
+      value={baseParams ?? {}}
       onChange={handleBaseChange}
     />
   );

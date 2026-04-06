@@ -1,6 +1,13 @@
 import { memo, type ReactNode } from "react";
 import { LuUndo2 } from "react-icons/lu";
-import { getDefaultValue, type ColorValue, type Vec2Value, type Vec3Value, type Vec4Value } from "./utils";
+import {
+  getDefaultValue,
+  type ColorValue,
+  type ConfigableValue,
+  type Vec2Value,
+  type Vec3Value,
+  type Vec4Value,
+} from "./utils";
 import Float from "./components/Float";
 import Int from "./components/Int";
 import Bool from "./components/Bool";
@@ -10,26 +17,18 @@ import Vec4 from "./components/Vec4";
 import StringInput from "./components/StringInput";
 import Color from "./components/Color";
 import ListSelect from "./components/ListSelect";
-import type { UseBoundStore, StoreApi } from "zustand";
-import { type ConfigStoreState } from "./Configable";
 import type { RequestStructureParameter } from "native";
-
-type UseConfigStore = UseBoundStore<StoreApi<ConfigStoreState>>;
 
 const ConfigableRow = memo(
   ({
     param,
-    useConfigStore,
+    value,
+    onChange,
   }: {
     param: RequestStructureParameter;
-    useConfigStore: UseConfigStore;
+    value: ConfigableValue;
+    onChange: (value: ConfigableValue) => void;
   }) => {
-    const id = param.id;
-    const value = useConfigStore((state: ConfigStoreState) => state.values[id]);
-    const setValue = useConfigStore(
-      (state: ConfigStoreState) => state.setValue,
-    );
-
     let input: ReactNode;
     switch (param.type) {
       case "Float":
@@ -37,7 +36,7 @@ const ConfigableRow = memo(
           <Float
             value={value as number}
             suffix={param.suffix}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -46,14 +45,12 @@ const ConfigableRow = memo(
           <Int
             value={value as number}
             suffix={param.suffix}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
       case "Bool":
-        input = (
-          <Bool value={value as boolean} onChange={(v) => setValue(id, v)} />
-        );
+        input = <Bool value={value as boolean} onChange={onChange} />;
         break;
       case "Vec2Int":
         input = (
@@ -61,7 +58,7 @@ const ConfigableRow = memo(
             value={value as Vec2Value}
             suffix={param.suffix}
             isInt={true}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -71,7 +68,7 @@ const ConfigableRow = memo(
             value={value as Vec2Value}
             suffix={param.suffix}
             isInt={false}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -81,7 +78,7 @@ const ConfigableRow = memo(
             value={value as Vec3Value}
             suffix={param.suffix}
             isInt={true}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -91,7 +88,7 @@ const ConfigableRow = memo(
             value={value as Vec3Value}
             suffix={param.suffix}
             isInt={false}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -101,7 +98,7 @@ const ConfigableRow = memo(
             value={value as Vec4Value}
             suffix={param.suffix}
             isInt={true}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -111,24 +108,19 @@ const ConfigableRow = memo(
             value={value as Vec4Value}
             suffix={param.suffix}
             isInt={false}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
       case "String":
-        input = (
-          <StringInput
-            value={value as string}
-            onChange={(v) => setValue(id, v)}
-          />
-        );
+        input = <StringInput value={value as string} onChange={onChange} />;
         break;
       case "Color":
         input = (
           <Color
             value={value as ColorValue}
             useAlpha={param.useAlpha}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -137,7 +129,7 @@ const ConfigableRow = memo(
           <ListSelect
             value={value as string}
             values={param.values}
-            onChange={(v) => setValue(id, v)}
+            onChange={onChange}
           />
         );
         break;
@@ -148,7 +140,7 @@ const ConfigableRow = memo(
         <label>{param.title}</label>
         {input}
         <button
-          onClick={() => setValue(id, getDefaultValue(param))}
+          onClick={() => onChange(getDefaultValue(param))}
           className="btn btn-square btn-sm h-full min-h-8"
         >
           <LuUndo2 />

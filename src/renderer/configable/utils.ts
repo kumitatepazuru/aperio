@@ -48,3 +48,15 @@ export const getDefaultValue = (
       ];
   }
 };
+
+export const initValues = (
+  structures: RequestStructureParameter[],
+  initial: Record<string, ConfigableValue>,
+): Record<string, ConfigableValue> => {
+  const record: Record<string, ConfigableValue> = {};
+  for (const param of structures) {
+    record[param.id] =
+      param.id in initial ? initial[param.id] : getDefaultValue(param);
+  }
+  return record;
+};
