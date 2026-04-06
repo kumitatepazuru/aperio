@@ -6,7 +6,9 @@ class GenerateStructure(TypedDict):
     """
     エフェクト構造を表す辞書の型定義。
     """
+    id: str
     name: str
+    display_name: str
     parameters: dict
 
 @dataclass
@@ -104,3 +106,8 @@ class ListParam:
     values: dict[str, str]
     default_value: str
 RequestStructureParameter = FloatParam | IntParam | BoolParam | Vec2IntParam | Vec2FloatParam | Vec3IntParam | Vec3FloatParam | Vec4IntParam | Vec4FloatParam | StringParam | ColorParam | ListParam
+
+@dataclass
+class LayerResult:
+    width: int
+    height: int

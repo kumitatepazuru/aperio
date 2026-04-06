@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 import FrameManager from "../bridge";
-import useStore, { getCurrentFrameCount, getFrameStruct, getStoreState } from "@shared/store";
+import useStore, {
+  getCurrentFrameCount,
+  getCurrentFrameStruct,
+  getStoreState,
+} from "@shared/store";
 import { useShallow } from "zustand/shallow";
 import {
   useBufferPreviewWebGPU,
   type BufferWebGPUResources,
 } from "@/hooks/useWebGPU";
+import { hasSameKeys } from "@/utils/hasSame";
 
 // RGBAバッファをテクスチャとして描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -115,9 +120,18 @@ const useFrameBufferRenderer = () => {
         currentFrameCount,
         frameState.width,
         frameState.height,
-        await getFrameStruct(),
+        await getCurrentFrameStruct(),
       );
-      const uint8Data = new Uint8Array(data);
+      const uint8Data = new Uint8Array(data.frame);
+      const frameResults = data.frameResults;
+      const currentFrameResults = frameState.frameResults;
+      // resultsのkey IDがすべて一致してなければ更新
+      if (!hasSameKeys(frameResults, currentFrameResults)) {
+        (await getStoreState()).setFrameState({
+          ...frameState,
+          frameResults,
+        });
+      }
 
       // 描画
       updateAndRender(uint8Data, resources);

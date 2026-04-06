@@ -189,7 +189,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for RequestStructureParameter {
 
 #[napi(object)]
 pub struct GenerateStructure {
-    pub id: String, // UUIDが期待される
+    pub id: String,   // UUIDが期待される
     pub name: String, // オブジェクトやエフェクトの固有名でIDとは違い種類が同じであれば同じになる
     pub display_name: String,
     pub parameters: HashMap<String, serde_json::Value>,
@@ -198,6 +198,7 @@ pub struct GenerateStructure {
 #[napi(object)]
 #[derive(IntoPyObject)]
 pub struct LayerStructure {
+    pub id: String, // UUIDが期待される
     pub x: i32,
     pub y: i32,
     pub scale: f64,
@@ -214,7 +215,9 @@ impl<'a, 'py> IntoPyObject<'py> for &'a GenerateStructure {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let dict = PyDict::new(py);
+        dict.set_item("id", &self.id)?;
         dict.set_item("name", &self.name)?;
+        dict.set_item("display_name", &self.display_name)?;
 
         let params_dict = PyDict::new(py);
         for (k, v) in &self.parameters {
@@ -256,4 +259,11 @@ pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
     pub object_plugins: HashMap<String, String>,
     pub effect_plugins: HashMap<String, String>,
+}
+
+#[napi(object)]
+#[derive(FromPyObject)]
+pub struct LayerResult {
+    pub width: i32,
+    pub height: i32,
 }

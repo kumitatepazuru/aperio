@@ -1,9 +1,8 @@
-import type { LayerStructure } from "native";
+import type { LayerResult, LayerStructure } from "native";
 import { create } from "zustand";
 import type { ColorValue } from "@/configable/utils";
 
 export type TimelineLayerStructure = LayerStructure & {
-  id: string; // UUIDが期待される
   layer: number; // レイヤー番号
   from: number; // 開始フレーム
   to: number; // 終了フレーム
@@ -15,15 +14,18 @@ type ViewerState = {
   beginFrame: number; // 再生開始フレーム
 };
 
+type FrameState = {
+  width: number;
+  height: number;
+  frameResults: Record<string, LayerResult>;
+};
+
 export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
 export type DisplayMode = "0-1" | "0-255";
 
 type Store = {
   fps: number;
-  frameState: {
-    width: number;
-    height: number;
-  };
+  frameState: FrameState;
   viewerState: ViewerState;
   timelineLayers: TimelineLayerStructure[];
   selectedItemId: string | null;
@@ -34,7 +36,7 @@ type Store = {
   };
   play: (beginFrame: number) => void;
   pause: (beginFrame?: number) => void;
-  setFrameState: (frameState: { width: number; height: number }) => void;
+  setFrameState: (frameState: FrameState) => void;
   setFrameCount: (frame: number) => void;
   setFps: (fps: number) => void;
   setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
@@ -163,6 +165,7 @@ const _useStore = create<Store>()((set, get) => {
     frameState: {
       width: 1920,
       height: 1080,
+      frameResults: {},
     },
     viewerState: {
       state: "paused",
@@ -193,8 +196,7 @@ const _useStore = create<Store>()((set, get) => {
           beginFrame: beginFrame ?? get().viewerState.beginFrame,
         },
       }),
-    setFrameState: (frameState: { width: number; height: number }) =>
-      syncSet({ frameState }),
+    setFrameState: (frameState: FrameState) => syncSet({ frameState }),
     setFrameCount: (frame) =>
       syncSet({
         viewerState: {
@@ -253,7 +255,7 @@ export const getCurrentFrameCount = async (): Promise<number> => {
   return viewerState.beginFrame;
 };
 
-export const getFrameStruct = async () => {
+export const getCurrentFrameStruct = async () => {
   const state = await getStoreState();
   const { viewerState, fps } = state;
   const currentFrame =

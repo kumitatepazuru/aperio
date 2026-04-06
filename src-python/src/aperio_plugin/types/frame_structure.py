@@ -8,7 +8,9 @@ class GenerateStructure(TypedDict):
     エフェクト構造を表す辞書の型定義。
     """
 
+    id: str
     name: str
+    display_name: str
     parameters: dict  # パラメータの具体的な型はエフェクトによって異なるため、単にdict型とする
 
 
@@ -18,6 +20,7 @@ class LayerStructure(TypedDict):
     レイヤー構造を表す辞書の型定義。
     """
 
+    id: str  # レイヤーのUUID
     x: int  # レイヤーの左上隅のX座標
     y: int  # レイヤーの左上隅のY座標
     scale: float  # レイヤーのスケール
@@ -134,3 +137,8 @@ RequestStructureParameter = Union[
     ColorParam,
     ListParam,
 ]
+
+@dataclass
+class LayerResult:
+    width: int
+    height: int

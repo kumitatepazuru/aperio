@@ -1,12 +1,17 @@
-import type { LayerStructure } from "native";
+import type { LayerResult, LayerStructure } from "native";
 
 type PendingRequest = {
   frameCount: number;
   width: number;
   height: number;
   frameStruct: LayerStructure[];
-  resolve: (data: ArrayBuffer) => void;
+  resolve: (data: BufferReturn) => void;
   reject: (err: unknown) => void;
+};
+
+type BufferReturn = {
+  frame: ArrayBuffer;
+  frameResults: Record<string, LayerResult>;
 };
 
 const Frame = class {
@@ -43,6 +48,11 @@ const Frame = class {
     this.port!.addEventListener(
       "message",
       (e) => {
+        if (!e.data.frame)
+          throw new Error("Invalid response: missing frame data");
+        if (!e.data.frameResults)
+          throw new Error("Invalid response: missing frame results");
+
         req.resolve(e.data);
         this._inFlight = false;
 
@@ -69,7 +79,7 @@ const Frame = class {
     width: number,
     height: number,
     frameStruct: LayerStructure[],
-  ): Promise<ArrayBuffer> {
+  ): Promise<BufferReturn> {
     if (!this.port) {
       await this.init();
     }

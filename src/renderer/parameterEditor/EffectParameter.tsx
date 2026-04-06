@@ -11,6 +11,7 @@ import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable";
 import { FaAngleDown, FaAngleUp, FaXmark } from "react-icons/fa6";
 import { FaAngleDoubleDown, FaAngleDoubleUp } from "react-icons/fa";
 import { MdOutlineDragHandle } from "react-icons/md";
+import { hasSameItems } from "@/utils/hasSame";
 
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   const result = [...arr];
@@ -169,10 +170,7 @@ const EffectParameter = () => {
         const structForCheck = struct.map((param) => param.id);
         const structuresIds = structures[index]?.map((param) => param.id) || [];
         // idがすべて一致するか確認
-        if (
-          structForCheck.every((id) => structuresIds.includes(id)) &&
-          structForCheck.length === structuresIds.length
-        ) {
+        if (hasSameItems(structForCheck, structuresIds)) {
           // 変更前と同じ構造なら更新
           const timeline = (await getStoreState()).timelineLayers;
           setTimelineLayers(

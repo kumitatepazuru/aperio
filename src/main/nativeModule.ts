@@ -81,8 +81,8 @@ export class NativeModule {
     }
     const data = new Uint8Array(this._sharedBuf);
 
-    this.aperioManager.getFrameBuf(data, count, width, height, frameStruct);
-    this.p1.postMessage(this._sharedBuf);
+    const frameResults = this.aperioManager.getFrameBuf(data, count, width, height, frameStruct);
+    this.p1.postMessage({frame: this._sharedBuf, frameResults});
   }
 
   getFrameSharedTexture(
@@ -96,7 +96,7 @@ export class NativeModule {
       if (!textureInfo) {
         throw new Error("Failed to get base shared texture");
       }
-      this.aperioManager.getFrameTexture(
+      const frameResults = this.aperioManager.getFrameTexture(
         count,
         this.configManager.config.texPixelFormat,
         frameStruct,
@@ -109,7 +109,7 @@ export class NativeModule {
       await sharedTexture.sendSharedTexture({
         frame: frame.mainFrame,
         importedSharedTexture: imported,
-      });
+      }, frameResults);
 
       imported.release();
     };

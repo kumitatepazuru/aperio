@@ -2,7 +2,7 @@ import useStore, { getStoreState } from "@shared/store";
 import type { GenerateStructure } from "native";
 import { IoIosAdd } from "react-icons/io";
 import NestedMenu, { type NestedMenuItems } from "@shared/Menu";
-import BaseParameter from "./baseParameter";
+import BaseParameter from "./BaseParameter";
 import ObjectParameter from "./ObjectParameter";
 import EffectParameter from "./EffectParameter";
 import { v4 as uuidv4 } from "uuid";

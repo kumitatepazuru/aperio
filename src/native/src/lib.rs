@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
     structs::{
-        Dirs, LayerStructure, NewEffectGeneratorReturn, NewObjectGeneratorReturn, PluginNameInfo,
-        RequestStructureParameter,
+        Dirs, LayerResult, LayerStructure, NewEffectGeneratorReturn, NewObjectGeneratorReturn,
+        PluginNameInfo, RequestStructureParameter,
     },
     util::{get_local_data_dir, json_to_pyobject},
 };
@@ -123,36 +125,6 @@ impl AperioManager {
     }
 
     #[napi]
-    pub fn get_frame_buf(
-        &self,
-        #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
-        count: i32,
-        width: i32,
-        height: i32,
-        frame_struct: Vec<LayerStructure>,
-    ) -> napi::Result<()> {
-        let pl_manager = &self.plmanager;
-
-        Python::attach(|py| -> PyResult<()> {
-            let pl_manager = pl_manager.bind(py);
-            let frame_struct = frame_struct.into_pyobject(py)?;
-
-            let buffer_ptr = unsafe {
-                let buffer_slice = buffer.as_mut();
-                buffer_slice.as_mut_ptr() as usize
-            };
-
-            let func = pl_manager.getattr("make_frame_buf")?;
-            func.call1((count, frame_struct, width, height, buffer_ptr))?;
-
-            Ok(())
-        })
-        .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
-
-        Ok(())
-    }
-
-    #[napi]
     pub fn get_plugin_names(&self) -> napi::Result<PluginNameInfo> {
         let pl_manager = &self.plmanager;
 
@@ -233,13 +205,45 @@ impl AperioManager {
     }
 
     #[napi]
+    pub fn get_frame_buf(
+        &self,
+        #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
+        count: i32,
+        width: i32,
+        height: i32,
+        frame_struct: Vec<LayerStructure>,
+    ) -> napi::Result<HashMap<String, LayerResult>> {
+        let pl_manager = &self.plmanager;
+
+        let output = Python::attach(|py| -> PyResult<HashMap<String, LayerResult>> {
+            let pl_manager = pl_manager.bind(py);
+            let frame_struct = frame_struct.into_pyobject(py)?;
+
+            let buffer_ptr = unsafe {
+                let buffer_slice = buffer.as_mut();
+                buffer_slice.as_mut_ptr() as usize
+            };
+
+            let func = pl_manager.getattr("make_frame_buf")?;
+            let results: HashMap<String, LayerResult> = func
+                .call1((count, frame_struct, width, height, buffer_ptr))?
+                .extract()?;
+
+            Ok(results)
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
+
+        Ok(output)
+    }
+
+    #[napi]
     pub fn get_frame_texture(
         &self,
         count: i32,
         format: NodeSharedTextureFormat,
         frame_struct: Vec<LayerStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
-    ) -> napi::Result<()> {
+    ) -> napi::Result<HashMap<String, LayerResult>> {
         let pl_manager = &self.plmanager;
 
         let content_size = base_texture.coded_size;
@@ -255,7 +259,7 @@ impl AperioManager {
             )));
         }
 
-        let output = Python::attach(|py| -> PyResult<()> {
+        let output = Python::attach(|py| -> PyResult<HashMap<String, LayerResult>> {
             let pl_manager = pl_manager.bind(py);
             let frame_struct = frame_struct.into_pyobject(py)?;
             let base_texture: SharedTextureHandle = base_texture.handle.into();
@@ -263,16 +267,18 @@ impl AperioManager {
             let format: SharedTextureFormat = format.into();
 
             let func = pl_manager.getattr("make_frame_shared_texture")?;
-            func.call1((
-                count,
-                frame_struct,
-                content_size.width,
-                content_size.height,
-                base_texture,
-                format,
-            ))?;
+            let results: HashMap<String, LayerResult> = func
+                .call1((
+                    count,
+                    frame_struct,
+                    content_size.width,
+                    content_size.height,
+                    base_texture,
+                    format,
+                ))?
+                .extract()?;
 
-            Ok(())
+            Ok(results)
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import useStore, {
   getCurrentFrameCount,
-  getFrameStruct,
+  getCurrentFrameStruct,
   getStoreState,
 } from "@shared/store";
 import {
@@ -9,6 +9,8 @@ import {
   type ExternalTextureWebGPUResources,
 } from "@/hooks/useWebGPU";
 import type { ReceivedSharedTextureData } from "electron";
+import type { LayerResult } from "native";
+import { hasSameKeys } from "@/utils/hasSame";
 
 // VideoFrameをcanvasに描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -98,7 +100,7 @@ const useFrameTextureRenderer = () => {
     try {
       await window.frame.getFrameSharedTexture(
         currentFrameCount,
-        await getFrameStruct(),
+        await getCurrentFrameStruct(),
       );
       previousFrameCount.current = currentFrameCount;
     } catch (error) {
@@ -107,11 +109,24 @@ const useFrameTextureRenderer = () => {
   }, []);
 
   useEffect(() => {
-    const receiver = async (textureInfo: ReceivedSharedTextureData) => {
+    const receiver = async (
+      textureInfo: ReceivedSharedTextureData,
+      frameResults: Record<string, LayerResult>,
+    ) => {
       try {
         // VideoFrameを取得
         const videoFrame = textureInfo.importedSharedTexture.getVideoFrame();
         textureInfo.importedSharedTexture.release();
+
+        const storeState = await getStoreState();
+        const currentFrameResults = storeState.frameState.frameResults;
+        // resultsのkey IDがすべて一致してなければ更新
+        if (!hasSameKeys(frameResults, currentFrameResults)) {
+          storeState.setFrameState({
+            ...storeState.frameState,
+            frameResults,
+          });
+        }
 
         // 描画
         if (resources) {

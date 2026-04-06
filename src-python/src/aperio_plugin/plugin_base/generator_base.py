@@ -65,8 +65,8 @@ class GeneratorBase(SubPluginBase):
         Args:
             frame_number (int): 生成するフレームの番号
             args (dict): フレーム生成に必要な引数群
-            width (int): 生成するフレームの幅
-            height (int): 生成するフレームの高さ
+            width (int): 生成元のフレームの幅。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
+            height (int): 生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
 
         Returns:
             GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ

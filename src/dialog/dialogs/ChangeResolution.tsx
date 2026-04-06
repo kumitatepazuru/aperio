@@ -34,7 +34,7 @@ const ChangeResolution = () => {
   const [height, setHeight] = useState(frameState.height);
 
   const change = () => {
-    setFrameState({ width, height });
+    setFrameState({ ...frameState, width, height });
     window.close();
   };
 

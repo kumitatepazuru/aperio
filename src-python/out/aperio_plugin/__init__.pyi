@@ -1,7 +1,7 @@
 from .plugin_base.generator_base import *
 import gpu_util
 from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
-from .types.frame_structure import LayerStructure as LayerStructure, RequestStructureParameter as RequestStructureParameter
+from .types.frame_structure import LayerResult, LayerStructure as LayerStructure, RequestStructureParameter as RequestStructureParameter
 from _typeshed import Incomplete
 from typing import Callable
 
@@ -16,6 +16,7 @@ class PluginManager:
     plugin_dir_name: Incomplete
     generator: Incomplete
     compose_wgsl: Incomplete
+    fill_black_wgsl: Incomplete
     def __init__(self, data_dir: str, plugin_dir_name: str = 'plugins') -> None:
         '''
         フレーム生成マネージャーの初期化をする。data_dirはデータディレクトリのパス(通常はget_data_dirによるもの)、plugin_dir_nameはプラグインディレクトリの名前を指定する。
@@ -114,7 +115,7 @@ class PluginManager:
         Returns:
             list[RequestStructureParameter]: ジェネレーターのパラメーター構造
         """
-    def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> None:
+    def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> dict[str, LayerResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
@@ -124,8 +125,11 @@ class PluginManager:
             width (int): フレームの幅
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
+
+        Returns:
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
         """
-    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> None:
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, LayerResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -136,4 +140,7 @@ class PluginManager:
             height (int): フレームの高さ
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
+        
+        Returns:
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
         """

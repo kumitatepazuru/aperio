@@ -32,7 +32,7 @@ except ImportError as e:
 
 from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
 from .plugin_base.generator_base import *
-from .types.frame_structure import LayerStructure, RequestStructureParameter
+from .types.frame_structure import LayerResult, LayerStructure, RequestStructureParameter
 
 
 class PluginManager:
@@ -76,9 +76,12 @@ class PluginManager:
         self.plugin_dir_name = plugin_dir_name
         self.generator = gpu_util.PyImageGenerator()
 
-        with open(os.path.join(os.path.dirname(__file__), "shaders", "compose.wgsl"), "r") as f:
+        shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
+        with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:
             sampler = gpu_util.PySamplerOptions("clamp_to_edge", "linear")
             self.compose_wgsl = gpu_util.PyCompiledWgsl("compose_layer", f.read(), self.generator, sampler)
+        with open(os.path.join(shader_dir, "fill_black.wgsl"), "r") as f:
+            self.fill_black_wgsl = gpu_util.PyCompiledWgsl("fill_black", f.read(), self.generator, None)
 
         dirs = glob.glob(f"{self.data_dir}/{self.plugin_dir_name}/*")
 
@@ -293,7 +296,7 @@ class PluginManager:
             raise ValueError(f"Plugin {plugin_name} is not registered as object or effect plugin")
 
     def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int) -> gpu_util.PyImageGenerateBuilder | None:
+                             width: int, height: int) -> tuple[gpu_util.PyImageGenerateBuilder, dict[str, LayerResult]]:
         """
         指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
 
@@ -307,7 +310,7 @@ class PluginManager:
             height (int): フレームの高さ
 
         Returns:
-            gpu_util.PyImageGenerateBuilder | None: フレーム生成のビルダーオブジェクト、またはフレーム構造が空の場合はNone
+            tuple[gpu_util.PyImageGenerateBuilder, dict[str, LayerResult]]: フレーム生成のビルダーオブジェクトとフレーム結果の辞書
         """
         try:
             if not isinstance(frame_structure, list):
@@ -319,21 +322,28 @@ class PluginManager:
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
             if len(frame_structure) == 0:
-                # 空のフレーム構造の場合は何もしない
-                return
+                # 空のフレーム構造の場合はfill_black.wgslを適用
+                layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.fill_black_wgsl, None, width, height)
+                return layer_builder, {}
 
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
             params = []
+            frame_results: dict[str, LayerResult] = {}
             for layer in frame_structure:
                 layer_builder = gpu_util.PyImageGenerateBuilder()
                 obj_name = layer["obj"]["name"]
+                layer_id = layer["id"]
 
                 if obj_name not in self.object_plugins:
                     raise ValueError(f"Object plugin {obj_name} is not registered")
 
                 obj_plugin = self.object_plugins[obj_name]
                 layer_frame = obj_plugin.generate(frame_number, layer["obj"]["parameters"], width, height)
+                frame_results[layer_id] = LayerResult(
+                    width=layer_frame.output_width,
+                    height=layer_frame.output_height
+                )
                 if isinstance(layer_frame, GeneratorWgslReturn):
                     layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                      layer_frame.output_width, layer_frame.output_height)
@@ -347,7 +357,11 @@ class PluginManager:
                         raise ValueError(f"Effect plugin {effect['name']} is not registered")
 
                     effect_plugin = self.effect_plugins[effect["name"]]
-                    layer_frame = effect_plugin.generate(frame_number, effect["parameters"], width, height)
+                    layer_frame = effect_plugin.generate(frame_number, effect["parameters"], layer_frame.output_width, layer_frame.output_height)
+                    frame_results[layer_id] = LayerResult(
+                        width=layer_frame.output_width, 
+                        height=layer_frame.output_height
+                    )
                     if isinstance(layer_frame, GeneratorWgslReturn):
                         layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                          layer_frame.output_width, layer_frame.output_height)
@@ -380,10 +394,10 @@ class PluginManager:
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
-        return builder
+        return builder, frame_results
     
     def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, buffer_ptr: int) -> None:
+                             width: int, height: int, buffer_ptr: int) -> dict[str, LayerResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
@@ -393,14 +407,19 @@ class PluginManager:
             width (int): フレームの幅
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
+
+        Returns:
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
         """
-        builder = self._make_frame(frame_number, frame_structure, width, height)
+        builder, results = self._make_frame(frame_number, frame_structure, width, height)
 
         if builder is not None:
             self.generator.generate_buf(builder, buffer_ptr)
 
+        return results
+
     def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> None:
+                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, LayerResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -411,8 +430,13 @@ class PluginManager:
             height (int): フレームの高さ
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
+        
+        Returns:
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
         """
-        builder = self._make_frame(frame_number, frame_structure, width, height)
+        builder, results = self._make_frame(frame_number, frame_structure, width, height)
 
         if builder is not None:
             self.generator.generate_shared_texture(builder, texture_handle, format)
+
+        return results

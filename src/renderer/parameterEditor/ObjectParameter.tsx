@@ -6,6 +6,7 @@ import useStore, {
 } from "@shared/store";
 import type { RequestStructureParameter } from "native";
 import { useState } from "react";
+import { hasSameItems } from "@/utils/hasSame";
 
 const ObjectParameter = () => {
   const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
@@ -32,10 +33,7 @@ const ObjectParameter = () => {
         const structForCheck = struct.map((param) => param.id);
         const structuresIds = structures.map((param) => param.id);
         // idがすべて一致するか確認
-        if (
-          structForCheck.every((id) => structuresIds.includes(id)) &&
-          structForCheck.length === structuresIds.length
-        ) {
+        if (hasSameItems(structForCheck, structuresIds)) {
           // 変更前と同じ構造なら更新
           const timeline = (await getStoreState()).timelineLayers;
           setTimelineLayers(
