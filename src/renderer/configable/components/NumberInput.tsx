@@ -49,6 +49,7 @@ const NumberInput = ({
       let clamped = isInt ? Math.round(raw) : parseFloat(raw.toFixed(2));
       if (min !== undefined) clamped = Math.max(min, clamped);
       if (max !== undefined) clamped = Math.min(max, clamped);
+      setInputStr(String(clamped));
       onChange(clamped);
     };
 
