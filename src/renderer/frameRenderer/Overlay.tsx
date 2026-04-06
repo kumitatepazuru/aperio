@@ -1,4 +1,5 @@
 import useContentSize from "@/hooks/useContentSize";
+import orgFloor from "@/utils/orgFloor";
 import useStore, {
   getCurrentFrameStruct,
   type TimelineLayerStructure,
@@ -38,7 +39,9 @@ const Overlay = () => {
     if (!layer) return;
 
     // ハンドルの親要素（レイヤーdiv）の中心 = 回転中心をクライアント座標で取得
-    const layerRect = (e.currentTarget as HTMLElement).parentElement?.getBoundingClientRect();
+    const layerRect = (
+      e.currentTarget as HTMLElement
+    ).parentElement?.getBoundingClientRect();
     if (!layerRect) return;
 
     const centerClientX = (layerRect.left + layerRect.right) / 2;
@@ -61,7 +64,7 @@ const Overlay = () => {
 
       setTimelineLayers(
         timelineLayers.map((l) =>
-          l.id === layerId ? { ...l, rotation: newRotation } : l,
+          l.id === layerId ? { ...l, rotation: orgFloor(newRotation, 100) } : l,
         ),
       );
     };
@@ -69,7 +72,9 @@ const Overlay = () => {
     document.addEventListener("mousemove", onRotate);
     document.addEventListener(
       "mouseup",
-      () => { document.removeEventListener("mousemove", onRotate); },
+      () => {
+        document.removeEventListener("mousemove", onRotate);
+      },
       { once: true },
     );
   };
@@ -77,6 +82,8 @@ const Overlay = () => {
   const onScaleStart = (
     layerId: string,
     direction: "nw" | "ne" | "sw" | "se",
+    handleOffsetX: number,
+    handleOffsetY: number,
     e: React.MouseEvent<HTMLDivElement>,
   ) => {
     e.preventDefault();
@@ -86,10 +93,19 @@ const Overlay = () => {
     const result = frameResults[layerId];
     if (!layer || !result) return;
 
-    const initialMouseX = e.clientX;
-    const initialMouseY = e.clientY;
     const pctW = width / frameState.width;
     const pctH = height / frameState.height;
+
+    // CSS rotate(-layer.rotation) の回転行列
+    // ローカル→グローバル: [cosR, sinR; -sinR, cosR]
+    // グローバル→ローカル: [cosR, -sinR; sinR, cosR]（転置）
+    const rotRad = (layer.rotation * Math.PI) / 180;
+    const cosR = Math.cos(rotRad);
+    const sinR = Math.sin(rotRad);
+    const toGlobalX = (lx: number, ly: number) => cosR * lx + sinR * ly;
+    const toGlobalY = (lx: number, ly: number) => -sinR * lx + cosR * ly;
+    const toLocalX = (gx: number, gy: number) => cosR * gx - sinR * gy;
+    const toLocalY = (gx: number, gy: number) => sinR * gx + cosR * gy;
 
     const initScale = layer.scale;
     const initX = layer.x;
@@ -97,29 +113,43 @@ const Overlay = () => {
     const initHalfW = (result.width * initScale) / 200;
     const initHalfH = (result.height * initScale) / 200;
 
-    // 対角線上の固定頂点（アンカー）とドラッグ方向の符号
-    const cornerConfig = {
-      se: { anchorX: initX - initHalfW, anchorY: initY - initHalfH, signX:  1, signY:  1 },
-      nw: { anchorX: initX + initHalfW, anchorY: initY + initHalfH, signX: -1, signY: -1 },
-      ne: { anchorX: initX - initHalfW, anchorY: initY + initHalfH, signX:  1, signY: -1 },
-      sw: { anchorX: initX + initHalfW, anchorY: initY - initHalfH, signX: -1, signY:  1 },
+    const cornerSign = {
+      se: { signX: 1, signY: 1 },
+      nw: { signX: -1, signY: -1 },
+      ne: { signX: 1, signY: -1 },
+      sw: { signX: -1, signY: 1 },
     };
-    const { anchorX, anchorY, signX, signY } = cornerConfig[direction];
+    const { signX, signY } = cornerSign[direction];
 
-    // アンカーからドラッグ頂点への対角線ベクトル（縦横比維持に使用）
-    const diagX = signX * initHalfW * 2;
-    const diagY = signY * initHalfH * 2;
+    // ドラッグ頂点・アンカーのローカル座標
+    const dragLocalX = signX * initHalfW + handleOffsetX;
+    const dragLocalY = signY * initHalfH + handleOffsetY;
+    const anchLocalX = -dragLocalX;
+    const anchLocalY = -dragLocalY;
+
+    // アンカーのグローバル（フレーム）座標 — スケーリング中ここが固定される
+    const anchorX = initX + toGlobalX(anchLocalX, anchLocalY);
+    const anchorY = initY + toGlobalY(anchLocalX, anchLocalY);
+
+    // 対角線ベクトル（ローカル座標系で射影するため、ローカルで計算）
+    const diagX = dragLocalX - anchLocalX;
+    const diagY = dragLocalY - anchLocalY;
     const diagLen = Math.sqrt(diagX * diagX + diagY * diagY);
     const unitX = diagX / diagLen;
     const unitY = diagY / diagLen;
 
+    const initialMouseX = e.clientX;
+    const initialMouseY = e.clientY;
+
     const onScale = (e: MouseEvent) => {
-      // マウス移動量をフレーム座標系に変換
-      const dx = (e.clientX - initialMouseX) / pctW;
-      const dy = (e.clientY - initialMouseY) / pctH;
+      // マウス移動量をフレーム座標系に変換してからローカル座標系へ逆回転
+      const globalDx = (e.clientX - initialMouseX) / pctW;
+      const globalDy = (e.clientY - initialMouseY) / pctH;
+      const localDx = toLocalX(globalDx, globalDy);
+      const localDy = toLocalY(globalDx, globalDy);
 
       // 対角線方向への射影で縦横比を維持したスケーリング
-      const proj = dx * unitX + dy * unitY;
+      const proj = localDx * unitX + localDy * unitY;
       const newDiagLen = diagLen + proj;
       if (newDiagLen <= 0) return; // 反転防止
 
@@ -127,14 +157,23 @@ const Overlay = () => {
       const newHalfW = (result.width * newScale) / 200;
       const newHalfH = (result.height * newScale) / 200;
 
+      // 新ドラッグ頂点のローカル座標（offsetはスケール対象外として固定）
+      const newDragLocalX = signX * newHalfW + handleOffsetX;
+      const newDragLocalY = signY * newHalfH + handleOffsetY;
+
       // アンカーを固定したまま新しい中心座標を計算
-      const newLayerX = anchorX + signX * newHalfW;
-      const newLayerY = anchorY + signY * newHalfH;
+      const newLayerX = anchorX + toGlobalX(newDragLocalX, newDragLocalY);
+      const newLayerY = anchorY + toGlobalY(newDragLocalX, newDragLocalY);
 
       setTimelineLayers(
         timelineLayers.map((l) =>
           l.id === layerId
-            ? { ...l, scale: newScale, x: Math.round(newLayerX), y: Math.round(newLayerY) }
+            ? {
+                ...l,
+                scale: orgFloor(newScale, 100),
+                x: Math.round(newLayerX),
+                y: Math.round(newLayerY),
+              }
             : l,
         ),
       );
@@ -143,7 +182,9 @@ const Overlay = () => {
     document.addEventListener("mousemove", onScale);
     document.addEventListener(
       "mouseup",
-      () => { document.removeEventListener("mousemove", onScale); },
+      () => {
+        document.removeEventListener("mousemove", onScale);
+      },
       { once: true },
     );
   };
@@ -171,7 +212,7 @@ const Overlay = () => {
         return (
           <div
             key={layer.id}
-            className="absolute border-2 border-primary"
+            className="absolute border-2 border-primary cursor-move"
             style={{
               left: startX + offsetX,
               width: layerWidth,
@@ -188,19 +229,19 @@ const Overlay = () => {
             </div>
             <div
               className="absolute top-0 left-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary -translate-[50%] cursor-nwse-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "nw", e)}
+              onMouseDown={(e) => onScaleStart(layer.id, "nw", 0, 0, e)}
             />
             <div
               className="absolute top-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary -translate-y-[50%] translate-x-[50%] cursor-nesw-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "ne", e)}
+              onMouseDown={(e) => onScaleStart(layer.id, "ne", 0, 0, e)}
             />
             <div
               className="absolute bottom-0 left-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary translate-y-[50%] -translate-x-[50%] cursor-nesw-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "sw", e)}
+              onMouseDown={(e) => onScaleStart(layer.id, "sw", 0, 0, e)}
             />
             <div
               className="absolute bottom-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 border-primary translate-[50%] cursor-nwse-resize"
-              onMouseDown={(e) => onScaleStart(layer.id, "se", e)}
+              onMouseDown={(e) => onScaleStart(layer.id, "se", 0, 0, e)}
             />
           </div>
         );

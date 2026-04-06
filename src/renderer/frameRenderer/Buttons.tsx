@@ -20,7 +20,7 @@ const Buttons = () => {
   };
 
   return (
-    <div className="flex gap-2 justify-center">
+    <div className="flex gap-2 justify-center z-10 relative bg-base-100">
       <button className="btn btn-circle">
         <FaBackward />
       </button>
