@@ -8,10 +8,10 @@ import EffectParameter from "./EffectParameter";
 import { v4 as uuidv4 } from "uuid";
 
 const ParameterEditor = () => {
-  const selectedItemId = useStore((state) => state.selectedItemId);
+  const selectedItemId = useStore((state) => state.mainSelectedItemId);
   const setTimelineLayers = useStore((state) => state.setTimelineLayers);
   const selectedItem = useStore((state) =>
-    state.timelineLayers.find((layer) => layer.id === selectedItemId),
+    state.timelineLayers.find((layer) => layer.id === state.mainSelectedItemId),
   );
 
   const onAddEffect = async (name: string) => {

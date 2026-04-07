@@ -28,7 +28,8 @@ type Store = {
   frameState: FrameState;
   viewerState: ViewerState;
   timelineLayers: TimelineLayerStructure[];
-  selectedItemId: string | null;
+  selectedItemId: string[];
+  mainSelectedItemId: string | null;
   colorPicker: {
     colorSpace: ColorSpace;
     displayMode: DisplayMode;
@@ -41,6 +42,7 @@ type Store = {
   setFps: (fps: number) => void;
   setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
   setSelectedItemId: (id: string | null) => void;
+  addSelectedItemId: (id: string) => void;
   setColorPicker: (colorPicker: Store["colorPicker"]) => void;
 };
 
@@ -52,6 +54,7 @@ export type SyncableState = Pick<
   | "timelineLayers"
   | "frameState"
   | "selectedItemId"
+  | "mainSelectedItemId"
   | "colorPicker"
 >;
 
@@ -174,7 +177,8 @@ const _useStore = create<Store>()((set, get) => {
     },
     timelineLayers: [],
     pluginNames: undefined,
-    selectedItemId: null,
+    selectedItemId: [],
+    mainSelectedItemId: null,
     colorPicker: {
       colorSpace: "HSV",
       displayMode: "0-255",
@@ -207,7 +211,15 @@ const _useStore = create<Store>()((set, get) => {
       }),
     setFps: (fps) => syncSet({ fps }),
     setTimelineLayers: (layers) => syncSet({ timelineLayers: layers }),
-    setSelectedItemId: (id: string | null) => syncSet({ selectedItemId: id }),
+    setSelectedItemId: (id: string | null) =>
+      syncSet({ selectedItemId: id ? [id] : [], mainSelectedItemId: id }),
+    addSelectedItemId: (id: string) => {
+      const current = get();
+      syncSet({
+        selectedItemId: [...current.selectedItemId, id],
+        mainSelectedItemId: current.mainSelectedItemId ?? id,
+      });
+    },
     setColorPicker: (colorPicker: Store["colorPicker"]) =>
       syncSet({ colorPicker }),
   };
@@ -285,6 +297,7 @@ function getSyncableState(): SyncableState {
     timelineLayers: s.timelineLayers,
     frameState: s.frameState,
     selectedItemId: s.selectedItemId,
+    mainSelectedItemId: s.mainSelectedItemId,
     colorPicker: s.colorPicker,
   };
 }

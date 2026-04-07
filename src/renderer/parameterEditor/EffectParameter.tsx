@@ -178,10 +178,10 @@ const SortableEffectItem = ({
 };
 
 const EffectParameter = () => {
-  const selectedItemId = useStore((state) => state.selectedItemId);
+  const selectedItemId = useStore((state) => state.mainSelectedItemId);
   const setTimelineLayers = useStore((state) => state.setTimelineLayers);
   const selectedItem = useStore((state) =>
-    state.timelineLayers.find((layer) => layer.id === selectedItemId),
+    state.timelineLayers.find((layer) => layer.id === state.mainSelectedItemId),
   );
 
   const handleValuesChange = async (
