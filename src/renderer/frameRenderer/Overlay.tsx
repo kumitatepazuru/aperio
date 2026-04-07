@@ -262,7 +262,7 @@ const Overlay = () => {
   };
 
   return (
-    <div ref={overlayRef} className="absolute inset-0" onClick={clearSelection}>
+    <div ref={overlayRef} className="absolute inset-0" onMouseDown={clearSelection}>
       {layers.map((layer) => {
         const result = frameResults[layer.id];
         if (!result) return;

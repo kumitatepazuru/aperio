@@ -81,10 +81,12 @@ const SortableEffectItem = ({
       } else {
         setStructures(struct);
         // 追加のパラメータを初期化する
-        setValues((prevValues) => ({
+        const newValuesWithInit = {
           ...initValues(struct, newValues),
-          ...prevValues,
-        }));
+          ...newValues,
+        };
+        setValues(newValuesWithInit);
+        await onValuesChange(index, newValuesWithInit);
       }
     } catch (error) {
       console.error(error);

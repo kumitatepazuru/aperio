@@ -16,6 +16,17 @@ const ObjectParameter = () => {
     state.timelineLayers.find((layer) => layer.id === state.mainSelectedItemId),
   );
 
+  const updateTimeline = async (newValues: Record<string, ConfigableValue>) => {
+    const timeline = (await getStoreState()).timelineLayers;
+    setTimelineLayers(
+      timeline.map((layer) =>
+        layer.id === selectedItemId
+          ? { ...layer, obj: { ...layer.obj, parameters: newValues } }
+          : layer,
+      ),
+    );
+  };
+
   useEffect(() => {
     if (!selectedItem) {
       setStructures([]);
@@ -51,21 +62,16 @@ const ObjectParameter = () => {
           structures.map((p) => p.id),
         )
       ) {
-        const timeline = (await getStoreState()).timelineLayers;
-        setTimelineLayers(
-          timeline.map((layer) =>
-            layer.id === selectedItemId
-              ? { ...layer, obj: { ...layer.obj, parameters: newValues } }
-              : layer,
-          ),
-        );
+        updateTimeline(newValues);
       } else {
         setStructures(struct);
         // 追加のパラメータを初期化する
-        setValues((prevValues) => ({
+        const newValuesWithInit = {
           ...initValues(struct, newValues),
-          ...prevValues,
-        }));
+          ...newValues,
+        };
+        setValues(newValuesWithInit);
+        await updateTimeline(newValuesWithInit);
       }
     } catch (error) {
       console.error("Error fetching parameter structure:", error);
