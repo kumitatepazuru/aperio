@@ -1,6 +1,14 @@
 from .. import PluginManager
+from .generator_base import EffectGeneratorBase as EffectGeneratorBase, ObjectGeneratorBase as ObjectGeneratorBase
 from _typeshed import Incomplete
+from dataclasses import dataclass
 from gpu_util import PyImageGenerator as PyImageGenerator
+
+@dataclass
+class PluginNameInfo:
+    base_plugin: dict[str, str]
+    object_plugins: dict[str, str]
+    effect_plugins: dict[str, str]
 
 class PluginBase:
     """

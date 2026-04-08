@@ -3,11 +3,11 @@ import hashlib
 import math
 import os.path
 import shutil
-from concurrent.futures.thread import ThreadPoolExecutor
 import struct
-import time
 from typing import Callable
 import gpu_util
+# TODO: stubを生成するように
+import logger # type: ignore
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
@@ -30,11 +30,9 @@ except ImportError as e:
                       "\n3. For Linux: Make sure that libpython is preloaded as RTLD_GLOBAL correctly. In linux, libpython must be able to be seen globally because of policy of manylinux."
                       "\n  Try add the environment LD_PRELOAD to specify the path to libpython3.x.so explicitly.") from e
 
-from .plugin_base import MainPluginBase, SubPluginBase
-from .plugin_base.generator_base import FilterGeneratorBase, GeneratorFuncReturn, GeneratorWgslReturn, ObjectGeneratorBase
-from .types.frame_structure import LayerStructure
-
-executor = ThreadPoolExecutor()
+from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
+from .plugin_base.generator_base import *
+from .types.frame_structure import LayerResult, LayerStructure, RequestStructureParameter
 
 
 class PluginManager:
@@ -45,7 +43,7 @@ class PluginManager:
     __plugins: dict[str, type[MainPluginBase]] = {}  # 登録されたプラグインのクラスを保持する辞書
     plugins: dict[str, MainPluginBase] = {}  # 登録されたプラグインのインスタンスを保持する辞書
     object_plugins: dict[str, ObjectGeneratorBase] = {}
-    filter_plugins: dict[str, FilterGeneratorBase] = {}
+    effect_plugins: dict[str, EffectGeneratorBase] = {}
 
     def __init__(self, data_dir: str, plugin_dir_name="plugins"):
         """
@@ -70,17 +68,20 @@ class PluginManager:
         # openCLが使えるか確認して、有効化
         if cv2.ocl.haveOpenCL():
             cv2.ocl.setUseOpenCL(True)
-            print(f"OpenCV: OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
+            logger.info(f"OpenCV: OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
         else:
-            print("OpenCV: OpenCL is not available.")
+            logger.info("OpenCV: OpenCL is not available.")
 
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
         self.generator = gpu_util.PyImageGenerator()
 
-        with open(os.path.join(os.path.dirname(__file__), "shaders", "compose.wgsl"), "r") as f:
+        shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
+        with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:
             sampler = gpu_util.PySamplerOptions("clamp_to_edge", "linear")
             self.compose_wgsl = gpu_util.PyCompiledWgsl("compose_layer", f.read(), self.generator, sampler)
+        with open(os.path.join(shader_dir, "fill_black.wgsl"), "r") as f:
+            self.fill_black_wgsl = gpu_util.PyCompiledWgsl("fill_black", f.read(), self.generator, None)
 
         dirs = glob.glob(f"{self.data_dir}/{self.plugin_dir_name}/*")
 
@@ -89,9 +90,13 @@ class PluginManager:
         for dir in dirs:
             plugin_name = os.path.basename(dir)
             if not os.path.exists(f"{dir}/__init__.py"):
-                print(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
-            __import__(f"{self.plugin_dir_name}.{plugin_name}")
+
+            try:
+                __import__(f"{self.plugin_dir_name}.{plugin_name}")
+            except Exception as e:
+                logger.error(f"Failed to import plugin {plugin_name}: {e}")
 
         self.__load_plugins()
 
@@ -103,21 +108,21 @@ class PluginManager:
 
         for name, plugin_cls in self.__plugins.items():
             if name in self.plugins:
-                print(f"INFO: Plugin {name} is already registered. Skipping.")
+                logger.info(f"Plugin {name} is already registered. Skipping.")
                 continue  # 既に登録されている場合はスキップ
 
             try:
                 plugin_instance = plugin_cls(self, self.generator)  # PluginManagerのインスタンスを渡す
                 self.plugins[name] = plugin_instance
-                print(f"Registered plugin: {plugin_instance.name}")
+                logger.info(f"Registered plugin: {plugin_instance.name}")
             except Exception as e:
-                print(f"Failed to load plugin {name}: {e}")
+                logger.error(f"Failed to load plugin {name}: {e}")
 
-            print("Loaded Plugins ---")
-            print("\n".join(
+            logger.info("Loaded Plugins ---")
+            logger.info("\n".join(
                 list(map(lambda n: f"{n[0]}(Object)- {n[1].get_display_info()}", self.object_plugins.items()))))
-            print("\n".join(
-                list(map(lambda n: f"{n[0]}(Filter)- {n[1].get_display_info()}", self.filter_plugins.items()))))
+            logger.info("\n".join(
+                list(map(lambda n: f"{n[0]}(Effect)- {n[1].get_display_info()}", self.effect_plugins.items()))))
 
     @classmethod
     def plugin(cls, func: type[MainPluginBase]) -> Callable:
@@ -141,20 +146,25 @@ class PluginManager:
 
         return wrapper
 
-    def register_sub_plugin(self, plugin: SubPluginBase) -> None:
+    def register_sub_plugin(self, master: MainPluginBase, plugin: SubPluginBase) -> None:
         """
-        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはFilterGeneratorBaseのいずれかを継承している必要がある。
+        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはEffectGeneratorBaseのいずれかを継承している必要がある。
 
         Args:
+            master (MainPluginBase): マスタープラグインのインスタンス
             plugin (SubPluginBase): 登録するサブプラグインのインスタンス
         """
 
+        master_name = master.name
+        if not plugin.name.startswith(master_name + "."):
+            raise ValueError(f"Sub plugin name {plugin.name} should start with '{master_name}.'. Please rename the plugin or check the master plugin name.")
+
         if isinstance(plugin, ObjectGeneratorBase):
             self.object_plugins[plugin.name] = plugin
-        elif isinstance(plugin, FilterGeneratorBase):
-            self.filter_plugins[plugin.name] = plugin
+        elif isinstance(plugin, EffectGeneratorBase):
+            self.effect_plugins[plugin.name] = plugin
         else:
-            raise TypeError("The plugin must be a subclass of ObjectGeneratorBase or FilterGeneratorBase")
+            raise TypeError("The plugin must be a subclass of ObjectGeneratorBase or EffectGeneratorBase")
 
     def check_plugin_exists(self, plugin_name: str) -> bool:
         """
@@ -182,16 +192,16 @@ class PluginManager:
         # TODO: URLからのダウンロードや、zipファイルの解凍などもここで行う
 
         if not os.path.exists(plugin_dir) or not os.path.isdir(plugin_dir):
-            print(f"Plugin directory {plugin_dir} does not exist.")
+            logger.error(f"Plugin directory {plugin_dir} does not exist.")
             return False
 
         plugin_name = os.path.basename(plugin_dir)
         if plugin_name in self.plugins:
             # 既に登録されている場合は__init__.pyのハッシュ値を比較して、異なる場合のみ更新する
             # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
-            print(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
+            logger.info(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
             if not os.path.exists(f"{plugin_dir}/__init__.py"):
-                print(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 return False
 
             with open(f"{plugin_dir}/__init__.py", "rb") as f:
@@ -199,23 +209,94 @@ class PluginManager:
                 with open(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py", "rb") as ef:
                     existing_hash = hashlib.sha256(ef.read()).hexdigest()
                     if new_hash == existing_hash:
-                        print(f"Plugin {plugin_name} is completely same. Skipping.")
+                        logger.info(f"Plugin {plugin_name} is completely same. Skipping.")
                         return True
 
         shutil.copytree(plugin_dir, f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}", dirs_exist_ok=True)
 
         # プラグインを再読み込みして登録する
         if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
-            print(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
+            logger.warn(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
             return False
-        __import__(f"{self.plugin_dir_name}.{plugin_name}")
-        print(f"Plugin {plugin_name} has been added/updated.")
+        try:
+            __import__(f"{self.plugin_dir_name}.{plugin_name}")
+        except Exception as e:
+            logger.error(f"Failed to import plugin {plugin_name}: {e}")
+            return False
+        
+        logger.info(f"Plugin {plugin_name} has been added/updated.")
 
         self.__load_plugins()
         return True
+    
+    def get_plugin_names(self) -> PluginNameInfo:
+        """
+        登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
+
+        Returns:
+            PluginNameInfo: 登録されているプラグインのnameとdisplay_nameの対応表
+        """
+        result = PluginNameInfo(
+            base_plugin={plugin.name: plugin.display_name for plugin in self.plugins.values()},
+            object_plugins={name: plugin.display_name for name, plugin in self.object_plugins.items()},
+            effect_plugins={name: plugin.display_name for name, plugin in self.effect_plugins.items()}
+        )
+        
+        return result
+    
+    def request_new_object_generator(self, plugin_name: str, args: dict) -> NewObjectGeneratorReturn:
+        """
+        指定されたオブジェクトジェネレーターを新規に生成するための情報を取得するメソッド。
+
+        Args:
+            plugin_name (str): 生成するオブジェクトジェネレーターの名前
+            args (dict): オブジェクトジェネレーターの初期化に必要な任意の引数群
+
+        Returns:
+            NewObjectGeneratorReturn: 新しく生成されたオブジェクトジェネレーターの情報
+        """
+        if plugin_name in self.object_plugins:
+            return self.object_plugins[plugin_name].on_new(args)
+        else:
+            raise ValueError(f"Plugin {plugin_name} is not registered as an object plugin")
+
+    def request_new_effect_generator(self, plugin_name: str) -> NewEffectGeneratorReturn:
+        """
+        指定されたエフェクトジェネレーターを新規に生成するための情報を取得するメソッド。
+
+        Args:
+            plugin_name (str): 生成するエフェクトジェネレーターの名前
+
+        Returns:
+            NewEffectGeneratorReturn: 新しく生成されたエフェクトジェネレーターの情報
+        """
+
+        if plugin_name in self.effect_plugins:
+            return self.effect_plugins[plugin_name].on_new()
+        else:
+            raise ValueError(f"Plugin {plugin_name} is not registered as an effect plugin")
+
+    def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]:
+        """
+        指定されたジェネレーターのパラメーター構造を改めてリクエストするメソッド。
+
+        Args:
+            plugin_name (str): パラメーター構造をリクエストするジェネレーターの名前
+            params (dict): 現在のジェネレーターのパラメータ群。古いRequestStructureParameterを基に構成されている。
+
+        Returns:
+            list[RequestStructureParameter]: ジェネレーターのパラメーター構造
+        """
+
+        if plugin_name in self.object_plugins:
+            return self.object_plugins[plugin_name].on_request_structure(params)
+        elif plugin_name in self.effect_plugins:
+            return self.effect_plugins[plugin_name].on_request_structure(params)
+        else:
+            raise ValueError(f"Plugin {plugin_name} is not registered as object or effect plugin")
 
     def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int) -> gpu_util.PyImageGenerateBuilder:
+                             width: int, height: int) -> tuple[gpu_util.PyImageGenerateBuilder, dict[str, LayerResult]]:
         """
         指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
 
@@ -227,6 +308,9 @@ class PluginManager:
             frame_structure (list[LayerStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
+
+        Returns:
+            tuple[gpu_util.PyImageGenerateBuilder, dict[str, LayerResult]]: フレーム生成のビルダーオブジェクトとフレーム結果の辞書
         """
         try:
             if not isinstance(frame_structure, list):
@@ -238,19 +322,28 @@ class PluginManager:
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
             if len(frame_structure) == 0:
-                raise ValueError("frame_structure must contain at least one layer")
+                # 空のフレーム構造の場合はfill_black.wgslを適用
+                layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.fill_black_wgsl, None, width, height)
+                return layer_builder, {}
+
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
             params = []
+            frame_results: dict[str, LayerResult] = {}
             for layer in frame_structure:
                 layer_builder = gpu_util.PyImageGenerateBuilder()
                 obj_name = layer["obj"]["name"]
+                layer_id = layer["id"]
 
                 if obj_name not in self.object_plugins:
                     raise ValueError(f"Object plugin {obj_name} is not registered")
 
                 obj_plugin = self.object_plugins[obj_name]
                 layer_frame = obj_plugin.generate(frame_number, layer["obj"]["parameters"], width, height)
+                frame_results[layer_id] = LayerResult(
+                    width=layer_frame.output_width,
+                    height=layer_frame.output_height
+                )
                 if isinstance(layer_frame, GeneratorWgslReturn):
                     layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                      layer_frame.output_width, layer_frame.output_height)
@@ -260,11 +353,15 @@ class PluginManager:
 
                 # エフェクト適用
                 for effect in layer["effects"]:
-                    if effect["name"] not in self.filter_plugins:
-                        raise ValueError(f"Filter plugin {effect['name']} is not registered")
+                    if effect["name"] not in self.effect_plugins:
+                        raise ValueError(f"Effect plugin {effect['name']} is not registered")
 
-                    filter_plugin = self.filter_plugins[effect["name"]]
-                    layer_frame = filter_plugin.generate(frame_number, effect["parameters"], width, height)
+                    effect_plugin = self.effect_plugins[effect["name"]]
+                    layer_frame = effect_plugin.generate(frame_number, effect["parameters"], layer_frame.output_width, layer_frame.output_height)
+                    frame_results[layer_id] = LayerResult(
+                        width=layer_frame.output_width, 
+                        height=layer_frame.output_height
+                    )
                     if isinstance(layer_frame, GeneratorWgslReturn):
                         layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                          layer_frame.output_width, layer_frame.output_height)
@@ -279,28 +376,28 @@ class PluginManager:
                 rotation_rad = math.radians(layer["rotation"])
                 cos_theta = math.cos(rotation_rad)
                 sin_theta = math.sin(rotation_rad)
-                alpha = layer["alpha"]
+                alpha = layer["alpha"] / 100  # 0-100 -> 0-1
                 rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
 
                 fmt = "<iiff"  # x, y, scale, alpha
                 fmt += "4f"  # rotation_matrix (2x2 floats)
-                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"], alpha, *rotation_matrix)
+                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"] / 100, alpha, *rotation_matrix)
                 params.append(params_bytes)
 
             # builderを作成
             builder = gpu_util.PyImageGenerateBuilder() \
                 .add_parallel_wgsl(layer_builders) \
-                .add_wgsl(self.compose_wgsl, b"".join(params), width, height)
+                .add_wgsl(self.compose_wgsl, b"".join(params), width, height) # TODO: render Passを使っての高速化と簡潔化を試みる
 
         except Exception as e:
             import traceback
-            traceback.print_exc()
-            raise RuntimeError(f"Failed to build frame pipeline: {e}")  
+            logger.error(traceback.format_exc())
+            raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
-        return builder
+        return builder, frame_results
     
     def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, buffer_ptr: int) -> None:
+                             width: int, height: int, buffer_ptr: int) -> dict[str, LayerResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
@@ -310,13 +407,19 @@ class PluginManager:
             width (int): フレームの幅
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
-        """
-        builder = self._make_frame(frame_number, frame_structure, width, height)
 
-        self.generator.generate_buf(builder, buffer_ptr)
+        Returns:
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
+        """
+        builder, results = self._make_frame(frame_number, frame_structure, width, height)
+
+        if builder is not None:
+            self.generator.generate_buf(builder, buffer_ptr)
+
+        return results
 
     def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> None:
+                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, LayerResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -327,38 +430,13 @@ class PluginManager:
             height (int): フレームの高さ
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
-        """
-        builder = self._make_frame(frame_number, frame_structure, width, height)
-
-        self.generator.generate_shared_texture(builder, texture_handle, format)
-
-
-    def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
-        """
-        指定された数だけフレームをmultithreadingで生成するメソッド。make_frameと同じ引数を受け取り、amountで指定された数だけフレームを生成してリストで返す。
-
-        Args:
-            start_frame_number (int): 生成を開始するフレームの番号
-            amount (int): 生成するフレームの数
-            *args: make_frameに渡す引数
-            **kwargs: make_frameに渡すキーワード引数
-
+        
         Returns:
-            list[np.ndarray]: 生成されたフレームのリスト
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
         """
-        try:
-            if not isinstance(amount, int) or amount <= 0:
-                raise ValueError("amount must be a positive integer")
+        builder, results = self._make_frame(frame_number, frame_structure, width, height)
 
-            frames = []
-            futures = [executor.submit(self.make_frame_buf, start_frame_number + i, *args, **kwargs)
-                       for i in range(amount)]
-            for future in futures:
-                frames.append(future.result())
+        if builder is not None:
+            self.generator.generate_shared_texture(builder, texture_handle, format)
 
-
-            return frames
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            raise RuntimeError(f"Failed to make frames: {e}")
+        return results

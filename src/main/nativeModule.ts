@@ -9,19 +9,26 @@ import {
 } from "electron";
 import {
   Dirs,
-  FrameLayerStructure,
+  LayerStructure,
   NodeOffscreenSharedTextureInfo,
-  PlManager,
+  AperioManager,
+  AperioConfigManager,
+  AperioConfig,
 } from "native";
 
-const TIMEOUT_MS = 1000;
+const TIMEOUT_MS = 5000;
 
 export class NativeModule {
-  plManager: PlManager;
+  configManager: AperioConfigManager;
+  aperioManager: AperioManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
-  eventStack: ((texture: OffscreenSharedTexture) => Promise<void>)[] = [];
+  eventStack: ((texture: OffscreenSharedTexture) => Promise<void>) | null =
+    null;
   paintTimeout: NodeJS.Timeout | null = null;
+  onEventStackChanged?: (length: number) => void;
+  private _sharedBuf: ArrayBuffer | null = null;
+  private _sharedBufSize = 0;
 
   constructor(dirs: Dirs) {
     const { port1, port2 } = new MessageChannelMain();
@@ -36,17 +43,17 @@ export class NativeModule {
     console.log("Plugin Manager Path:", dirs.pluginManagerDir);
     console.log("Default Plugins Path:", dirs.defaultPluginsDir);
     console.log("Dist Path:", dirs.distDir);
-    this.plManager = new PlManager(dirs);
+    this.configManager = new AperioConfigManager(dirs);
+    this.aperioManager = new AperioManager(dirs, this.configManager);
   }
 
   setOsrWebContents(wc: Electron.WebContents) {
     wc.on("paint", async (e: WebContentsPaintEventParams) => {
+      const cb = this.eventStack;
+      this.eventStack = null;
       try {
-        if (this.eventStack.length > 0 && e.texture) {
-          if (this.eventStack.length > 100) {
-            console.warn("Warning: eventStack length exceeded 100: " + this.eventStack.length);
-          }
-          const cb = this.eventStack.shift();
+        if (cb && e.texture) {
+          this.notifyEventStackChanged();
           await cb?.(e.texture);
         }
       } finally {
@@ -60,29 +67,40 @@ export class NativeModule {
     webContents.postMessage("frame-port-main", null, [this.p2]);
   }
 
-  getFrameBuf(count: number, frameStruct: FrameLayerStructure[]) {
-    // ArrayBufferをここで作ってgetFrameに参照渡しする
-    const buffer = new ArrayBuffer(1920 * 1080 * 4); // 1920 x 1080 x 4 bytes for RGBA
-    const data = new Uint8Array(buffer);
+  getFrameBuf(
+    count: number,
+    width: number,
+    height: number,
+    frameStruct: LayerStructure[],
+  ) {
+    const size = width * height * 4;
+    if (!this._sharedBuf || this._sharedBufSize !== size) {
+      console.log("Allocating new ArrayBuffer of size:", size);
+      this._sharedBuf = new ArrayBuffer(size);
+      this._sharedBufSize = size;
+    }
+    const data = new Uint8Array(this._sharedBuf);
 
-    this.plManager.getFrameBuf(data, count, frameStruct);
-    this.p1.postMessage(buffer);
+    const frameResults = this.aperioManager.getFrameBuf(data, count, width, height, frameStruct);
+    this.p1.postMessage({frame: this._sharedBuf, frameResults});
   }
 
-  async getFrameSharedTexture(
+  getFrameSharedTexture(
     count: number,
-    frameStruct: FrameLayerStructure[],
-    frame: Electron.WebContents
+    frameStruct: LayerStructure[],
+    frame: Electron.WebContents,
   ) {
-    this.eventStack.push(async (baseTexture) => {
+    // if (this.eventStack) return; // すでに処理中の場合は無視
+    this.eventStack = async (baseTexture) => {
       const textureInfo = baseTexture.textureInfo;
       if (!textureInfo) {
         throw new Error("Failed to get base shared texture");
       }
-      this.plManager.getFrameTexture(
+      const frameResults = this.aperioManager.getFrameTexture(
         count,
+        this.configManager.config.texPixelFormat,
         frameStruct,
-        textureInfo as NodeOffscreenSharedTextureInfo
+        textureInfo as NodeOffscreenSharedTextureInfo,
       );
 
       const imported = sharedTexture.importSharedTexture({
@@ -91,10 +109,11 @@ export class NativeModule {
       await sharedTexture.sendSharedTexture({
         frame: frame.mainFrame,
         importedSharedTexture: imported,
-      });
+      }, frameResults);
 
       imported.release();
-    });
+    };
+    this.notifyEventStackChanged();
 
     this.schedulePaintWatchdog();
   }
@@ -105,14 +124,14 @@ export class NativeModule {
       this.paintTimeout = null;
     }
 
-    if (this.eventStack.length === 0) {
+    if (!this.eventStack) {
       return;
     }
 
     this.paintTimeout = setTimeout(() => {
-      if (this.eventStack.length > 0) {
+      if (this.eventStack) {
         console.error(
-          `Pending paint events not fulfilled for ${TIMEOUT_MS}ms while eventStack is non-empty.`
+          `Pending paint events not fulfilled for ${TIMEOUT_MS}ms while eventStack is non-empty.`,
         );
         const dialogResult = dialog.showMessageBoxSync({
           type: "error",
@@ -126,9 +145,9 @@ export class NativeModule {
         });
 
         if (dialogResult === 0) {
-          const config = this.plManager.configManager.config;
+          const config = this.configManager.config;
           config.fastPreview = false;
-          this.plManager.configManager.setConfig(config);
+          this.configManager.setConfig(config);
           app.relaunch();
           app.exit(0);
         } else {
@@ -136,5 +155,21 @@ export class NativeModule {
         }
       }
     }, TIMEOUT_MS);
+  }
+
+  getEventStack() {
+    return this.eventStack ? performance.now() : 0;
+  }
+
+  setEventStackListener(listener: (length: number) => void) {
+    this.onEventStackChanged = listener;
+  }
+
+  private notifyEventStackChanged() {
+    this.onEventStackChanged?.(this.eventStack ? performance.now() : 0);
+  }
+
+  saveConfig(config: Partial<AperioConfig>) {
+    this.configManager.setConfig({ ...this.configManager.config, ...config });
   }
 }

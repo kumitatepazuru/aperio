@@ -3,6 +3,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/renderer/*"],
+      "@shared/*": ["src/shared/*"],
       "native": ["dist/native/index.d.ts"]
     },
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
@@ -29,5 +30,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src/renderer", "src/osr"]
+  "include": ["src/renderer", "src/osr", "src/dialog", "src/shared"]
 }

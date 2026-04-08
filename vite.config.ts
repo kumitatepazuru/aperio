@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         main: resolve(root, "renderer", "index.html"),
         osr: resolve(root, "osr", "index.html"),
+        dialog: resolve(root, "dialog", "index.html"),
       },
     },
   },
@@ -31,6 +32,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "src/renderer"),
+      "@shared": resolve(__dirname, "src/shared"),
       native: resolve(__dirname, "dist/native/index.d.ts"),
     },
   },

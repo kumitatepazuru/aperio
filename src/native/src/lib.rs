@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+
 use crate::{
-    app_config::{AppConfig, AppConfigManager},
+    app_config::{AperioConfig, AperioConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
-    structs::{Dirs, FrameLayerStructure},
-    util::get_local_data_dir,
+    structs::{
+        Dirs, LayerResult, LayerStructure, NewEffectGeneratorReturn, NewObjectGeneratorReturn,
+        PluginNameInfo, RequestStructureParameter,
+    },
+    util::{get_local_data_dir, json_to_pyobject},
 };
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
@@ -37,7 +42,7 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
     }
 }
 
-fn _initialize(dirs: &Dirs, config: &AppConfig) -> anyhow::Result<Py<PyAny>> {
+fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> {
     let default_version = &config.python.default_version;
     let local_data_dir = get_local_data_dir(dirs)?;
     let python_path = local_data_dir.join("python"); // pythonがある
@@ -94,17 +99,16 @@ fn _initialize(dirs: &Dirs, config: &AppConfig) -> anyhow::Result<Py<PyAny>> {
 }
 
 #[napi]
-pub struct PlManager {
+pub struct AperioManager {
     plmanager: Py<PyAny>,
-    config_manager: AppConfigManager,
 }
 
 // 一部IDEでanalyserが誤ってエラーを出すため注意
 // 対処方法は(RustRoverの場合)現状ない模様
 #[napi]
-impl PlManager {
+impl AperioManager {
     #[napi(constructor)]
-    pub fn new(dirs: Dirs) -> napi::Result<Self> {
+    pub fn new(dirs: Dirs, config_manager: &AperioConfigManager) -> napi::Result<Self> {
         match env_logger::try_init() {
             Ok(()) => {}
             Err(e) => {
@@ -112,21 +116,92 @@ impl PlManager {
                 debug!("env_logger initialization skipped: {}", e);
             }
         }
-        let config_manager = AppConfigManager::new(&dirs)?;
         let config = config_manager.get_config();
         let plmanager = _initialize(&dirs, &config).map_err(|e| {
             napi::Error::from_reason(format!("Failed to initialize Python environment: {:?}", e))
         })?;
 
-        Ok(Self {
-            plmanager,
-            config_manager,
-        })
+        Ok(Self { plmanager })
     }
 
-    #[napi(getter)]
-    pub fn config_manager(&self) -> AppConfigManager {
-        self.config_manager.clone()
+    #[napi]
+    pub fn get_plugin_names(&self) -> napi::Result<PluginNameInfo> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<PluginNameInfo> {
+            let pl_manager = pl_manager.bind(py);
+            let names = pl_manager.call_method0("get_plugin_names")?;
+            Ok(names.extract()?)
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get plugin names: {:?}", e)))?;
+
+        Ok(result)
+    }
+
+    #[napi]
+    pub fn request_new_object_generator(
+        &self,
+        plugin_name: String,
+        args: serde_json::Value,
+    ) -> napi::Result<NewObjectGeneratorReturn> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<NewObjectGeneratorReturn> {
+            let pl_manager = pl_manager.bind(py);
+            let gen_info = pl_manager.call_method1(
+                "request_new_object_generator",
+                (plugin_name, json_to_pyobject(py, &args)?),
+            )?;
+            Ok(gen_info.extract()?)
+        })
+        .map_err(|e| {
+            napi::Error::from_reason(format!("Failed to request new object generator: {:?}", e))
+        })?;
+
+        Ok(result)
+    }
+
+    #[napi]
+    pub fn request_new_effect_generator(
+        &self,
+        plugin_name: String,
+    ) -> napi::Result<NewEffectGeneratorReturn> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<NewEffectGeneratorReturn> {
+            let pl_manager = pl_manager.bind(py);
+            let gen_info =
+                pl_manager.call_method1("request_new_effect_generator", (plugin_name,))?;
+            Ok(gen_info.extract()?)
+        })
+        .map_err(|e| {
+            napi::Error::from_reason(format!("Failed to request new effect generator: {:?}", e))
+        })?;
+
+        Ok(result)
+    }
+
+    #[napi]
+    pub fn request_parameter_struct(
+        &self,
+        plugin_name: String,
+        params: serde_json::Value,
+    ) -> napi::Result<Vec<RequestStructureParameter>> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<Vec<RequestStructureParameter>> {
+            let pl_manager = pl_manager.bind(py);
+            let struct_info = pl_manager.call_method1(
+                "request_parameter_struct",
+                (plugin_name, json_to_pyobject(py, &params)?),
+            )?;
+            Ok(struct_info.extract()?)
+        })
+        .map_err(|e| {
+            napi::Error::from_reason(format!("Failed to get parameter struct: {:?}", e))
+        })?;
+
+        Ok(result)
     }
 
     #[napi]
@@ -134,11 +209,13 @@ impl PlManager {
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
         count: i32,
-        frame_struct: Vec<FrameLayerStructure>,
-    ) -> napi::Result<()> {
-        let pl_manager = self.plmanager.as_ref();
+        width: i32,
+        height: i32,
+        frame_struct: Vec<LayerStructure>,
+    ) -> napi::Result<HashMap<String, LayerResult>> {
+        let pl_manager = &self.plmanager;
 
-        Python::attach(|py| -> PyResult<()> {
+        let output = Python::attach(|py| -> PyResult<HashMap<String, LayerResult>> {
             let pl_manager = pl_manager.bind(py);
             let frame_struct = frame_struct.into_pyobject(py)?;
 
@@ -148,26 +225,28 @@ impl PlManager {
             };
 
             let func = pl_manager.getattr("make_frame_buf")?;
-            func.call1((count, frame_struct, 1920, 1080, buffer_ptr))?;
+            let results: HashMap<String, LayerResult> = func
+                .call1((count, frame_struct, width, height, buffer_ptr))?
+                .extract()?;
 
-            Ok(())
+            Ok(results)
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
-        Ok(())
+        Ok(output)
     }
 
     #[napi]
     pub fn get_frame_texture(
         &self,
         count: i32,
-        frame_struct: Vec<FrameLayerStructure>,
+        format: NodeSharedTextureFormat,
+        frame_struct: Vec<LayerStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
-    ) -> napi::Result<()> {
-        let pl_manager = self.plmanager.as_ref();
+    ) -> napi::Result<HashMap<String, LayerResult>> {
+        let pl_manager = &self.plmanager;
 
         let content_size = base_texture.coded_size;
-        let format = self.config_manager.get_config().tex_pixel_format;
         // formatとbase_texture.pixel_formatが一致してなければエラー
         if (format == NodeSharedTextureFormat::Rgba16Float
             && base_texture.pixel_format != "rgbaf16")
@@ -180,7 +259,7 @@ impl PlManager {
             )));
         }
 
-        let output = Python::attach(|py| -> PyResult<()> {
+        let output = Python::attach(|py| -> PyResult<HashMap<String, LayerResult>> {
             let pl_manager = pl_manager.bind(py);
             let frame_struct = frame_struct.into_pyobject(py)?;
             let base_texture: SharedTextureHandle = base_texture.handle.into();
@@ -188,16 +267,18 @@ impl PlManager {
             let format: SharedTextureFormat = format.into();
 
             let func = pl_manager.getattr("make_frame_shared_texture")?;
-            func.call1((
-                count,
-                frame_struct,
-                content_size.width,
-                content_size.height,
-                base_texture,
-                format,
-            ))?;
+            let results: HashMap<String, LayerResult> = func
+                .call1((
+                    count,
+                    frame_struct,
+                    content_size.width,
+                    content_size.height,
+                    base_texture,
+                    format,
+                ))?
+                .extract()?;
 
-            Ok(())
+            Ok(results)
         })
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 

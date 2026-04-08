@@ -1,7 +1,7 @@
 // 各レイヤーのメタ情報を格納する構造体
 struct LayerParams {
-  x: i32,     // レイヤーの左上のx座標
-  y: i32,     // レイヤーの左上のy座標
+  x: i32,     // レイヤーの中心のx座標
+  y: i32,     // レイヤーの中心のy座標
   scale: f32,  // レイヤーの拡大・縮小率
   alpha: f32,  // レイヤーの透明度 (0.0〜1.0)
   rotation_matrix: mat2x2<f32>, // レイヤーの回転行列
@@ -30,8 +30,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     return;
   }
 
-  // このピクセルの最終的な色。初期値は透明な黒 (背景)
-  var final_color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+  // このピクセルの最終的な色。初期値は黒 (背景)
+  var final_color = vec4<f32>(0.0, 0.0, 0.0, 255.0);
 
   let num_layers = arrayLength(&layer_params_array);
   
@@ -45,15 +45,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     // 出力ピクセル座標から、レイヤーテクスチャ上の対応する座標を計算
-    let output_center = vec2<f32>(f32(params.x), f32(params.y));
-    let relative_coord = vec2<f32>(output_coord) - output_center;
-    
-    // 事前に計算された回転行列を適用
+    // params.x/y はレイヤー中心の座標 (出力テクスチャの中央が原点)
+    let output_center = vec2<f32>(output_dims) * 0.5;
+    let layer_center_out = output_center + vec2<f32>(f32(params.x), f32(params.y));
+    let relative_coord = vec2<f32>(output_coord) - layer_center_out;
+
+    // 事前に計算された回転行列を適用 (中心基準)
     let rotated_coord = params.rotation_matrix * relative_coord;
 
-    
-    // スケールを適用
-    let src_coord_pixel = rotated_coord / params.scale;
+    // スケールを適用し、テクスチャ中央を原点とした座標をピクセル座標に変換
+    let src_coord_pixel = rotated_coord / params.scale + layer_dims_f * 0.5;
 
     if (src_coord_pixel.x >= 0.0 && src_coord_pixel.x < layer_dims_f.x &&
         src_coord_pixel.y >= 0.0 && src_coord_pixel.y < layer_dims_f.y) {

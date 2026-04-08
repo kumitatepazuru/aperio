@@ -1,10 +1,9 @@
-from .plugin_base import MainPluginBase, SubPluginBase
-from .plugin_base.generator_base import FilterGeneratorBase, ObjectGeneratorBase
-from .types.frame_structure import LayerStructure as LayerStructure
+from .plugin_base.generator_base import *
+import gpu_util
+from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
+from .types.frame_structure import LayerResult, LayerStructure as LayerStructure, RequestStructureParameter as RequestStructureParameter
 from _typeshed import Incomplete
 from typing import Callable
-
-executor: Incomplete
 
 class PluginManager:
     """
@@ -12,11 +11,12 @@ class PluginManager:
     """
     plugins: dict[str, MainPluginBase]
     object_plugins: dict[str, ObjectGeneratorBase]
-    filter_plugins: dict[str, FilterGeneratorBase]
+    effect_plugins: dict[str, EffectGeneratorBase]
     data_dir: Incomplete
     plugin_dir_name: Incomplete
     generator: Incomplete
     compose_wgsl: Incomplete
+    fill_black_wgsl: Incomplete
     def __init__(self, data_dir: str, plugin_dir_name: str = 'plugins') -> None:
         '''
         フレーム生成マネージャーの初期化をする。data_dirはデータディレクトリのパス(通常はget_data_dirによるもの)、plugin_dir_nameはプラグインディレクトリの名前を指定する。
@@ -47,11 +47,12 @@ class PluginManager:
         Returns:
             Callable: 登録されたオブジェクト生成プラグインのクラス
         """
-    def register_sub_plugin(self, plugin: SubPluginBase) -> None:
+    def register_sub_plugin(self, master: MainPluginBase, plugin: SubPluginBase) -> None:
         """
-        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはFilterGeneratorBaseのいずれかを継承している必要がある。
+        サブプラグインを登録するメソッド。サブプラグインはObjectGeneratorBaseまたはEffectGeneratorBaseのいずれかを継承している必要がある。
 
         Args:
+            master (MainPluginBase): マスタープラグインのインスタンス
             plugin (SubPluginBase): 登録するサブプラグインのインスタンス
         """
     def check_plugin_exists(self, plugin_name: str) -> bool:
@@ -75,9 +76,48 @@ class PluginManager:
         Returns:
             bool: プラグインが正常に追加または更新された場合はTrue、それ以外の場合はFalse
         """
-    def make_frame(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> None:
+    def get_plugin_names(self) -> PluginNameInfo:
         """
-        指定されたフレーム構造に基づいてフレームを生成するメソッド。
+        登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
+
+        Returns:
+            PluginNameInfo: 登録されているプラグインのnameとdisplay_nameの対応表
+        """
+    def request_new_object_generator(self, plugin_name: str, args: dict) -> NewObjectGeneratorReturn:
+        """
+        指定されたオブジェクトジェネレーターを新規に生成するための情報を取得するメソッド。
+
+        Args:
+            plugin_name (str): 生成するオブジェクトジェネレーターの名前
+            args (dict): オブジェクトジェネレーターの初期化に必要な任意の引数群
+
+        Returns:
+            NewObjectGeneratorReturn: 新しく生成されたオブジェクトジェネレーターの情報
+        """
+    def request_new_effect_generator(self, plugin_name: str) -> NewEffectGeneratorReturn:
+        """
+        指定されたエフェクトジェネレーターを新規に生成するための情報を取得するメソッド。
+
+        Args:
+            plugin_name (str): 生成するエフェクトジェネレーターの名前
+
+        Returns:
+            NewEffectGeneratorReturn: 新しく生成されたエフェクトジェネレーターの情報
+        """
+    def request_parameter_struct(self, plugin_name: str, params: dict) -> list[RequestStructureParameter]:
+        """
+        指定されたジェネレーターのパラメーター構造を改めてリクエストするメソッド。
+
+        Args:
+            plugin_name (str): パラメーター構造をリクエストするジェネレーターの名前
+            params (dict): 現在のジェネレーターのパラメータ群。古いRequestStructureParameterを基に構成されている。
+
+        Returns:
+            list[RequestStructureParameter]: ジェネレーターのパラメーター構造
+        """
+    def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> dict[str, LayerResult]:
+        """
+        指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
         Args:
             frame_number (int): 生成するフレームの番号
@@ -85,17 +125,22 @@ class PluginManager:
             width (int): フレームの幅
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
-        """
-    def make_frames(self, start_frame_number: int, amount: int, *args, **kwargs):
-        """
-        指定された数だけフレームをmultithreadingで生成するメソッド。make_frameと同じ引数を受け取り、amountで指定された数だけフレームを生成してリストで返す。
-
-        Args:
-            start_frame_number (int): 生成を開始するフレームの番号
-            amount (int): 生成するフレームの数
-            *args: make_frameに渡す引数
-            **kwargs: make_frameに渡すキーワード引数
 
         Returns:
-            list[np.ndarray]: 生成されたフレームのリスト
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
+        """
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, LayerResult]:
+        """
+        指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
+
+        Args:
+            frame_number (int): 生成するフレームの番号
+            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            width (int): フレームの幅
+            height (int): フレームの高さ
+            texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
+            format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
+        
+        Returns:
+            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
         """
