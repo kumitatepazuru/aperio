@@ -14,6 +14,7 @@ import {
 } from "react";
 import useContentSize from "@/hooks/useContentSize";
 import LayerItems from "./LayerItems";
+import MultipleSelect from "./MultipleSelect";
 import TimelineBaseUI from "./TimelineBaseUI";
 import { useMergeRefs } from "@floating-ui/react";
 
@@ -248,6 +249,10 @@ const Timeline = () => {
           visibleGraduationIndices={visibleGraduationIndices}
           visibleVerticalLineIndices={visibleVerticalLineIndices}
         >
+          <MultipleSelect
+            zoomLevelPxPerFrame={ZoomLevels[zoom]}
+            layerHeight={LayerHeight}
+          />
           <LayerItems
             zoomLevelPxPerFrame={ZoomLevels[zoom]}
             graduationInterval={graduationInterval}

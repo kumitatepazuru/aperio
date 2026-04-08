@@ -43,6 +43,7 @@ type Store = {
   setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
   setSelectedItemId: (id: string | null) => void;
   addSelectedItemId: (id: string) => void;
+  setSelectedItems: (ids: string[], mainId: string | null) => void;
   setColorPicker: (colorPicker: Store["colorPicker"]) => void;
 };
 
@@ -220,6 +221,8 @@ const _useStore = create<Store>()((set, get) => {
         mainSelectedItemId: current.mainSelectedItemId ?? id,
       });
     },
+    setSelectedItems: (ids: string[], mainId: string | null) =>
+      syncSet({ selectedItemId: ids, mainSelectedItemId: mainId }),
     setColorPicker: (colorPicker: Store["colorPicker"]) =>
       syncSet({ colorPicker }),
   };
