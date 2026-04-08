@@ -146,6 +146,7 @@ const LayerItems = ({
     selectedItemId,
     setSelectedItemId,
     addSelectedItemId,
+    setSelectedItems,
   } = useStore(
     useShallow((state) => ({
       timelineLayers: state.timelineLayers,
@@ -153,6 +154,7 @@ const LayerItems = ({
       selectedItemId: state.selectedItemId,
       setSelectedItemId: state.setSelectedItemId,
       addSelectedItemId: state.addSelectedItemId,
+      setSelectedItems: state.setSelectedItems,
     })),
   );
   const dragStateRef = useRef<DragState | null>(null);
@@ -330,7 +332,17 @@ const LayerItems = ({
               : "bg-primary cursor-grab"
           }`}
           onMouseDown={(event) => {
-            if (event.shiftKey) {
+            if (event.ctrlKey) {
+              // Ctrl+クリック: 単体の選択/非選択トグル（伝播停止で親の選択クリアを防ぐ）
+              event.stopPropagation();
+              if (isSelected) {
+                const next = selectedItemId.filter((id) => id !== layer.id);
+                setSelectedItems(next, next[0] ?? null);
+              } else {
+                addSelectedItemId(layer.id);
+              }
+            } else if (event.shiftKey) {
+              event.stopPropagation();
               addSelectedItemId(layer.id);
             } else if (isSelected) {
               // 複数選択中のアイテムをドラッグ → 選択維持のまま全体を移動

@@ -36,11 +36,12 @@ const TimelineBaseUI = ({
   visibleVerticalLineIndices,
   children,
 }: TimelineBaseUIProps) => {
-  const { fps, viewerState, pause } = useStore(
+  const { fps, viewerState, pause, setSelectedItemId } = useStore(
     useShallow((state) => ({
       fps: state.fps,
       viewerState: state.viewerState,
       pause: state.pause,
+      setSelectedItemId: state.setSelectedItemId,
     })),
   );
   const [currentFrameCount, setCurrentFrameCount] = useState(0);
@@ -80,6 +81,9 @@ const TimelineBaseUI = ({
   }, [isDragging, moveLine, pause, zoom, zoomLevels]);
 
   const handleGraduationClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!event.shiftKey) {
+      setSelectedItemId(null);
+    }
     setIsDragging(true);
     moveLine(event.clientX);
   };
