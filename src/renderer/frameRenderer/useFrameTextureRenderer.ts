@@ -10,7 +10,6 @@ import {
 } from "@/hooks/useWebGPU";
 import type { ReceivedSharedTextureData } from "electron";
 import type { ItemResult } from "native";
-import { hasSameKeys } from "@/utils/hasSame";
 
 // VideoFrameをcanvasに描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -118,15 +117,7 @@ const useFrameTextureRenderer = () => {
         const videoFrame = textureInfo.importedSharedTexture.getVideoFrame();
         textureInfo.importedSharedTexture.release();
 
-        const storeState = await getStoreState();
-        const currentFrameResults = storeState.frameState.frameResults;
-        // resultsのkey IDがすべて一致してなければ更新
-        if (!hasSameKeys(frameResults, currentFrameResults)) {
-          storeState.setFrameState({
-            ...storeState.frameState,
-            frameResults,
-          });
-        }
+        (await getStoreState()).setFrameResults(frameResults);
 
         // 描画
         if (resources) {

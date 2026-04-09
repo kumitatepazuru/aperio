@@ -17,7 +17,6 @@ type ViewerState = {
 type FrameState = {
   width: number;
   height: number;
-  frameResults: Record<string, ItemResult>;
 };
 
 export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
@@ -26,6 +25,7 @@ export type DisplayMode = "0-1" | "0-255";
 type Store = {
   fps: number;
   frameState: FrameState;
+  frameResults: Record<string, ItemResult>;
   viewerState: ViewerState;
   timelineItems: TimelineItemStructure[];
   selectedItemIds: string[];
@@ -38,6 +38,7 @@ type Store = {
   play: (beginFrame: number) => void;
   pause: (beginFrame?: number) => void;
   setFrameState: (frameState: FrameState) => void;
+  setFrameResults: (frameResults: Record<string, ItemResult>) => void;
   setFrameCount: (frame: number) => void;
   setFps: (fps: number) => void;
   setTimelineItems: (items: TimelineItemStructure[]) => void;
@@ -169,8 +170,8 @@ const _useStore = create<Store>()((set, get) => {
     frameState: {
       width: 1920,
       height: 1080,
-      frameResults: {},
     },
+    frameResults: {},
     viewerState: {
       state: "paused",
       changeTime: Date.now(),
@@ -202,6 +203,7 @@ const _useStore = create<Store>()((set, get) => {
         },
       }),
     setFrameState: (frameState: FrameState) => syncSet({ frameState }),
+    setFrameResults: (frameResults) => set({ frameResults }),
     setFrameCount: (frame) =>
       syncSet({
         viewerState: {

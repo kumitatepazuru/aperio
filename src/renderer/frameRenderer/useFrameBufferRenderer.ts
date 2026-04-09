@@ -10,7 +10,6 @@ import {
   useBufferPreviewWebGPU,
   type BufferWebGPUResources,
 } from "@/hooks/useWebGPU";
-import { hasSameKeys } from "@/utils/hasSame";
 
 // RGBAバッファをテクスチャとして描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -31,10 +30,11 @@ const useFrameBufferRenderer = () => {
   });
   const animationFrameReserve = useRef<number | null>(null);
   const previousFrameCount = useRef<number | null>(null);
-  const { viewerState, frameState } = useStore(
+  const { viewerState, frameState, timelineItems } = useStore(
     useShallow((state) => ({
       viewerState: state.viewerState,
       frameState: state.frameState,
+      timelineItems: state.timelineItems,
     })),
   );
 
@@ -123,15 +123,7 @@ const useFrameBufferRenderer = () => {
         await getCurrentFrameStruct(),
       );
       const uint8Data = new Uint8Array(data.frame);
-      const frameResults = data.frameResults;
-      const currentFrameResults = frameState.frameResults;
-      // resultsのkey IDがすべて一致してなければ更新
-      if (!hasSameKeys(frameResults, currentFrameResults)) {
-        (await getStoreState()).setFrameState({
-          ...frameState,
-          frameResults,
-        });
-      }
+      (await getStoreState()).setFrameResults(data.frameResults);
 
       // 描画
       updateAndRender(uint8Data, resources);
@@ -156,7 +148,7 @@ const useFrameBufferRenderer = () => {
         cancelAnimationFrame(animationFrameReserve.current);
       }
     };
-  }, [viewerState, resources, frameLoop]);
+  }, [viewerState, resources, frameLoop, timelineItems]);
 
   return canvasRef;
 };

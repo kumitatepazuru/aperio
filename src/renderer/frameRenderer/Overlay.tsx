@@ -10,13 +10,13 @@ import { FaArrowRotateRight } from "react-icons/fa6";
 const Overlay = () => {
   const viewerState = useStore((state) => state.viewerState);
   const frameState = useStore((state) => state.frameState);
+  const frameResults = useStore((state) => state.frameResults);
   const timelineItems = useStore((state) => state.timelineItems);
   const setTimelineItems = useStore((state) => state.setTimelineItems);
   const setSelectedItemId = useStore((state) => state.setSelectedItemId);
   const addSelectedItemId = useStore((state) => state.addSelectedItemId);
   const selectedItemIds = useStore((state) => state.selectedItemIds);
   const mainSelectedItemId = useStore((state) => state.mainSelectedItemId);
-  const frameResults = frameState.frameResults;
   const {
     size: { width, height },
     ref: overlayRef,
