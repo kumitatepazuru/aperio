@@ -2,7 +2,7 @@ import useContentSize from "@/hooks/useContentSize";
 import orgFloor from "@/utils/orgFloor";
 import useStore, {
   getCurrentFrameStruct,
-  type TimelineLayerStructure,
+  type TimelineItemStructure,
 } from "@shared/store";
 import { useEffect, useState } from "react";
 import { FaArrowRotateRight } from "react-icons/fa6";
@@ -10,45 +10,45 @@ import { FaArrowRotateRight } from "react-icons/fa6";
 const Overlay = () => {
   const viewerState = useStore((state) => state.viewerState);
   const frameState = useStore((state) => state.frameState);
-  const timelineLayers = useStore((state) => state.timelineLayers);
-  const setTimelineLayers = useStore((state) => state.setTimelineLayers);
+  const frameResults = useStore((state) => state.frameResults);
+  const timelineItems = useStore((state) => state.timelineItems);
+  const setTimelineItems = useStore((state) => state.setTimelineItems);
   const setSelectedItemId = useStore((state) => state.setSelectedItemId);
   const addSelectedItemId = useStore((state) => state.addSelectedItemId);
-  const selectedItemId = useStore((state) => state.selectedItemId);
+  const selectedItemIds = useStore((state) => state.selectedItemIds);
   const mainSelectedItemId = useStore((state) => state.mainSelectedItemId);
-  const frameResults = frameState.frameResults;
   const {
     size: { width, height },
     ref: overlayRef,
   } = useContentSize();
 
-  const [layers, setLayers] = useState<TimelineLayerStructure[]>([]);
+  const [items, setItems] = useState<TimelineItemStructure[]>([]);
 
   useEffect(() => {
     (async () => {
-      const currentLayers = await getCurrentFrameStruct();
-      setLayers(currentLayers);
+      const currentItems = await getCurrentFrameStruct();
+      setItems(currentItems);
     })();
-  }, [viewerState, frameResults, timelineLayers]);
+  }, [viewerState, frameResults, timelineItems]);
 
   const onRotateStart = (
-    layerId: string,
+    itemId: string,
     e: React.MouseEvent<HTMLDivElement>,
   ) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const layer = timelineLayers.find((l) => l.id === layerId);
-    if (!layer) return;
+    const item = timelineItems.find((i) => i.id === itemId);
+    if (!item) return;
 
-    // ハンドルの親要素（レイヤーdiv）の中心 = 回転中心をクライアント座標で取得
-    const layerRect = (
+    // ハンドルの親要素（アイテムdiv）の中心 = 回転中心をクライアント座標で取得
+    const itemRect = (
       e.currentTarget as HTMLElement
     ).parentElement?.getBoundingClientRect();
-    if (!layerRect) return;
+    if (!itemRect) return;
 
-    const centerClientX = (layerRect.left + layerRect.right) / 2;
-    const centerClientY = (layerRect.top + layerRect.bottom) / 2;
+    const centerClientX = (itemRect.left + itemRect.right) / 2;
+    const centerClientY = (itemRect.top + itemRect.bottom) / 2;
 
     const initialAngle = Math.atan2(
       e.clientY - centerClientY,
@@ -57,9 +57,9 @@ const Overlay = () => {
 
     // 選択中のすべてのアイテムの初期回転角を記録
     const initRotations = new Map(
-      timelineLayers
-        .filter((l) => selectedItemId.includes(l.id))
-        .map((l) => [l.id, l.rotation]),
+      timelineItems
+        .filter((i) => selectedItemIds.includes(i.id))
+        .map((i) => [i.id, i.rotation]),
     );
 
     const onRotate = (e: MouseEvent) => {
@@ -69,12 +69,12 @@ const Overlay = () => {
       );
       const deltaAngleDeg = (currentAngle - initialAngle) * (180 / Math.PI);
 
-      setTimelineLayers(
-        timelineLayers.map((l) => {
-          const initRot = initRotations.get(l.id);
-          if (initRot === undefined) return l;
-          // CSS: rotate(-layer.rotation) なので、時計回りドラッグ = layer.rotation 減少
-          return { ...l, rotation: orgFloor(initRot - deltaAngleDeg, 100) };
+      setTimelineItems(
+        timelineItems.map((i) => {
+          const initRot = initRotations.get(i.id);
+          if (initRot === undefined) return i;
+          // CSS: rotate(-item.rotation) なので、時計回りドラッグ = item.rotation 減少
+          return { ...i, rotation: orgFloor(initRot - deltaAngleDeg, 100) };
         }),
       );
     };
@@ -90,7 +90,7 @@ const Overlay = () => {
   };
 
   const onScaleStart = (
-    layerId: string,
+    itemId: string,
     direction: "nw" | "ne" | "sw" | "se",
     handleOffsetX: number,
     handleOffsetY: number,
@@ -99,17 +99,17 @@ const Overlay = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    const layer = timelineLayers.find((l) => l.id === layerId);
-    const result = frameResults[layerId];
-    if (!layer || !result) return;
+    const item = timelineItems.find((i) => i.id === itemId);
+    const result = frameResults[itemId];
+    if (!item || !result) return;
 
     const pctW = width / frameState.width;
     const pctH = height / frameState.height;
 
-    // CSS rotate(-layer.rotation) の回転行列
+    // CSS rotate(-item.rotation) の回転行列
     // ローカル→グローバル: [cosR, sinR; -sinR, cosR]
     // グローバル→ローカル: [cosR, -sinR; sinR, cosR]（転置）
-    const rotRad = (layer.rotation * Math.PI) / 180;
+    const rotRad = (item.rotation * Math.PI) / 180;
     const cosR = Math.cos(rotRad);
     const sinR = Math.sin(rotRad);
     const toGlobalX = (lx: number, ly: number) => cosR * lx + sinR * ly;
@@ -117,9 +117,9 @@ const Overlay = () => {
     const toLocalX = (gx: number, gy: number) => cosR * gx - sinR * gy;
     const toLocalY = (gx: number, gy: number) => sinR * gx + cosR * gy;
 
-    const initScale = layer.scale;
-    const initX = layer.x;
-    const initY = layer.y;
+    const initScale = item.scale;
+    const initX = item.x;
+    const initY = item.y;
     const initHalfW = (result.width * initScale) / 200;
     const initHalfH = (result.height * initScale) / 200;
 
@@ -153,9 +153,9 @@ const Overlay = () => {
 
     // 他の選択アイテムの初期スケールを記録
     const initOtherScales = new Map(
-      timelineLayers
-        .filter((l) => selectedItemId.includes(l.id) && l.id !== layerId)
-        .map((l) => [l.id, l.scale]),
+      timelineItems
+        .filter((i) => selectedItemIds.includes(i.id) && i.id !== itemId)
+        .map((i) => [i.id, i.scale]),
     );
 
     const onScale = (e: MouseEvent) => {
@@ -180,23 +180,23 @@ const Overlay = () => {
       const newDragLocalY = signY * newHalfH + handleOffsetY;
 
       // アンカーを固定したまま新しい中心座標を計算
-      const newLayerX = anchorX + toGlobalX(newDragLocalX, newDragLocalY);
-      const newLayerY = anchorY + toGlobalY(newDragLocalX, newDragLocalY);
+      const newItemX = anchorX + toGlobalX(newDragLocalX, newDragLocalY);
+      const newItemY = anchorY + toGlobalY(newDragLocalX, newDragLocalY);
 
-      setTimelineLayers(
-        timelineLayers.map((l) => {
-          if (l.id === layerId) {
+      setTimelineItems(
+        timelineItems.map((i) => {
+          if (i.id === itemId) {
             return {
-              ...l,
+              ...i,
               scale: orgFloor(newScale, 100),
-              x: Math.round(newLayerX),
-              y: Math.round(newLayerY),
+              x: Math.round(newItemX),
+              y: Math.round(newItemY),
             };
           }
-          const initS = initOtherScales.get(l.id);
-          if (initS === undefined) return l;
+          const initS = initOtherScales.get(i.id);
+          if (initS === undefined) return i;
           // 他の選択アイテム: 同じスケール倍率を適用（各自の中心から拡縮）
-          return { ...l, scale: orgFloor(initS * scaleFactor, 100) };
+          return { ...i, scale: orgFloor(initS * scaleFactor, 100) };
         }),
       );
     };
@@ -212,7 +212,7 @@ const Overlay = () => {
   };
 
   const onDragStart = (
-    _layerId: string,
+    _itemId: string,
     e: React.MouseEvent<HTMLDivElement>,
   ) => {
     e.preventDefault();
@@ -224,20 +224,20 @@ const Overlay = () => {
     const initialMouseY = e.clientY;
 
     // 選択中のすべてのアイテムの初期座標を記録
-    const initItems = timelineLayers
-      .filter((l) => selectedItemId.includes(l.id))
-      .map((l) => ({ id: l.id, x: l.x, y: l.y }));
+    const initItems = timelineItems
+      .filter((i) => selectedItemIds.includes(i.id))
+      .map((i) => ({ id: i.id, x: i.x, y: i.y }));
 
     const onDrag = (e: MouseEvent) => {
       const deltaX = e.clientX - initialMouseX;
       const deltaY = e.clientY - initialMouseY;
 
-      setTimelineLayers(
-        timelineLayers.map((l) => {
-          const init = initItems.find((i) => i.id === l.id);
-          if (!init) return l;
+      setTimelineItems(
+        timelineItems.map((i) => {
+          const init = initItems.find((it) => it.id === i.id);
+          if (!init) return i;
           return {
-            ...l,
+            ...i,
             x: Math.round(init.x + deltaX / pctW),
             y: Math.round(init.y + deltaY / pctH),
           };
@@ -263,36 +263,36 @@ const Overlay = () => {
 
   return (
     <div ref={overlayRef} className="absolute inset-0" onMouseDown={clearSelection}>
-      {layers.map((layer) => {
-        const result = frameResults[layer.id];
+      {items.map((item) => {
+        const result = frameResults[item.id];
         if (!result) return;
-        const selected = selectedItemId.includes(layer.id);
-        const mainSelected = mainSelectedItemId === layer.id;
+        const selected = selectedItemIds.includes(item.id);
+        const mainSelected = mainSelectedItemId === item.id;
 
         const percentWidth = width / frameState.width;
         const percentHeight = height / frameState.height;
         // scaleとborderの幅を考慮したサイズ
-        const scaledWidth = (result.width * layer.scale) / 100 + 4;
-        const scaledHeight = (result.height * layer.scale) / 100 + 4;
-        // レイヤーの中心がframeStateの中心に来るように配置
-        const startX = (layer.x - scaledWidth / 2) * percentWidth;
-        const layerWidth = scaledWidth * percentWidth;
-        const startY = (layer.y - scaledHeight / 2) * percentHeight;
-        const layerHeight = scaledHeight * percentHeight;
+        const scaledWidth = (result.width * item.scale) / 100 + 4;
+        const scaledHeight = (result.height * item.scale) / 100 + 4;
+        // アイテムの中心がframeStateの中心に来るように配置
+        const startX = (item.x - scaledWidth / 2) * percentWidth;
+        const itemWidth = scaledWidth * percentWidth;
+        const startY = (item.y - scaledHeight / 2) * percentHeight;
+        const itemHeight = scaledHeight * percentHeight;
         // 真ん中が0,0のためオフセットで修正
         const offsetX = (frameState.width / 2) * percentWidth;
         const offsetY = (frameState.height / 2) * percentHeight;
 
         return (
           <div
-            key={layer.id}
+            key={item.id}
             className="absolute border-2"
             style={{
               left: startX + offsetX,
-              width: layerWidth,
+              width: itemWidth,
               top: startY + offsetY,
-              height: layerHeight,
-              transform: `rotate(${-layer.rotation}deg)`,
+              height: itemHeight,
+              transform: `rotate(${-item.rotation}deg)`,
               opacity: selected ? 1 : 0,
               cursor: selected ? "move" : "default",
               borderColor: mainSelected
@@ -301,11 +301,11 @@ const Overlay = () => {
             }}
             onMouseDown={(e) => {
               if (selected) {
-                onDragStart(layer.id, e);
+                onDragStart(item.id, e);
               } else if (e.shiftKey) {
-                addSelectedItemId(layer.id);
+                addSelectedItemId(item.id);
               } else {
-                setSelectedItemId(layer.id);
+                setSelectedItemId(item.id);
               }
             }}
           >
@@ -313,7 +313,7 @@ const Overlay = () => {
               <>
                 <div
                   className="btn btn-circle absolute -top-8 left-[50%] -translate-x-[50%] w-6 h-6 cursor-grab active:cursor-grabbing"
-                  onMouseDown={(e) => onRotateStart(layer.id, e)}
+                  onMouseDown={(e) => onRotateStart(item.id, e)}
                 >
                   <FaArrowRotateRight size="0.8rem" />
                 </div>
@@ -324,7 +324,7 @@ const Overlay = () => {
                       ? "var(--color-secondary)"
                       : "var(--color-primary)",
                   }}
-                  onMouseDown={(e) => onScaleStart(layer.id, "nw", 0, 0, e)}
+                  onMouseDown={(e) => onScaleStart(item.id, "nw", 0, 0, e)}
                 />
                 <div
                   className="absolute top-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 -translate-y-[50%] translate-x-[50%] cursor-nesw-resize"
@@ -333,7 +333,7 @@ const Overlay = () => {
                       ? "var(--color-secondary)"
                       : "var(--color-primary)",
                   }}
-                  onMouseDown={(e) => onScaleStart(layer.id, "ne", 0, 0, e)}
+                  onMouseDown={(e) => onScaleStart(item.id, "ne", 0, 0, e)}
                 />
                 <div
                   className="absolute bottom-0 left-0 w-4 aspect-square rounded-full bg-base-100 border-2 translate-y-[50%] -translate-x-[50%] cursor-nesw-resize"
@@ -342,7 +342,7 @@ const Overlay = () => {
                       ? "var(--color-secondary)"
                       : "var(--color-primary)",
                   }}
-                  onMouseDown={(e) => onScaleStart(layer.id, "sw", 0, 0, e)}
+                  onMouseDown={(e) => onScaleStart(item.id, "sw", 0, 0, e)}
                 />
                 <div
                   className="absolute bottom-0 right-0 w-4 aspect-square rounded-full bg-base-100 border-2 translate-[50%] cursor-nwse-resize"
@@ -351,7 +351,7 @@ const Overlay = () => {
                       ? "var(--color-secondary)"
                       : "var(--color-primary)",
                   }}
-                  onMouseDown={(e) => onScaleStart(layer.id, "se", 0, 0, e)}
+                  onMouseDown={(e) => onScaleStart(item.id, "se", 0, 0, e)}
                 />
               </>
             )}

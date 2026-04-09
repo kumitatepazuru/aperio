@@ -9,8 +9,7 @@ import {
   type ExternalTextureWebGPUResources,
 } from "@/hooks/useWebGPU";
 import type { ReceivedSharedTextureData } from "electron";
-import type { LayerResult } from "native";
-import { hasSameKeys } from "@/utils/hasSame";
+import type { ItemResult } from "native";
 
 // VideoFrameをcanvasに描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -31,7 +30,7 @@ const useFrameTextureRenderer = () => {
   const viewerState = useStore((state) => state.viewerState);
   const frameState = useStore((state) => state.frameState);
   const previousFrameCount = useRef<number | null>(null);
-  const timelineLayers = useStore((state) => state.timelineLayers);
+  const timelineItems = useStore((state) => state.timelineItems);
 
   // VideoFrameを描画する関数
   const renderVideoFrame = (
@@ -111,22 +110,14 @@ const useFrameTextureRenderer = () => {
   useEffect(() => {
     const receiver = async (
       textureInfo: ReceivedSharedTextureData,
-      frameResults: Record<string, LayerResult>,
+      frameResults: Record<string, ItemResult>,
     ) => {
       try {
         // VideoFrameを取得
         const videoFrame = textureInfo.importedSharedTexture.getVideoFrame();
         textureInfo.importedSharedTexture.release();
 
-        const storeState = await getStoreState();
-        const currentFrameResults = storeState.frameState.frameResults;
-        // resultsのkey IDがすべて一致してなければ更新
-        if (!hasSameKeys(frameResults, currentFrameResults)) {
-          storeState.setFrameState({
-            ...storeState.frameState,
-            frameResults,
-          });
-        }
+        (await getStoreState()).setFrameResults(frameResults);
 
         // 描画
         if (resources) {
@@ -161,7 +152,7 @@ const useFrameTextureRenderer = () => {
         cancelAnimationFrame(animationFrameReserve.current);
       }
     };
-  }, [viewerState, frameState, resources, frameLoop, timelineLayers]);
+  }, [viewerState, frameState, resources, frameLoop, timelineItems]);
 
   return canvasRef;
 };

@@ -8,11 +8,11 @@ type Props = {
 };
 
 const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
-  const { timelineLayers, selectedItemId, mainSelectedItemId, setSelectedItems } =
+  const { timelineItems, selectedItemIds, mainSelectedItemId, setSelectedItems } =
     useStore(
       useShallow((state) => ({
-        timelineLayers: state.timelineLayers,
-        selectedItemId: state.selectedItemId,
+        timelineItems: state.timelineItems,
+        selectedItemIds: state.selectedItemIds,
         mainSelectedItemId: state.mainSelectedItemId,
         setSelectedItems: state.setSelectedItems,
       })),
@@ -48,11 +48,11 @@ const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
 
       setSelRect({ left, top, width, height });
 
-      const inRect = timelineLayers
-        .filter((layer) => {
-          const itemLeft = layer.from * zoomLevelPxPerFrame;
-          const itemRight = layer.to * zoomLevelPxPerFrame;
-          const itemTop = layer.layer * layerHeight;
+      const inRect = timelineItems
+        .filter((item) => {
+          const itemLeft = item.from * zoomLevelPxPerFrame;
+          const itemRight = item.to * zoomLevelPxPerFrame;
+          const itemTop = item.layer * layerHeight;
           const itemBottom = itemTop + layerHeight;
           return (
             itemLeft < left + width &&
@@ -61,7 +61,7 @@ const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
             itemBottom > top
           );
         })
-        .map((l) => l.id);
+        .map((item) => item.id);
 
       if (inRect.length > 0 && firstEnteredIdRef.current === null) {
         firstEnteredIdRef.current = inRect[0];
@@ -85,7 +85,7 @@ const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [timelineLayers, zoomLevelPxPerFrame, layerHeight, setSelectedItems]);
+  }, [timelineItems, zoomLevelPxPerFrame, layerHeight, setSelectedItems]);
 
   const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if (!event.shiftKey) return;
@@ -96,7 +96,7 @@ const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
       x: event.clientX - bounds.left,
       y: event.clientY - bounds.top,
     };
-    initialSelectionRef.current = { ids: selectedItemId, mainId: mainSelectedItemId };
+    initialSelectionRef.current = { ids: selectedItemIds, mainId: mainSelectedItemId };
     firstEnteredIdRef.current = null;
     setSelRect(null);
   };

@@ -9,9 +9,9 @@ import { v4 as uuidv4 } from "uuid";
 
 const ParameterEditor = () => {
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
-  const setTimelineLayers = useStore((state) => state.setTimelineLayers);
+  const setTimelineItems = useStore((state) => state.setTimelineItems);
   const selectedItem = useStore((state) =>
-    state.timelineLayers.find((layer) => layer.id === state.mainSelectedItemId),
+    state.timelineItems.find((item) => item.id === state.mainSelectedItemId),
   );
 
   const onAddEffect = async (name: string) => {
@@ -22,7 +22,7 @@ const ParameterEditor = () => {
     structure.structure.forEach((param) => {
       defaultParams[param.id] = param.defaultValue;
     });
-    const timeline = (await getStoreState()).timelineLayers;
+    const timeline = (await getStoreState()).timelineItems;
     const newEffect: GenerateStructure = {
       id: uuidv4(),
       name,
@@ -30,14 +30,14 @@ const ParameterEditor = () => {
       parameters: defaultParams,
     };
 
-    setTimelineLayers(
-      timeline.map((layer) =>
-        layer.id === selectedItemId
+    setTimelineItems(
+      timeline.map((item) =>
+        item.id === selectedItemId
           ? {
-              ...layer,
-              effects: [...layer.effects, newEffect],
+              ...item,
+              effects: [...item.effects, newEffect],
             }
-          : layer,
+          : item,
       ),
     );
 
@@ -51,14 +51,14 @@ const ParameterEditor = () => {
       id,
       type: "submenu",
       value,
-      submenu: Object.entries(pluginNames.effectPlugins).map(
-        ([effectId, effectValue]) => ({
+      submenu: Object.entries(pluginNames.effectPlugins)
+        .filter(([effectId]) => effectId.startsWith(`${id}.`))
+        .map(([effectId, effectValue]) => ({
           id: effectId,
           type: "item",
           value: effectValue,
           click: onAddEffect,
-        }),
-      ),
+        })),
     }));
   };
 
@@ -67,7 +67,9 @@ const ParameterEditor = () => {
       {selectedItem ? (
         <div>
           <div className="flex gap-3 items-center mb-4">
-            <h2 className="text-lg font-bold grow">{selectedItem.obj.displayName}</h2>
+            <h2 className="text-lg font-bold grow">
+              {selectedItem.object.displayName}
+            </h2>
             <NestedMenu click items={effectMenuItems}>
               <button className="btn btn-sm btn-square">
                 <IoIosAdd />

@@ -12,16 +12,17 @@ class GenerateStructure(TypedDict):
     parameters: dict
 
 @dataclass
-class LayerStructure(TypedDict):
+class ItemStructure(TypedDict):
     """
-    レイヤー構造を表す辞書の型定義。
+    アイテム構造を表す辞書の型定義。
     """
+    id: str
     x: int
     y: int
     scale: float
     rotation: float
     alpha: float
-    obj: GenerateStructure
+    object: GenerateStructure
     effects: list[GenerateStructure]
 
 @dataclass
@@ -108,6 +109,6 @@ class ListParam:
 RequestStructureParameter = FloatParam | IntParam | BoolParam | Vec2IntParam | Vec2FloatParam | Vec3IntParam | Vec3FloatParam | Vec4IntParam | Vec4FloatParam | StringParam | ColorParam | ListParam
 
 @dataclass
-class LayerResult:
+class ItemResult:
     width: int
     height: int

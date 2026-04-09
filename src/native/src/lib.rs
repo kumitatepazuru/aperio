@@ -4,7 +4,7 @@ use crate::{
     app_config::{AperioConfig, AperioConfigManager},
     node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
     structs::{
-        Dirs, LayerResult, LayerStructure, NewEffectGeneratorReturn, NewObjectGeneratorReturn,
+        Dirs, ItemResult, ItemStructure, NewEffectGeneratorReturn, NewObjectGeneratorReturn,
         PluginNameInfo, RequestStructureParameter,
     },
     util::{get_local_data_dir, json_to_pyobject},
@@ -211,11 +211,11 @@ impl AperioManager {
         count: i32,
         width: i32,
         height: i32,
-        frame_struct: Vec<LayerStructure>,
-    ) -> napi::Result<HashMap<String, LayerResult>> {
+        frame_struct: Vec<ItemStructure>,
+    ) -> napi::Result<HashMap<String, ItemResult>> {
         let pl_manager = &self.plmanager;
 
-        let output = Python::attach(|py| -> PyResult<HashMap<String, LayerResult>> {
+        let output = Python::attach(|py| -> PyResult<HashMap<String, ItemResult>> {
             let pl_manager = pl_manager.bind(py);
             let frame_struct = frame_struct.into_pyobject(py)?;
 
@@ -225,7 +225,7 @@ impl AperioManager {
             };
 
             let func = pl_manager.getattr("make_frame_buf")?;
-            let results: HashMap<String, LayerResult> = func
+            let results: HashMap<String, ItemResult> = func
                 .call1((count, frame_struct, width, height, buffer_ptr))?
                 .extract()?;
 
@@ -241,9 +241,9 @@ impl AperioManager {
         &self,
         count: i32,
         format: NodeSharedTextureFormat,
-        frame_struct: Vec<LayerStructure>,
+        frame_struct: Vec<ItemStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
-    ) -> napi::Result<HashMap<String, LayerResult>> {
+    ) -> napi::Result<HashMap<String, ItemResult>> {
         let pl_manager = &self.plmanager;
 
         let content_size = base_texture.coded_size;
@@ -259,7 +259,7 @@ impl AperioManager {
             )));
         }
 
-        let output = Python::attach(|py| -> PyResult<HashMap<String, LayerResult>> {
+        let output = Python::attach(|py| -> PyResult<HashMap<String, ItemResult>> {
             let pl_manager = pl_manager.bind(py);
             let frame_struct = frame_struct.into_pyobject(py)?;
             let base_texture: SharedTextureHandle = base_texture.handle.into();
@@ -267,7 +267,7 @@ impl AperioManager {
             let format: SharedTextureFormat = format.into();
 
             let func = pl_manager.getattr("make_frame_shared_texture")?;
-            let results: HashMap<String, LayerResult> = func
+            let results: HashMap<String, ItemResult> = func
                 .call1((
                     count,
                     frame_struct,

@@ -8,21 +8,21 @@ import { hasSameItems } from "@/utils/hasSame";
 
 const ObjectParameter = () => {
   const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
-  const [values, setValues] = useState<Record<string, ConfigableValue>>({});
+  const [params, setParams] = useState<Record<string, ConfigableValue>>({});
 
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
-  const setTimelineLayers = useStore((state) => state.setTimelineLayers);
+  const setTimelineItems = useStore((state) => state.setTimelineItems);
   const selectedItem = useStore((state) =>
-    state.timelineLayers.find((layer) => layer.id === state.mainSelectedItemId),
+    state.timelineItems.find((item) => item.id === state.mainSelectedItemId),
   );
 
-  const updateTimeline = async (newValues: Record<string, ConfigableValue>) => {
-    const timeline = (await getStoreState()).timelineLayers;
-    setTimelineLayers(
-      timeline.map((layer) =>
-        layer.id === selectedItemId
-          ? { ...layer, obj: { ...layer.obj, parameters: newValues } }
-          : layer,
+  const updateTimeline = async (newParams: Record<string, ConfigableValue>) => {
+    const timeline = (await getStoreState()).timelineItems;
+    setTimelineItems(
+      timeline.map((item) =>
+        item.id === selectedItemId
+          ? { ...item, object: { ...item.object, parameters: newParams } }
+          : item,
       ),
     );
   };
@@ -30,31 +30,31 @@ const ObjectParameter = () => {
   useEffect(() => {
     if (!selectedItem) {
       setStructures([]);
-      setValues({});
+      setParams({});
       return;
     }
     window.main
       .requestParameterStruct(
-        selectedItem.obj.name,
-        selectedItem.obj.parameters,
+        selectedItem.object.name,
+        selectedItem.object.parameters,
       )
       .then((struct) => {
         setStructures(struct);
-        setValues(initValues(struct, selectedItem.obj.parameters));
+        setParams(initValues(struct, selectedItem.object.parameters));
       })
       .catch(console.error);
     // selectedItemId が変わったときだけ初期化する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItemId]);
 
-  const handleChange = async (newValues: Record<string, ConfigableValue>) => {
+  const handleChange = async (newParams: Record<string, ConfigableValue>) => {
     if (!selectedItemId || !selectedItem) return;
-    setValues(newValues);
+    setParams(newParams);
 
     try {
       const struct = await window.main.requestParameterStruct(
-        selectedItem.obj.name,
-        newValues,
+        selectedItem.object.name,
+        newParams,
       );
       if (
         hasSameItems(
@@ -62,16 +62,16 @@ const ObjectParameter = () => {
           structures.map((p) => p.id),
         )
       ) {
-        updateTimeline(newValues);
+        updateTimeline(newParams);
       } else {
         setStructures(struct);
         // 追加のパラメータを初期化する
-        const newValuesWithInit = {
-          ...initValues(struct, newValues),
-          ...newValues,
+        const newParamsWithInit = {
+          ...initValues(struct, newParams),
+          ...newParams,
         };
-        setValues(newValuesWithInit);
-        await updateTimeline(newValuesWithInit);
+        setParams(newParamsWithInit);
+        await updateTimeline(newParamsWithInit);
       }
     } catch (error) {
       console.error("Error fetching parameter structure:", error);
@@ -81,7 +81,7 @@ const ObjectParameter = () => {
   return (
     <Configable
       structures={structures}
-      value={values}
+      value={params}
       onChange={handleChange}
     />
   );

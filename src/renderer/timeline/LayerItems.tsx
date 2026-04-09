@@ -1,4 +1,4 @@
-import useStore, { type TimelineLayerStructure } from "@shared/store";
+import useStore, { type TimelineItemStructure } from "@shared/store";
 import { useShallow } from "zustand/shallow";
 import {
   useEffect,
@@ -81,7 +81,7 @@ function clampLayerDelta(
  * - どこにも置けない場合は 0（ドラッグ開始位置）を返す。
  */
 function resolveGroupMoveDelta(
-  allLayers: TimelineLayerStructure[],
+  allItems: TimelineItemStructure[],
   movingIds: Set<string>,
   initItems: Array<{ id: string; from: number; to: number; layer: number }>,
   layerDelta: number,
@@ -98,7 +98,7 @@ function resolveGroupMoveDelta(
       const targetLayer = Math.max(0, init.layer + layerDelta);
       const newFrom = init.from + D;
       const newTo = newFrom + (init.to - init.from);
-      for (const o of allLayers) {
+      for (const o of allItems) {
         if (movingIds.has(o.id) || o.layer !== targetLayer) continue;
         if (newFrom < o.to && newTo > o.from) return false;
       }
@@ -114,7 +114,7 @@ function resolveGroupMoveDelta(
   for (const init of initItems) {
     const targetLayer = Math.max(0, init.layer + layerDelta);
     const duration = init.to - init.from;
-    for (const o of allLayers) {
+    for (const o of allItems) {
       if (movingIds.has(o.id) || o.layer !== targetLayer) continue;
       candidates.add(o.from - duration - init.from); // このアイテムを障害物の直前に
       candidates.add(o.to - init.from); // このアイテムを障害物の直後に
@@ -141,17 +141,17 @@ const LayerItems = ({
   layerHeight,
 }: LayerItemsProps) => {
   const {
-    timelineLayers,
-    setTimelineLayers,
-    selectedItemId,
+    timelineItems,
+    setTimelineItems,
+    selectedItemIds,
     setSelectedItemId,
     addSelectedItemId,
     setSelectedItems,
   } = useStore(
     useShallow((state) => ({
-      timelineLayers: state.timelineLayers,
-      setTimelineLayers: state.setTimelineLayers,
-      selectedItemId: state.selectedItemId,
+      timelineItems: state.timelineItems,
+      setTimelineItems: state.setTimelineItems,
+      selectedItemIds: state.selectedItemIds,
       setSelectedItemId: state.setSelectedItemId,
       addSelectedItemId: state.addSelectedItemId,
       setSelectedItems: state.setSelectedItems,
@@ -165,7 +165,7 @@ const LayerItems = ({
     anchorId: string,
     mode: DragMode,
     movingItemIds: string[],
-    allLayers: TimelineLayerStructure[],
+    allItems: TimelineItemStructure[],
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -174,9 +174,9 @@ const LayerItems = ({
       mode,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      initItems: allLayers
-        .filter((l) => movingItemIds.includes(l.id))
-        .map((l) => ({ id: l.id, from: l.from, to: l.to, layer: l.layer })),
+      initItems: allItems
+        .filter((item) => movingItemIds.includes(item.id))
+        .map((item) => ({ id: item.id, from: item.from, to: item.to, layer: item.layer })),
     };
   };
 
@@ -212,22 +212,22 @@ const LayerItems = ({
 
         // グループ全体で有効なデルタを解決（相対位置保持 + 衝突解決）
         const resolvedDelta = resolveGroupMoveDelta(
-          timelineLayers,
+          timelineItems,
           movingIds,
           dragState.initItems,
           effectiveLayerDelta,
           desiredDelta,
         );
 
-        setTimelineLayers(
-          timelineLayers.map((layer) => {
-            const init = dragState.initItems.find((i) => i.id === layer.id);
-            if (!init) return layer;
+        setTimelineItems(
+          timelineItems.map((item) => {
+            const init = dragState.initItems.find((i) => i.id === item.id);
+            if (!init) return item;
             const duration = init.to - init.from;
             const newFrom = Math.max(0, init.from + resolvedDelta);
             const targetLayerNum = Math.max(0, init.layer + effectiveLayerDelta);
             return {
-              ...layer,
+              ...item,
               from: newFrom,
               to: newFrom + duration,
               layer: targetLayerNum,
@@ -238,9 +238,9 @@ const LayerItems = ({
       }
 
       // resize操作（anchorId 単体のみ）
-      setTimelineLayers(
-        timelineLayers.map((layer) => {
-          if (layer.id !== dragState.anchorId) return layer;
+      setTimelineItems(
+        timelineItems.map((item) => {
+          if (item.id !== dragState.anchorId) return item;
           const init = anchorInit;
 
           if (dragState.mode === "resize-start") {
@@ -252,16 +252,16 @@ const LayerItems = ({
             const desiredFrom = Math.max(0, Math.min(nextFrom, init.to - 1));
 
             // 左側障害物（init.toより前に終わるもの）が左方向への拡張を制限する
-            const minFrom = timelineLayers
+            const minFrom = timelineItems
               .filter(
                 (o) =>
-                  o.layer === layer.layer &&
+                  o.layer === item.layer &&
                   !movingIds.has(o.id) &&
                   o.to <= init.from,
               )
               .reduce((acc, o) => Math.max(acc, o.to), 0);
 
-            return { ...layer, from: Math.max(desiredFrom, minFrom) };
+            return { ...item, from: Math.max(desiredFrom, minFrom) };
           }
 
           // resize-end
@@ -273,16 +273,16 @@ const LayerItems = ({
           const desiredTo = Math.max(init.from + 1, nextTo);
 
           // 右側障害物（init.to以降から始まるもの）が右方向への拡張を制限する
-          const maxTo = timelineLayers
+          const maxTo = timelineItems
             .filter(
               (o) =>
-                o.layer === layer.layer &&
+                o.layer === item.layer &&
                 !movingIds.has(o.id) &&
                 o.from >= init.to,
             )
             .reduce((acc, o) => Math.min(acc, o.from), Infinity);
 
-          return { ...layer, to: Math.min(desiredTo, maxTo) };
+          return { ...item, to: Math.min(desiredTo, maxTo) };
         }),
       );
     };
@@ -302,21 +302,21 @@ const LayerItems = ({
   }, [
     graduationInterval,
     layerHeight,
-    setTimelineLayers,
-    timelineLayers,
+    setTimelineItems,
+    timelineItems,
     zoomLevelPxPerFrame,
   ]);
 
-  return timelineLayers.map((layer) => {
-    const left = layer.from * zoomLevelPxPerFrame;
-    const width = (layer.to - layer.from) * zoomLevelPxPerFrame;
-    const top = layer.layer * layerHeight;
-    const isSelected = selectedItemId.includes(layer.id);
+  return timelineItems.map((item) => {
+    const left = item.from * zoomLevelPxPerFrame;
+    const width = (item.to - item.from) * zoomLevelPxPerFrame;
+    const top = item.layer * layerHeight;
+    const isSelected = selectedItemIds.includes(item.id);
     const isActiveDrag = isDragging && isSelected;
 
     return (
       <div
-        key={layer.id}
+        key={item.id}
         className="absolute py-0.5"
         style={{
           left,
@@ -336,33 +336,33 @@ const LayerItems = ({
               // Ctrl+クリック: 単体の選択/非選択トグル（伝播停止で親の選択クリアを防ぐ）
               event.stopPropagation();
               if (isSelected) {
-                const next = selectedItemId.filter((id) => id !== layer.id);
+                const next = selectedItemIds.filter((id) => id !== item.id);
                 setSelectedItems(next, next[0] ?? null);
               } else {
-                addSelectedItemId(layer.id);
+                addSelectedItemId(item.id);
               }
             } else if (event.shiftKey) {
               event.stopPropagation();
-              addSelectedItemId(layer.id);
+              addSelectedItemId(item.id);
             } else if (isSelected) {
               // 複数選択中のアイテムをドラッグ → 選択維持のまま全体を移動
               setIsDragging(true);
               beginItemDrag(
                 event,
-                layer.id,
+                item.id,
                 "move",
-                selectedItemId,
-                timelineLayers,
+                selectedItemIds,
+                timelineItems,
               );
             } else {
-              setSelectedItemId(layer.id);
+              setSelectedItemId(item.id);
               setIsDragging(true);
               beginItemDrag(
                 event,
-                layer.id,
+                item.id,
                 "move",
-                [layer.id],
-                timelineLayers,
+                [item.id],
+                timelineItems,
               );
             }
           }}
@@ -376,10 +376,10 @@ const LayerItems = ({
               setIsDragging(true);
               beginItemDrag(
                 event,
-                layer.id,
+                item.id,
                 "resize-start",
-                [layer.id],
-                timelineLayers,
+                [item.id],
+                timelineItems,
               );
             }}
           />
@@ -389,15 +389,15 @@ const LayerItems = ({
               setIsDragging(true);
               beginItemDrag(
                 event,
-                layer.id,
+                item.id,
                 "resize-end",
-                [layer.id],
-                timelineLayers,
+                [item.id],
+                timelineItems,
               );
             }}
           />
           <span className="text-primary-content p-2 text-xs">
-            {layer.obj.displayName}
+            {item.object.displayName}
           </span>
         </div>
       </div>

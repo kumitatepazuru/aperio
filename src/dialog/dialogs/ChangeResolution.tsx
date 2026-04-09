@@ -46,10 +46,16 @@ const ChangeResolution = () => {
           className="select"
           value={preset}
           onChange={(e) => {
-            const [newWidth, newHeight] = e.target.value.split("x").map(Number);
+            const value = e.target.value;
+            if (value === "custom") {
+              setPreset("custom");
+              return;
+            }
+
+            const [newWidth, newHeight] = value.split("x").map(Number);
             setWidth(newWidth);
             setHeight(newHeight);
-            setPreset(e.target.value);
+            setPreset(value);
           }}
         >
           {Presets.map((preset) => {

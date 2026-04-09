@@ -3,7 +3,7 @@ import type { ConfigableValue } from "@/configable/utils";
 import { initValues } from "@/configable/utils";
 import useStore, {
   getStoreState,
-  type TimelineLayerStructure,
+  type TimelineItemStructure,
 } from "@shared/store";
 import type { GenerateStructure, RequestStructureParameter } from "native";
 import { useEffect, useState } from "react";
@@ -25,10 +25,10 @@ interface SortableEffectItemProps {
   effect: GenerateStructure;
   index: number;
   selectedItemId: string | null;
-  selectedItem: TimelineLayerStructure | undefined;
-  onValuesChange: (
+  selectedItem: TimelineItemStructure | undefined;
+  onParamsChange: (
     index: number,
-    values: Record<string, ConfigableValue>,
+    params: Record<string, ConfigableValue>,
   ) => void;
 }
 
@@ -37,39 +37,39 @@ const SortableEffectItem = ({
   index,
   selectedItemId,
   selectedItem,
-  onValuesChange,
+  onParamsChange,
 }: SortableEffectItemProps) => {
   const { ref } = useSortable({
     id: `${effect.id}`,
     index,
     group: selectedItemId ?? undefined,
   });
-  const currentLayer = useStore((state) =>
-    state.timelineLayers.find((layer) => layer.id === selectedItemId),
+  const currentItem = useStore((state) =>
+    state.timelineItems.find((item) => item.id === selectedItemId),
   );
 
   const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
-  const [values, setValues] = useState<Record<string, ConfigableValue>>({});
+  const [params, setParams] = useState<Record<string, ConfigableValue>>({});
 
   useEffect(() => {
-    const params = selectedItem?.effects[index]?.parameters ?? {};
+    const currentParams = selectedItem?.effects[index]?.parameters ?? {};
     window.main
-      .requestParameterStruct(effect.name, params)
+      .requestParameterStruct(effect.name, currentParams)
       .then((struct) => {
         setStructures(struct);
-        setValues(initValues(struct, params));
+        setParams(initValues(struct, currentParams));
       })
       .catch(console.error);
     // selectedItemId または effect.name が変わったときだけ初期化する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItemId, effect.name]);
 
-  const handleChange = async (newValues: Record<string, ConfigableValue>) => {
-    setValues(newValues);
+  const handleChange = async (newParams: Record<string, ConfigableValue>) => {
+    setParams(newParams);
     try {
       const struct = await window.main.requestParameterStruct(
         effect.name,
-        newValues,
+        newParams,
       );
       if (
         hasSameItems(
@@ -77,16 +77,16 @@ const SortableEffectItem = ({
           structures.map((p) => p.id),
         )
       ) {
-        onValuesChange(index, newValues);
+        onParamsChange(index, newParams);
       } else {
         setStructures(struct);
         // 追加のパラメータを初期化する
-        const newValuesWithInit = {
-          ...initValues(struct, newValues),
-          ...newValues,
+        const newParamsWithInit = {
+          ...initValues(struct, newParams),
+          ...newParams,
         };
-        setValues(newValuesWithInit);
-        await onValuesChange(index, newValuesWithInit);
+        setParams(newParamsWithInit);
+        await onParamsChange(index, newParamsWithInit);
       }
     } catch (error) {
       console.error(error);
@@ -94,37 +94,37 @@ const SortableEffectItem = ({
   };
 
   const changeOrder = async (amount: number) => {
-    if (!selectedItemId || !currentLayer) return;
+    if (!selectedItemId || !currentItem) return;
 
-    const { timelineLayers: timeline, setTimelineLayers } =
+    const { timelineItems: timeline, setTimelineItems } =
       await getStoreState();
 
-    const currentIndex = currentLayer.effects.findIndex(
+    const currentIndex = currentItem.effects.findIndex(
       (e) => e.id === effect.id,
     );
     if (currentIndex === -1) return;
 
     const newIndex = currentIndex + amount;
-    if (newIndex < 0 || newIndex >= currentLayer.effects.length) return;
+    if (newIndex < 0 || newIndex >= currentItem.effects.length) return;
 
-    const newEffects = arrayMove(currentLayer.effects, currentIndex, newIndex);
-    const newTimeline = timeline.map((layer) =>
-      layer.id === selectedItemId ? { ...layer, effects: newEffects } : layer,
+    const newEffects = arrayMove(currentItem.effects, currentIndex, newIndex);
+    const newTimeline = timeline.map((item) =>
+      item.id === selectedItemId ? { ...item, effects: newEffects } : item,
     );
-    setTimelineLayers(newTimeline);
+    setTimelineItems(newTimeline);
   };
 
   const deleteEffect = async () => {
-    if (!selectedItemId || !currentLayer) return;
+    if (!selectedItemId || !currentItem) return;
 
-    const { timelineLayers: timeline, setTimelineLayers } =
+    const { timelineItems: timeline, setTimelineItems } =
       await getStoreState();
 
-    const newEffects = currentLayer.effects.filter((e) => e.id !== effect.id);
-    const newTimeline = timeline.map((layer) =>
-      layer.id === selectedItemId ? { ...layer, effects: newEffects } : layer,
+    const newEffects = currentItem.effects.filter((e) => e.id !== effect.id);
+    const newTimeline = timeline.map((item) =>
+      item.id === selectedItemId ? { ...item, effects: newEffects } : item,
     );
-    setTimelineLayers(newTimeline);
+    setTimelineItems(newTimeline);
   };
 
   return (
@@ -157,8 +157,8 @@ const SortableEffectItem = ({
             className="btn btn-xs btn-circle"
             onClick={() =>
               changeOrder(
-                currentLayer?.effects.length
-                  ? currentLayer.effects.length - 1 - index
+                currentItem?.effects.length
+                  ? currentItem.effects.length - 1 - index
                   : 0,
               )
             }
@@ -171,7 +171,7 @@ const SortableEffectItem = ({
         </div>
         <Configable
           structures={structures}
-          value={values}
+          value={params}
           onChange={handleChange}
         />
       </div>
@@ -181,27 +181,27 @@ const SortableEffectItem = ({
 
 const EffectParameter = () => {
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
-  const setTimelineLayers = useStore((state) => state.setTimelineLayers);
+  const setTimelineItems = useStore((state) => state.setTimelineItems);
   const selectedItem = useStore((state) =>
-    state.timelineLayers.find((layer) => layer.id === state.mainSelectedItemId),
+    state.timelineItems.find((item) => item.id === state.mainSelectedItemId),
   );
 
-  const handleValuesChange = async (
+  const handleParamsChange = async (
     index: number,
-    values: Record<string, ConfigableValue>,
+    params: Record<string, ConfigableValue>,
   ) => {
     if (!selectedItemId || !selectedItem) return;
-    const timeline = (await getStoreState()).timelineLayers;
-    setTimelineLayers(
-      timeline.map((layer) =>
-        layer.id === selectedItemId
+    const timeline = (await getStoreState()).timelineItems;
+    setTimelineItems(
+      timeline.map((item) =>
+        item.id === selectedItemId
           ? {
-              ...layer,
-              effects: layer.effects.map((effect, i) =>
-                i === index ? { ...effect, parameters: values } : effect,
+              ...item,
+              effects: item.effects.map((effect, i) =>
+                i === index ? { ...effect, parameters: params } : effect,
               ),
             }
-          : layer,
+          : item,
       ),
     );
   };
@@ -214,15 +214,15 @@ const EffectParameter = () => {
     if (!source) return;
     if (!target || source.index === target.index) return;
 
-    const timeline = (await getStoreState()).timelineLayers;
-    setTimelineLayers(
-      timeline.map((layer) =>
-        layer.id === selectedItemId
+    const timeline = (await getStoreState()).timelineItems;
+    setTimelineItems(
+      timeline.map((item) =>
+        item.id === selectedItemId
           ? {
-              ...layer,
-              effects: arrayMove(layer.effects, source.index, target.index),
+              ...item,
+              effects: arrayMove(item.effects, source.index, target.index),
             }
-          : layer,
+          : item,
       ),
     );
   };
@@ -236,7 +236,7 @@ const EffectParameter = () => {
           index={index}
           selectedItemId={selectedItemId}
           selectedItem={selectedItem}
-          onValuesChange={handleValuesChange}
+          onParamsChange={handleParamsChange}
         />
       ))}
     </DragDropProvider>

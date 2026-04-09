@@ -197,14 +197,14 @@ pub struct GenerateStructure {
 
 #[napi(object)]
 #[derive(IntoPyObject)]
-pub struct LayerStructure {
+pub struct ItemStructure {
     pub id: String, // UUIDが期待される
     pub x: i32,
     pub y: i32,
     pub scale: f64,
     pub rotation: f64,
     pub alpha: f64,
-    pub obj: GenerateStructure,
+    pub object: GenerateStructure,
     pub effects: Vec<GenerateStructure>,
 }
 
@@ -263,7 +263,7 @@ pub struct PluginNameInfo {
 
 #[napi(object)]
 #[derive(FromPyObject)]
-pub struct LayerResult {
+pub struct ItemResult {
     pub width: i32,
     pub height: i32,
 }

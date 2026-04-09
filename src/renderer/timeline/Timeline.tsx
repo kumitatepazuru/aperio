@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useShallow } from "zustand/shallow";
 import useStore, {
   getCurrentFrameCount,
-  type TimelineLayerStructure,
+  type TimelineItemStructure,
 } from "@shared/store";
 import {
   useCallback,
@@ -37,27 +37,27 @@ const Timeline = () => {
   const [horizontalScroll, setHorizontalScroll] = useState(0);
   const { size, ref: contentRef } = useContentSize();
   const topScrollRef = useRef<HTMLDivElement | null>(null);
-  const { timelineLayers, setTimelineLayers, setSelectedItemId } = useStore(
+  const { timelineItems, setTimelineItems, setSelectedItemId } = useStore(
     useShallow((state) => ({
-      timelineLayers: state.timelineLayers,
-      setTimelineLayers: state.setTimelineLayers,
+      timelineItems: state.timelineItems,
+      setTimelineItems: state.setTimelineItems,
       setSelectedItemId: state.setSelectedItemId,
     })),
   );
   const maxVisibleFrames = useMemo(() => {
     return (
-      Math.max(...timelineLayers.map((layer) => layer.to), 0) +
+      Math.max(...timelineItems.map((item) => item.to), 0) +
       Math.floor(size.width / ZoomLevels[zoom])
     ); // 表示領域に収まるフレーム数を余裕を持って計算
-  }, [size.width, timelineLayers, zoom]);
+  }, [size.width, timelineItems, zoom]);
   const graduationInterval = useMemo(() => GraduationPerFrames[zoom], [zoom]);
   const maxVisibleLayers = useMemo(() => {
     // 表示するレイヤー数は要素いっぱいまたは最大レイヤー番号+5のどちらか大きい方
     return Math.max(
-      ...timelineLayers.map((layer) => layer.layer + 5),
+      ...timelineItems.map((item) => item.layer + 5),
       Math.ceil(size.height / LayerHeight),
     );
-  }, [size.height, timelineLayers]);
+  }, [size.height, timelineItems]);
 
   const visibleGraduationIndices = useMemo(() => {
     const visibleTimelineWidth = Math.max(0, size.width - LayerColumnWidth);
@@ -177,20 +177,20 @@ const Timeline = () => {
 
           const endFrame = currentFrame + structure.durationFrames;
           let layer = 0;
-          // 追加するオブジェクトのレイヤーは、現在のオブジェクトと重ならない最も低いレイヤーにする
+          // 追加するアイテムのレイヤーは、現在のアイテムと重ならない最も低いレイヤーにする
           while (
-            timelineLayers.some(
-              (l) =>
-                l.layer === layer &&
-                ((currentFrame >= l.from && currentFrame < l.to) || // 現在のフレームが既存オブジェクトの範囲内
-                  (endFrame > l.from && endFrame <= l.to) || // 終了フレームが既存オブジェクトの範囲内
-                  (currentFrame <= l.from && endFrame >= l.to)), // 既存オブジェクトが追加するオブジェクトの範囲内
+            timelineItems.some(
+              (item) =>
+                item.layer === layer &&
+                ((currentFrame >= item.from && currentFrame < item.to) ||
+                  (endFrame > item.from && endFrame <= item.to) ||
+                  (currentFrame <= item.from && endFrame >= item.to)),
             )
           ) {
             layer++;
           }
 
-          const newLayer: TimelineLayerStructure = {
+          const newItem: TimelineItemStructure = {
             id: uuidv4(),
             layer,
             from: currentFrame,
@@ -200,7 +200,7 @@ const Timeline = () => {
             scale: 100.0,
             rotation: 0.0,
             alpha: 100.0,
-            obj: {
+            object: {
               id: uuidv4(),
               name: objName,
               displayName: structure.displayName,
@@ -209,8 +209,8 @@ const Timeline = () => {
             effects: [],
           };
 
-          setTimelineLayers([...timelineLayers, newLayer]);
-          setSelectedItemId(newLayer.id);
+          setTimelineItems([...timelineItems, newItem]);
+          setSelectedItemId(newItem.id);
         },
       );
 
@@ -219,7 +219,7 @@ const Timeline = () => {
         removeAddObjectListener();
       };
     },
-    [setSelectedItemId, setTimelineLayers, timelineLayers],
+    [setSelectedItemId, setTimelineItems, timelineItems],
   );
 
   return (

@@ -142,7 +142,7 @@ const TimelineBaseUI = ({
       >
         {/* beginFrameの線 */}
         <div
-          className="absolute top-0 bottom-0 border-l boreder-info z-20"
+          className="absolute top-0 bottom-0 border-l border-info z-20"
           style={{
             left: viewerState.beginFrame * zoomLevels[zoom],
           }}
