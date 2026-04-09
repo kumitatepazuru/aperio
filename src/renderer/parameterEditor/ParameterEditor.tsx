@@ -51,14 +51,14 @@ const ParameterEditor = () => {
       id,
       type: "submenu",
       value,
-      submenu: Object.entries(pluginNames.effectPlugins).map(
-        ([effectId, effectValue]) => ({
+      submenu: Object.entries(pluginNames.effectPlugins)
+        .filter(([effectId]) => effectId.startsWith(`${id}.`))
+        .map(([effectId, effectValue]) => ({
           id: effectId,
           type: "item",
           value: effectValue,
           click: onAddEffect,
-        }),
-      ),
+        })),
     }));
   };
 
@@ -67,7 +67,9 @@ const ParameterEditor = () => {
       {selectedItem ? (
         <div>
           <div className="flex gap-3 items-center mb-4">
-            <h2 className="text-lg font-bold grow">{selectedItem.object.displayName}</h2>
+            <h2 className="text-lg font-bold grow">
+              {selectedItem.object.displayName}
+            </h2>
             <NestedMenu click items={effectMenuItems}>
               <button className="btn btn-sm btn-square">
                 <IoIosAdd />
