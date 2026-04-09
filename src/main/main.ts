@@ -11,7 +11,7 @@ import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
-import { AperioConfig, LayerStructure, NodeSharedTextureFormat } from "native";
+import { AperioConfig, ItemStructure, NodeSharedTextureFormat } from "native";
 import setMenu from "./menu";
 import { registerContextMenuIpc } from "./contextMenu";
 
@@ -87,7 +87,7 @@ ipcMain.handle(
     count: number,
     width: number,
     height: number,
-    frameStruct: LayerStructure[],
+    frameStruct: ItemStructure[],
   ) => {
     nativeModule.getFrameBuf(count, width, height, frameStruct);
   },
@@ -95,7 +95,7 @@ ipcMain.handle(
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  (event, count: number, frameStruct: LayerStructure[]) => {
+  (event, count: number, frameStruct: ItemStructure[]) => {
     nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
   },
 );

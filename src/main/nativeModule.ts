@@ -9,7 +9,7 @@ import {
 } from "electron";
 import {
   Dirs,
-  LayerStructure,
+  ItemStructure,
   NodeOffscreenSharedTextureInfo,
   AperioManager,
   AperioConfigManager,
@@ -71,7 +71,7 @@ export class NativeModule {
     count: number,
     width: number,
     height: number,
-    frameStruct: LayerStructure[],
+    frameStruct: ItemStructure[],
   ) {
     const size = width * height * 4;
     if (!this._sharedBuf || this._sharedBufSize !== size) {
@@ -87,7 +87,7 @@ export class NativeModule {
 
   getFrameSharedTexture(
     count: number,
-    frameStruct: LayerStructure[],
+    frameStruct: ItemStructure[],
     frame: Electron.WebContents,
   ) {
     // if (this.eventStack) return; // すでに処理中の場合は無視

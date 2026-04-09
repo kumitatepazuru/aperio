@@ -5,7 +5,7 @@ import type { RequestStructureParameter } from "native";
 import { useMemo } from "react";
 
 // TODO: ID重複の時にエラーを出す
-const BaseParameterStructure: RequestStructureParameter[] = [
+const baseParameterStructure: RequestStructureParameter[] = [
   {
     type: "Vec2Int",
     id: "position",
@@ -38,9 +38,9 @@ const BaseParameterStructure: RequestStructureParameter[] = [
 
 const BaseParameter = () => {
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
-  const setTimelineLayers = useStore((state) => state.setTimelineLayers);
+  const setTimelineItems = useStore((state) => state.setTimelineItems);
   const selectedItem = useStore((state) =>
-    state.timelineLayers.find((layer) => layer.id === state.mainSelectedItemId),
+    state.timelineItems.find((item) => item.id === state.mainSelectedItemId),
   );
 
   const baseParams: Record<string, ConfigableValue> | null = useMemo(() => {
@@ -53,28 +53,28 @@ const BaseParameter = () => {
     };
   }, [selectedItem]);
 
-  const handleBaseChange = async (values: Record<string, ConfigableValue>) => {
+  const handleBaseChange = async (params: Record<string, ConfigableValue>) => {
     if (!selectedItemId) return;
 
     // positionだけxyに分けて保存する
-    const position = values.position as Vec2Value;
-    const updatedValues = {
-      ...values,
+    const position = params.position as Vec2Value;
+    const updatedParams = {
+      ...params,
       position: undefined,
       x: position[0],
       y: position[1],
     };
-    const timeline = (await getStoreState()).timelineLayers;
-    setTimelineLayers(
-      timeline.map((layer) =>
-        layer.id === selectedItemId ? { ...layer, ...updatedValues } : layer,
+    const timeline = (await getStoreState()).timelineItems;
+    setTimelineItems(
+      timeline.map((item) =>
+        item.id === selectedItemId ? { ...item, ...updatedParams } : item,
       ),
     );
   };
 
   return (
     <Configable
-      structures={BaseParameterStructure}
+      structures={baseParameterStructure}
       value={baseParams ?? {}}
       onChange={handleBaseChange}
     />

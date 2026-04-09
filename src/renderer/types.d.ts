@@ -1,10 +1,10 @@
 import {
-  type FrameLayerStructure,
   type AperioConfig,
   type RequestStructureParameter,
   type NewEffectGeneratorReturn,
   type NewObjectGeneratorReturn,
   type PluginNameInfo,
+  type ItemStructure,
 } from "native";
 import { sharedTexture } from "electron";
 import type { SyncableState } from "../shared/store";
@@ -40,14 +40,14 @@ declare global {
         count: number,
         width: number,
         height: number,
-        frameStruct: FrameLayerStructure[],
+        frameStruct: ItemStructure[],
       ) => Promise<void>;
       setReceiver: (
         cb: Parameters<typeof sharedTexture.setSharedTextureReceiver>[0],
       ) => void;
       getFrameSharedTexture: (
         count: number,
-        frameStruct: FrameLayerStructure[],
+        frameStruct: ItemStructure[],
       ) => Promise<void>;
     };
     main: {

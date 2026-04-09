@@ -1,9 +1,9 @@
-import type { LayerResult, LayerStructure } from "native";
+import type { ItemResult, ItemStructure } from "native";
 import { create } from "zustand";
 import type { ColorValue } from "@/configable/utils";
 
-export type TimelineLayerStructure = LayerStructure & {
-  layer: number; // レイヤー番号
+export type TimelineItemStructure = ItemStructure & {
+  layer: number; // レイヤー番号（z-index）
   from: number; // 開始フレーム
   to: number; // 終了フレーム
 };
@@ -17,7 +17,7 @@ type ViewerState = {
 type FrameState = {
   width: number;
   height: number;
-  frameResults: Record<string, LayerResult>;
+  frameResults: Record<string, ItemResult>;
 };
 
 export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
@@ -27,8 +27,8 @@ type Store = {
   fps: number;
   frameState: FrameState;
   viewerState: ViewerState;
-  timelineLayers: TimelineLayerStructure[];
-  selectedItemId: string[];
+  timelineItems: TimelineItemStructure[];
+  selectedItemIds: string[];
   mainSelectedItemId: string | null;
   colorPicker: {
     colorSpace: ColorSpace;
@@ -40,7 +40,7 @@ type Store = {
   setFrameState: (frameState: FrameState) => void;
   setFrameCount: (frame: number) => void;
   setFps: (fps: number) => void;
-  setTimelineLayers: (layers: TimelineLayerStructure[]) => void;
+  setTimelineItems: (items: TimelineItemStructure[]) => void;
   setSelectedItemId: (id: string | null) => void;
   addSelectedItemId: (id: string) => void;
   setSelectedItems: (ids: string[], mainId: string | null) => void;
@@ -52,9 +52,9 @@ export type SyncableState = Pick<
   Store,
   | "fps"
   | "viewerState"
-  | "timelineLayers"
+  | "timelineItems"
   | "frameState"
-  | "selectedItemId"
+  | "selectedItemIds"
   | "mainSelectedItemId"
   | "colorPicker"
 >;
@@ -176,9 +176,9 @@ const _useStore = create<Store>()((set, get) => {
       changeTime: Date.now(),
       beginFrame: 0,
     },
-    timelineLayers: [],
+    timelineItems: [],
     pluginNames: undefined,
-    selectedItemId: [],
+    selectedItemIds: [],
     mainSelectedItemId: null,
     colorPicker: {
       colorSpace: "HSV",
@@ -211,18 +211,18 @@ const _useStore = create<Store>()((set, get) => {
         },
       }),
     setFps: (fps) => syncSet({ fps }),
-    setTimelineLayers: (layers) => syncSet({ timelineLayers: layers }),
+    setTimelineItems: (items) => syncSet({ timelineItems: items }),
     setSelectedItemId: (id: string | null) =>
-      syncSet({ selectedItemId: id ? [id] : [], mainSelectedItemId: id }),
+      syncSet({ selectedItemIds: id ? [id] : [], mainSelectedItemId: id }),
     addSelectedItemId: (id: string) => {
       const current = get();
       syncSet({
-        selectedItemId: [...current.selectedItemId, id],
+        selectedItemIds: [...current.selectedItemIds, id],
         mainSelectedItemId: current.mainSelectedItemId ?? id,
       });
     },
     setSelectedItems: (ids: string[], mainId: string | null) =>
-      syncSet({ selectedItemId: ids, mainSelectedItemId: mainId }),
+      syncSet({ selectedItemIds: ids, mainSelectedItemId: mainId }),
     setColorPicker: (colorPicker: Store["colorPicker"]) =>
       syncSet({ colorPicker }),
   };
@@ -278,8 +278,8 @@ export const getCurrentFrameStruct = async () => {
       ? viewerState.beginFrame +
         Math.floor(((Date.now() - viewerState.changeTime) / 1000) * fps)
       : viewerState.beginFrame;
-  return state.timelineLayers
-    .filter((layer) => currentFrame >= layer.from && currentFrame <= layer.to)
+  return state.timelineItems
+    .filter((item) => currentFrame >= item.from && currentFrame <= item.to)
     .sort((a, b) => a.layer - b.layer);
 };
 
@@ -297,9 +297,9 @@ function getSyncableState(): SyncableState {
   return {
     fps: s.fps,
     viewerState: s.viewerState,
-    timelineLayers: s.timelineLayers,
+    timelineItems: s.timelineItems,
     frameState: s.frameState,
-    selectedItemId: s.selectedItemId,
+    selectedItemIds: s.selectedItemIds,
     mainSelectedItemId: s.mainSelectedItemId,
     colorPicker: s.colorPicker,
   };

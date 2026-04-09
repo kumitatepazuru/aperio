@@ -1,7 +1,7 @@
 from .plugin_base.generator_base import *
 import gpu_util
 from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
-from .types.frame_structure import LayerResult, LayerStructure as LayerStructure, RequestStructureParameter as RequestStructureParameter
+from .types.frame_structure import ItemResult, ItemStructure as ItemStructure, RequestStructureParameter as RequestStructureParameter
 from _typeshed import Incomplete
 from typing import Callable
 
@@ -115,32 +115,32 @@ class PluginManager:
         Returns:
             list[RequestStructureParameter]: ジェネレーターのパラメーター構造
         """
-    def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, buffer_ptr: int) -> dict[str, LayerResult]:
+    def make_frame_buf(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, buffer_ptr: int) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
         Args:
             frame_number (int): 生成するフレームの番号
-            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
 
         Returns:
-            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
+            dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, LayerResult]:
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
         Args:
             frame_number (int): 生成するフレームの番号
-            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
         
         Returns:
-            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
+            dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """

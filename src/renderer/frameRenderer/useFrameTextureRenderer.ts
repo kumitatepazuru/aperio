@@ -9,7 +9,7 @@ import {
   type ExternalTextureWebGPUResources,
 } from "@/hooks/useWebGPU";
 import type { ReceivedSharedTextureData } from "electron";
-import type { LayerResult } from "native";
+import type { ItemResult } from "native";
 import { hasSameKeys } from "@/utils/hasSame";
 
 // VideoFrameをcanvasに描画するためのシェーダー
@@ -31,7 +31,7 @@ const useFrameTextureRenderer = () => {
   const viewerState = useStore((state) => state.viewerState);
   const frameState = useStore((state) => state.frameState);
   const previousFrameCount = useRef<number | null>(null);
-  const timelineLayers = useStore((state) => state.timelineLayers);
+  const timelineItems = useStore((state) => state.timelineItems);
 
   // VideoFrameを描画する関数
   const renderVideoFrame = (
@@ -111,7 +111,7 @@ const useFrameTextureRenderer = () => {
   useEffect(() => {
     const receiver = async (
       textureInfo: ReceivedSharedTextureData,
-      frameResults: Record<string, LayerResult>,
+      frameResults: Record<string, ItemResult>,
     ) => {
       try {
         // VideoFrameを取得
@@ -161,7 +161,7 @@ const useFrameTextureRenderer = () => {
         cancelAnimationFrame(animationFrameReserve.current);
       }
     };
-  }, [viewerState, frameState, resources, frameLoop, timelineLayers]);
+  }, [viewerState, frameState, resources, frameLoop, timelineItems]);
 
   return canvasRef;
 };

@@ -32,7 +32,7 @@ except ImportError as e:
 
 from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
 from .plugin_base.generator_base import *
-from .types.frame_structure import LayerResult, LayerStructure, RequestStructureParameter
+from .types.frame_structure import ItemResult, ItemStructure, RequestStructureParameter
 
 
 class PluginManager:
@@ -295,8 +295,8 @@ class PluginManager:
         else:
             raise ValueError(f"Plugin {plugin_name} is not registered as object or effect plugin")
 
-    def _make_frame(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int) -> tuple[gpu_util.PyImageGenerateBuilder, dict[str, LayerResult]]:
+    def _make_frame(self, frame_number: int, frame_structure: list[ItemStructure], 
+                             width: int, height: int) -> tuple[gpu_util.PyImageGenerateBuilder, dict[str, ItemResult]]:
         """
         指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
 
@@ -305,18 +305,18 @@ class PluginManager:
 
         Args:
             frame_number (int): 生成するフレームの番号
-            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
 
         Returns:
-            tuple[gpu_util.PyImageGenerateBuilder, dict[str, LayerResult]]: フレーム生成のビルダーオブジェクトとフレーム結果の辞書
+            tuple[gpu_util.PyImageGenerateBuilder, dict[str, ItemResult]]: フレーム生成のビルダーオブジェクトとフレーム結果の辞書
         """
         try:
             if not isinstance(frame_structure, list):
-                raise TypeError("frame_structure must be a list of LayerStructure")
+                raise TypeError("frame_structure must be a list of ItemStructure")
             if not all(isinstance(layer, dict) for layer in frame_structure):
-                raise TypeError("Each layer in frame_structure must be a LayerStructure")
+                raise TypeError("Each layer in frame_structure must be a ItemStructure")
             if not isinstance(width, int) or not isinstance(height, int):
                 raise TypeError("width and height must be integers")
             if width <= 0 or height <= 0:
@@ -329,18 +329,18 @@ class PluginManager:
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
             params = []
-            frame_results: dict[str, LayerResult] = {}
+            frame_results: dict[str, ItemResult] = {}
             for layer in frame_structure:
                 layer_builder = gpu_util.PyImageGenerateBuilder()
-                obj_name = layer["obj"]["name"]
+                obj_name = layer["object"]["name"]
                 layer_id = layer["id"]
 
                 if obj_name not in self.object_plugins:
                     raise ValueError(f"Object plugin {obj_name} is not registered")
 
                 obj_plugin = self.object_plugins[obj_name]
-                layer_frame = obj_plugin.generate(frame_number, layer["obj"]["parameters"], width, height)
-                frame_results[layer_id] = LayerResult(
+                layer_frame = obj_plugin.generate(frame_number, layer["object"]["parameters"], width, height)
+                frame_results[layer_id] = ItemResult(
                     width=layer_frame.output_width,
                     height=layer_frame.output_height
                 )
@@ -358,7 +358,7 @@ class PluginManager:
 
                     effect_plugin = self.effect_plugins[effect["name"]]
                     layer_frame = effect_plugin.generate(frame_number, effect["parameters"], layer_frame.output_width, layer_frame.output_height)
-                    frame_results[layer_id] = LayerResult(
+                    frame_results[layer_id] = ItemResult(
                         width=layer_frame.output_width, 
                         height=layer_frame.output_height
                     )
@@ -396,20 +396,20 @@ class PluginManager:
 
         return builder, frame_results
     
-    def make_frame_buf(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, buffer_ptr: int) -> dict[str, LayerResult]:
+    def make_frame_buf(self, frame_number: int, frame_structure: list[ItemStructure], 
+                             width: int, height: int, buffer_ptr: int) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
         Args:
             frame_number (int): 生成するフレームの番号
-            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
             buffer_ptr (int): 書き込み先バッファのポインタ
 
         Returns:
-            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
+            dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
         builder, results = self._make_frame(frame_number, frame_structure, width, height)
 
@@ -418,21 +418,21 @@ class PluginManager:
 
         return results
 
-    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[LayerStructure], 
-                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, LayerResult]:
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], 
+                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
         Args:
             frame_number (int): 生成するフレームの番号
-            frame_structure (list[LayerStructure]): フレーム構造のリスト
+            frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
         
         Returns:
-            dict[str, LayerResult]: 各レイヤーのフレーム生成結果の辞書
+            dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
         builder, results = self._make_frame(frame_number, frame_structure, width, height)
 

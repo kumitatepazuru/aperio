@@ -1,17 +1,17 @@
-import type { LayerResult, LayerStructure } from "native";
+import type { ItemResult, ItemStructure } from "native";
 
 type PendingRequest = {
   frameCount: number;
   width: number;
   height: number;
-  frameStruct: LayerStructure[];
+  frameStruct: ItemStructure[];
   resolve: (data: BufferReturn) => void;
   reject: (err: unknown) => void;
 };
 
 type BufferReturn = {
   frame: ArrayBuffer;
-  frameResults: Record<string, LayerResult>;
+  frameResults: Record<string, ItemResult>;
 };
 
 const Frame = class {
@@ -78,7 +78,7 @@ const Frame = class {
     frameCount: number,
     width: number,
     height: number,
-    frameStruct: LayerStructure[],
+    frameStruct: ItemStructure[],
   ): Promise<BufferReturn> {
     if (!this.port) {
       await this.init();

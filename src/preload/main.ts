@@ -4,7 +4,7 @@ import {
   IpcRendererEvent,
   sharedTexture,
 } from "electron";
-import { AperioConfig, type LayerStructure } from "native";
+import { AperioConfig, type ItemStructure } from "native";
 
 export type SyncedStoreState = {
   fps: number;
@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld("frame", {
     count: number,
     width: number,
     height: number,
-    frameStruct: LayerStructure[],
+    frameStruct: ItemStructure[],
   ) => {
     await ipcRenderer.invoke(
       "get-frame-buf",
@@ -50,7 +50,7 @@ contextBridge.exposeInMainWorld("frame", {
   },
   getFrameSharedTexture: async (
     count: number,
-    frameStruct: LayerStructure[],
+    frameStruct: ItemStructure[],
   ) => {
     await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
   },

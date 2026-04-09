@@ -15,18 +15,18 @@ class GenerateStructure(TypedDict):
 
 
 @dataclass
-class LayerStructure(TypedDict):
+class ItemStructure(TypedDict):
     """
-    レイヤー構造を表す辞書の型定義。
+    アイテム構造を表す辞書の型定義。
     """
 
-    id: str  # レイヤーのUUID
-    x: int  # レイヤーの左上隅のX座標
-    y: int  # レイヤーの左上隅のY座標
-    scale: float  # レイヤーのスケール
-    rotation: float  # レイヤーの回転角度（度単位）
-    alpha: float  # レイヤーの透明度（0.0〜1.0）
-    obj: GenerateStructure  # ベースとなるオブジェクトプラグインの情報
+    id: str  # アイテムのUUID
+    x: int  # アイテムの左上隅のX座標
+    y: int  # アイテムの左上隅のY座標
+    scale: float  # アイテムのスケール
+    rotation: float  # アイテムの回転角度（度単位）
+    alpha: float  # アイテムの透明度（0.0〜1.0）
+    object: GenerateStructure  # ベースとなるオブジェクトプラグインの情報
     effects: list[GenerateStructure]
 
 @dataclass
@@ -139,6 +139,6 @@ RequestStructureParameter = Union[
 ]
 
 @dataclass
-class LayerResult:
+class ItemResult:
     width: int
     height: int
