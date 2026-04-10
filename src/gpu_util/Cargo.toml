@@ -5,21 +5,15 @@ authors.workspace = true
 edition.workspace = true
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
-wgpu = "27.0.1"
+wgpu = {workspace = true}
 futures = "0.3.31"
 rayon = "1.11.0"
 bytemuck = "1.24.0"
-# PyO3側でstubが生成できるようになるまでの代替として利用
-# https://pyo3.rs/latest/type-stub.html
-# 追跡issue: https://github.com/PyO3/pyo3/issues/5137
-pyo3-stub-gen = "0.17.0"
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-pyo3 = { workspace = true, features = ["anyhow"]}
 anyhow = { workspace = true }
-numpy = "0.27.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.178"
@@ -27,10 +21,6 @@ ash = "0.38"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [
-      "Win32_Foundation",
-      "Win32_Graphics_Direct3D12",
-]}
-
-[[bin]]
-name = "stub_gen"
-doc = false
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D12",
+] }

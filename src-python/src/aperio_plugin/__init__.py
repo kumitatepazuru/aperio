@@ -5,9 +5,9 @@ import os.path
 import shutil
 import struct
 from typing import Callable
-import gpu_util
-# TODO: stubを生成するように
-import logger # type: ignore
+from aperio import gpu_util
+from aperio import logger
+from aperio.frame_structure import *
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
@@ -30,9 +30,8 @@ except ImportError as e:
                       "\n3. For Linux: Make sure that libpython is preloaded as RTLD_GLOBAL correctly. In linux, libpython must be able to be seen globally because of policy of manylinux."
                       "\n  Try add the environment LD_PRELOAD to specify the path to libpython3.x.so explicitly.") from e
 
-from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
+from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import *
-from .types.frame_structure import ItemResult, ItemStructure, RequestStructureParameter
 
 
 class PluginManager:
@@ -90,7 +89,7 @@ class PluginManager:
         for dir in dirs:
             plugin_name = os.path.basename(dir)
             if not os.path.exists(f"{dir}/__init__.py"):
-                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warning(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
 
             try:
@@ -201,7 +200,7 @@ class PluginManager:
             # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
             logger.info(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
             if not os.path.exists(f"{plugin_dir}/__init__.py"):
-                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warning(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 return False
 
             with open(f"{plugin_dir}/__init__.py", "rb") as f:
@@ -216,7 +215,7 @@ class PluginManager:
 
         # プラグインを再読み込みして登録する
         if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
-            logger.warn(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
+            logger.warning(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
             return False
         try:
             __import__(f"{self.plugin_dir_name}.{plugin_name}")

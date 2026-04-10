@@ -1,15 +1,3 @@
-[build-system]
-requires = ["maturin>=1.9,<2.0"]
-build-backend = "maturin"
-
-[project]
-name = "gpu_util"
-requires-python = ">=3.10"
-classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-]
-dynamic = ["version"]
-[tool.maturin]
-features = ["pyo3/extension-module"]
+# このクレートは純粋 Rust ライブラリになりました。
+# Python 拡張モジュールは src/wrapper に移植されています。
+# maturin でビルドする場合は src/wrapper/pyproject.toml を使用してください。

@@ -1,11 +1,10 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-
-from gpu_util import PyCompiledFunc, PyCompiledWgsl, PyImageGenerator
+from aperio.frame_structure import NewEffectGeneratorReturn, NewObjectGeneratorReturn, RequestStructureParameter
+from aperio.gpu_util import PyCompiledFunc, PyCompiledWgsl, PyImageGenerator
 
 from . import SubPluginBase
-from ..types.frame_structure import RequestStructureParameter
 
 @dataclass
 class GeneratorWgslReturn:
@@ -20,17 +19,6 @@ class GeneratorFuncReturn:
     params: object
     output_width: int
     output_height: int
-
-@dataclass
-class NewObjectGeneratorReturn:
-    display_name: str
-    duration_frames: int
-    structure: list[RequestStructureParameter]
-
-@dataclass
-class NewEffectGeneratorReturn:
-    display_name: str
-    structure: list[RequestStructureParameter]
 
 class GeneratorBase(SubPluginBase):
     """

@@ -1,7 +1,7 @@
 from . import SubPluginBase as SubPluginBase
-from ..types.frame_structure import RequestStructureParameter as RequestStructureParameter
+from aperio.frame_structure import NewEffectGeneratorReturn as NewEffectGeneratorReturn, NewObjectGeneratorReturn as NewObjectGeneratorReturn, RequestStructureParameter as RequestStructureParameter
+from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
 from dataclasses import dataclass
-from gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
 
 @dataclass
 class GeneratorWgslReturn:
@@ -16,17 +16,6 @@ class GeneratorFuncReturn:
     params: object
     output_width: int
     output_height: int
-
-@dataclass
-class NewObjectGeneratorReturn:
-    display_name: str
-    duration_frames: int
-    structure: list[RequestStructureParameter]
-
-@dataclass
-class NewEffectGeneratorReturn:
-    display_name: str
-    structure: list[RequestStructureParameter]
 
 class GeneratorBase(SubPluginBase):
     """

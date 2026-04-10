@@ -11,7 +11,7 @@ import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
-import { AperioConfig, ItemStructure, NodeSharedTextureFormat } from "native";
+import { AperioConfig, ItemStructure, WrappedSharedTextureFormat } from "native";
 import setMenu from "./menu";
 import { registerContextMenuIpc } from "./contextMenu";
 
@@ -222,10 +222,10 @@ async function createWindow() {
   if (config.fastPreview) {
     let format: "argb" | "rgbaf16" | undefined;
     switch (config.texPixelFormat) {
-      case NodeSharedTextureFormat.Rgba16Float:
+      case WrappedSharedTextureFormat.Rgba16Float:
         format = "rgbaf16";
         break;
-      case NodeSharedTextureFormat.Bgra8Unorm:
+      case WrappedSharedTextureFormat.Bgra8Unorm:
         format = "argb";
         break;
       default:

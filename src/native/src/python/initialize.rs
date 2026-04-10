@@ -1,9 +1,8 @@
 use crate::util::get_data_dir;
 use crate::Dirs;
-use crate::python::logger;
 use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;
-use pyo3::types::{PyDict, PyModule};
+use pyo3::types::PyDict;
 use pyo3::{Py, PyAny, PyErr, Python};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -15,27 +14,19 @@ pub fn initialize_python(dir: &Dirs) -> Result<Py<PyAny>> {
         .context("Failed to convert from pathbuf to str")?;
     let base_plugin_dir = PathBuf::from_str(&dir.default_plugins_dir)?.join("base");
 
-    // Pythonのプラグインシステムを初期化
     let pl_manager = Python::attach(|py| {
-        // pythonのversionを取得
         let sys = py.import("sys")?;
 
-        // ネイティブモジュールを追加
+        // aperio / aperio.gpu_util / aperio.logger / aperio.frame_structure をまとめて注入
         let modules = sys.getattr("modules")?;
         let modules = modules.cast::<PyDict>()?;
-        let m = PyModule::new(py, "gpu_util")?;
-        gpu_util::gpu_util(&m)?;
-        modules.set_item("gpu_util", m)?;
-        let m = PyModule::new(py, "logger")?;
-        logger::logger(&m)?;
-        modules.set_item("logger", m)?;
+        wrapper::register_all(py, modules)?;
 
         // プラグインマネージャーのパスをsys.pathに追加
         let sys_path = sys.getattr("path")?;
         sys_path.call_method1("append", (&dir.plugin_manager_dir,))?;
         sys_path.call_method1("append", (&appdata_dir,))?;
 
-        // sys.pathを表示
         let sys_path: Vec<String> = sys.getattr("path")?.extract()?;
         println!("sys.path: {:?}", sys_path);
 

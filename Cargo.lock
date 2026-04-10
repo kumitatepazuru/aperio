@@ -125,6 +125,16 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "toml_edit",
+ "wrapper",
+]
+
+[[package]]
+name = "aperio_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -761,9 +771,6 @@ dependencies = [
  "bytemuck",
  "futures",
  "libc",
- "numpy",
- "pyo3",
- "pyo3-stub-gen",
  "rayon",
  "tokio",
  "wgpu",
@@ -1998,6 +2005,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "text_rendering"
+version = "0.1.0"
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2808,6 +2819,25 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
+
+[[package]]
+name = "wrapper"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aperio_derive",
+ "gpu_util",
+ "log",
+ "napi",
+ "napi-derive",
+ "numpy",
+ "pyo3",
+ "pyo3-stub-gen",
+ "serde",
+ "serde_json",
+ "tokio",
+ "wgpu",
+]
 
 [[package]]
 name = "xml-rs"

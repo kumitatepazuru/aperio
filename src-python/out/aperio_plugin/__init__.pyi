@@ -1,8 +1,8 @@
+from aperio.frame_structure import *
 from .plugin_base.generator_base import *
-import gpu_util
-from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
-from .types.frame_structure import ItemResult, ItemStructure as ItemStructure, RequestStructureParameter as RequestStructureParameter
+from .plugin_base import MainPluginBase, SubPluginBase
 from _typeshed import Incomplete
+from aperio import gpu_util
 from typing import Callable
 
 class PluginManager:

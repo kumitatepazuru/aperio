@@ -1,11 +1,11 @@
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use wrapper::gpu_util::WrappedSharedTextureFormat;
 use std::fs;
 use std::path::PathBuf;
 use std::{fs::File, io::Write};
 
-use crate::node_shared_texture::NodeSharedTextureFormat;
 use crate::util::get_data_dir;
 use crate::Dirs;
 
@@ -19,7 +19,7 @@ pub struct PythonConfig {
 pub struct AperioConfig {
     pub python: PythonConfig,
     pub fast_preview: bool,
-    pub tex_pixel_format: NodeSharedTextureFormat,
+    pub tex_pixel_format: WrappedSharedTextureFormat,
     pub dock_layout: Option<Value>,
 }
 
