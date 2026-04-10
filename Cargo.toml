@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/gpu_util", "src/macros", "src/native", "src/text_rendering", "src/wrapper"]
+members = ["src/gpu_util", "src/macros", "src/native", "src/wrapper"]
 resolver = "2"
 
 [workspace.package]

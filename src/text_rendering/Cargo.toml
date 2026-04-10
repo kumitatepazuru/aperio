@@ -1,0 +1,7 @@
+[package]
+name = "text_rendering"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
