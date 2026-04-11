@@ -66,7 +66,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ResourcePool<K, V> {
 ///
 /// パイプラインのように複数の呼び出し元が同じインスタンスを同時に共有できる
 /// 読み取り専用・ステートレスなリソース向け。
-pub(crate) struct LruCache<K, V> {
+pub struct LruCache<K, V> {
     items: HashMap<K, V>,
     order: VecDeque<K>,
     max_size: usize,

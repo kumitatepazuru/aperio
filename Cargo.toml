@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/gpu_util", "src/macros", "src/native", "src/wrapper"]
+members = ["src/gpu_util", "src/macros", "src/native", "src/text_rendering", "src/wrapper"]
 resolver = "2"
 
 [workspace.package]
@@ -17,6 +17,7 @@ napi-derive = "3.0.0"
 serde_json = "1.0.145"
 serde = { version = "1.0.228", features = ["derive"] }
 wgpu = "27.0.1"
+bytemuck = "1"
 
 [profile.release]
 lto = true
