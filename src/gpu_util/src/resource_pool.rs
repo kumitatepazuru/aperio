@@ -1,18 +1,18 @@
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 
-struct PoolEntry<V> {
-    available: Vec<V>,
-    in_use: Vec<V>,
+struct PoolItem<V> {
+    value: V,
+    used: bool,
 }
 
 /// キーごとに複数のリソースインスタンスを管理するプール。
 ///
 /// 並列パイプライン実行時に、同じキーを持つ複数のサブパイプラインが
 /// それぞれ独立したリソースを取得できることを保証します。
-/// フレーム開始時に `release_all` を呼ぶことで、前フレームのリソースを再利用可能にします。
+/// フレーム開始時に `reset_used` を呼ぶことで、前フレームのリソースを再利用可能にします。
 pub(crate) struct ResourcePool<K, V> {
-    pool: HashMap<K, PoolEntry<V>>,
+    pool: HashMap<K, Vec<PoolItem<V>>>,
     max_per_key: usize,
 }
 
@@ -25,38 +25,48 @@ impl<K: Hash + Eq + Clone, V: Clone> ResourcePool<K, V> {
     }
 
     /// キーに対応するリソースを取得します。
-    /// available なインスタンスがあれば再利用し、なければ `create` で新規作成します。
-    /// 取得したリソースは in_use としてマークされ、`release_all` が呼ばれるまで
+    /// used フラグが立っていないインスタンスがあれば再利用し、なければ `create` で新規作成します。
+    /// 取得したリソースには used フラグが立てられ、`reset_used` が呼ばれるまで
     /// 他の呼び出しからは返されません。
     pub fn acquire(&mut self, key: K, create: impl FnOnce() -> V) -> V {
-        let entry = self.pool.entry(key).or_insert_with(|| PoolEntry {
-            available: Vec::new(),
-            in_use: Vec::new(),
+        let items = self.pool.entry(key).or_insert_with(Vec::new);
+
+        // used フラグが立っていない最初のアイテムを探して返す
+        if let Some(item) = items.iter_mut().find(|item| !item.used) {
+            item.used = true;
+            return item.value.clone();
+        }
+
+        // 未使用アイテムがなければ新規作成
+        let value = create();
+        items.push(PoolItem {
+            value: value.clone(),
+            used: true,
         });
-        let item = entry.available.pop().unwrap_or_else(create);
-        entry.in_use.push(item.clone());
-        item
+        value
     }
 
-    /// in_use のすべてのリソースを available に返します。
-    /// フレームの開始時に呼び出してください。
-    pub fn release_all(&mut self) {
-        for entry in self.pool.values_mut() {
-            entry.available.append(&mut entry.in_use);
-            // キーごとの上限を超えた分は古い順に削除
-            if entry.available.len() > self.max_per_key {
-                let excess = entry.available.len() - self.max_per_key;
-                entry.available.drain(..excess);
+    /// used フラグをリセットします。
+    /// キーごとのアイテム数が上限を超えている場合、未使用(used=false)のアイテムを先に削除してから
+    /// 残りの used フラグをリセットします。使用中(used=true)のアイテムは上限超過時も削除しません。
+    pub fn reset_used(&mut self) {
+        for items in self.pool.values_mut() {
+            if items.len() > self.max_per_key {
+                // 未使用アイテムを削除して上限以内に収める（使用中は保持）
+                items.retain(|item| item.used);
+            }
+            // used フラグをリセット
+            for item in items.iter_mut() {
+                item.used = false;
             }
         }
     }
 
     pub fn set_max_per_key(&mut self, max: usize) {
         self.max_per_key = max;
-        for entry in self.pool.values_mut() {
-            if entry.available.len() > max {
-                let excess = entry.available.len() - max;
-                entry.available.drain(..excess);
+        for items in self.pool.values_mut() {
+            if items.len() > max {
+                items.retain(|item| item.used);
             }
         }
     }

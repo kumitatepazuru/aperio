@@ -41,7 +41,6 @@ pub(crate) struct PipelineCacheKey {
 // テクスチャキャッシュのキーとなる構造体
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub(crate) struct TextureCacheKey {
-    step: usize,
     width: u32,
     height: u32,
     format: wgpu::TextureFormat,
@@ -270,7 +269,6 @@ impl ImageGenerator {
     /// ResourcePool により、並列パイプライン内で同じキーに対して独立したインスタンスが返されます。
     pub(crate) fn get_or_create_texture(
         &self,
-        step_index: usize,
         width: u32,
         height: u32,
         format: wgpu::TextureFormat,
@@ -278,7 +276,6 @@ impl ImageGenerator {
         label: Option<&str>,
     ) -> Arc<wgpu::Texture> {
         let key = TextureCacheKey {
-            step: step_index,
             width,
             height,
             format,
@@ -382,8 +379,8 @@ impl ImageGenerator {
     /// 画像生成機能を利用できるようにしている。
     async fn generate(&self, builder: ImageGenerateBuilder) -> Result<Vec<StepOutput>> {
         // フレーム開始時に前フレームで使用したリソースを解放して再利用可能にする
-        self.texture_pool.lock().unwrap().release_all();
-        self.buffer_pool.lock().unwrap().release_all();
+        self.texture_pool.lock().unwrap().reset_used();
+        self.buffer_pool.lock().unwrap().reset_used();
 
         let (final_state_vec, encoders) = self.execute_pipeline(&builder.steps, Vec::new()).await?;
 

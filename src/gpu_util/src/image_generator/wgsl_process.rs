@@ -31,12 +31,11 @@ pub fn handle_wgsl_step(
             } => {
                 // CPUデータをGPUにアップロード - キャッシュされたテクスチャを使用
                 let texture = generator.get_or_create_texture(
-                    step_index,
                     *width,
                     *height,
                     wgpu::TextureFormat::Rgba32Float,
                     wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                    Some(&format!("Step {} WGSL Input Upload {}", step_index, i)),
+                    Some(&format!("WGSL Input Upload {}", i)),
                 );
                 generator.queue.write_texture(
                     texture.as_image_copy(),
@@ -59,14 +58,13 @@ pub fn handle_wgsl_step(
 
     // --- 出力テクスチャの作成 ---
     let output_texture = generator.get_or_create_texture(
-        step_index,
         output_width,
         output_height,
         wgpu::TextureFormat::Rgba32Float,
         wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::STORAGE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
-        Some(&format!("Step {} Output Texture", step_index)),
+        Some("Output Texture"),
     );
     let output_texture_view = output_texture.create_view(&Default::default());
 
