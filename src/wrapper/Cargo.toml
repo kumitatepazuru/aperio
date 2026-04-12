@@ -17,6 +17,7 @@ numpy = "0.27.0"
 log = { workspace = true }
 gpu_util = { path = "../gpu_util" }
 aperio_derive = { path = "../macros" }
+text_rendering = { path = "../text_rendering" }
 napi ={ workspace = true }
 napi-derive = { workspace = true }
 serde_json = { workspace = true }

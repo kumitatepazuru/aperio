@@ -311,7 +311,7 @@ impl PyImageGenerator {
 }
 
 #[pymodule]
-pub fn register(m: &Bound<PyModule>) -> PyResult<()> {
+pub fn gpu_util_register(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySamplerOptions>()?;
     m.add_class::<PyCompiledWgsl>()?;
     m.add_class::<PyCompiledFunc>()?;

@@ -189,7 +189,8 @@ impl<'py> IntoPyObject<'py> for ItemStructure {
 
 // ---- モジュール登録 -------------------------------------------------------
 
-pub fn register(m: &Bound<PyModule>) -> PyResult<()> {
+#[pymodule]
+pub fn frame_structure(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<ItemResult>()?;
     m.add_class::<RequestStructureParameter>()?;
     m.add_class::<GenerateStructure>()?;

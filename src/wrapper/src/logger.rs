@@ -20,7 +20,8 @@ fn error(message: String) {
     error!("{}", message);
 }
 
-pub fn register(m: &Bound<PyModule>) -> PyResult<()> {
+#[pymodule]
+pub fn logger(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(info, m)?)?;
     m.add_function(wrap_pyfunction!(warning, m)?)?;
     m.add_function(wrap_pyfunction!(error, m)?)?;

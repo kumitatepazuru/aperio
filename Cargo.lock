@@ -3042,6 +3042,7 @@ dependencies = [
  "pyo3-stub-gen",
  "serde",
  "serde_json",
+ "text_rendering",
  "tokio",
  "wgpu",
 ]
