@@ -267,7 +267,7 @@ impl ImageGenerator {
 
     /// テクスチャを取得または作成するためのヘルパーメソッド。
     /// ResourcePool により、並列パイプライン内で同じキーに対して独立したインスタンスが返されます。
-    pub(crate) fn get_or_create_texture(
+    pub fn get_or_create_texture(
         &self,
         width: u32,
         height: u32,
@@ -302,7 +302,7 @@ impl ImageGenerator {
     }
 
     /// バッファを取得または作成するためのヘルパーメソッド。
-    pub(crate) fn get_or_create_buffer(
+    pub fn get_or_create_buffer(
         &self,
         size: u64,
         usage: wgpu::BufferUsages,
