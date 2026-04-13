@@ -1,8 +1,10 @@
 from aperio_plugin import PluginManager
 from aperio_plugin.plugin_base import MainPluginBase
 
+
 from .effects.blur.blur import BlurEffect
 from .objects.test.test import TestObject
+from .objects.text.text import TextObject
 
 
 @PluginManager.plugin
@@ -17,3 +19,4 @@ class AperioBasePlugin(MainPluginBase):
 
         manager.register_sub_plugin(self, TestObject(generator))
         manager.register_sub_plugin(self, BlurEffect(generator))
+        manager.register_sub_plugin(self, TextObject(generator))

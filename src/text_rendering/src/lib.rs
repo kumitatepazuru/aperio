@@ -648,6 +648,8 @@ impl TextRenderer {
             }
         }
 
+        self.queue.submit(Some(encoder.finish()));
+
         Ok(Some(output_tex))
     }
 }

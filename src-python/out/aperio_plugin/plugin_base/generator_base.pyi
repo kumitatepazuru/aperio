@@ -1,6 +1,6 @@
 from . import SubPluginBase as SubPluginBase
 from aperio.frame_structure import NewEffectGeneratorReturn as NewEffectGeneratorReturn, NewObjectGeneratorReturn as NewObjectGeneratorReturn, RequestStructureParameter as RequestStructureParameter
-from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
+from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
 from dataclasses import dataclass
 
 @dataclass
@@ -13,6 +13,13 @@ class GeneratorWgslReturn:
 @dataclass
 class GeneratorFuncReturn:
     compiled: PyCompiledFunc
+    params: object
+    output_width: int
+    output_height: int
+
+@dataclass
+class GeneratorTextureReturn:
+    compiled: PyCompiledTextureFunc
     params: object
     output_width: int
     output_height: int
@@ -38,7 +45,7 @@ class GeneratorBase(SubPluginBase):
         Returns:
             list[RequestStructureParameter]: オブジェクトのパラメーター構造
         """
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -49,7 +56,7 @@ class GeneratorBase(SubPluginBase):
             height (int): 生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn: 生成されたフレームデータ
         """
 
 class ObjectGeneratorBase(GeneratorBase):
