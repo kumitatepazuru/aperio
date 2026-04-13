@@ -1,5 +1,5 @@
 use crate::{
-    image_generate_builder::{ImageGenerateBuilder, PipelineStep},
+    image_generate_builder::ImageGenerateBuilder,
     image_generator::{ImageGenerator, ProcessingState},
 };
 use anyhow::Result;
@@ -10,23 +10,7 @@ pub async fn handle_parallel_step(
     state: &mut ProcessingState,
     pipelines: &[ImageGenerateBuilder],
     _step_index: usize,
-    all_encoders: &mut Vec<wgpu::CommandEncoder>,
-) -> Result<(ProcessingState, Vec<wgpu::CommandEncoder>)> {
-    // CPU処理が含まれるかどうかをチェック
-    let has_cpu_processing = pipelines.iter().any(|pipeline| {
-        pipeline
-            .steps
-            .iter()
-            .any(|step| matches!(step, PipelineStep::CpuFunc { .. }))
-    });
-
-    // CPU処理が含まれる場合は事前にエンコーダをsubmit
-    if has_cpu_processing && !all_encoders.is_empty() {
-        generator
-            .queue
-            .submit(all_encoders.drain(..).map(|e| e.finish()));
-    }
-
+) -> Result<ProcessingState> {
     // この並列ブロックに入る前の状態を、すべてのサブパイプラインの初期状態として使用する
     // StepOutputがClone可能である必要がある (Vec<f32>はclone可能、Arc<Buffer>もclone可能)
     let initial_state_for_sub_pipelines = state.clone();
@@ -45,21 +29,20 @@ pub async fn handle_parallel_step(
     }
 
     // すべてのサブパイプラインを並列に実行
+    // 各ステップは自身でsubmitするため、エンコーダの収集は不要
     let results = join_all(execution_futures).await;
 
-    // すべての結果を収集して、一つの状態とエンコーダリストにまとめる
+    // すべての結果を収集して、一つの状態にまとめる
     let mut combined_state = ProcessingState::new();
-    let mut result_encoders: Vec<wgpu::CommandEncoder> = Vec::new();
 
     for result in results {
         match result {
-            Ok((mut sub_pipeline_state, mut sub_pipeline_encoders)) => {
+            Ok(mut sub_pipeline_state) => {
                 combined_state.append(&mut sub_pipeline_state);
-                result_encoders.append(&mut sub_pipeline_encoders);
             }
             Err(e) => return Err(e), // エラーが発生した場合は即座に返す
         }
     }
 
-    Ok((combined_state, result_encoders))
+    Ok(combined_state)
 }

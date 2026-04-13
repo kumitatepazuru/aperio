@@ -1,6 +1,6 @@
 // image_generate_builder.rs
 
-use crate::compiled_func::CompiledFunc;
+use crate::compiled_func::{CompiledFunc, CompiledTextureFunc};
 use crate::compiled_wgsl::CompiledWgsl;
 use std::sync::Arc;
 
@@ -21,9 +21,14 @@ pub enum PipelineStep {
     /// CPUで関数を実行するステップ。
     CpuFunc {
         func: CompiledFunc,
-        // CPU関数にもパラメータを渡せるように拡張可能
         params: Option<Vec<u8>>,
-        // このステップが生成するピクセルデータの解像度
+        output_width: u32,
+        output_height: u32,
+    },
+    /// stateをすべてGPUテクスチャに変換したうえで関数を実行するステップ。
+    TextureFunc {
+        func: CompiledTextureFunc,
+        params: Option<Vec<u8>>,
         output_width: u32,
         output_height: u32,
     },
@@ -52,6 +57,8 @@ impl ImageGenerateBuilder {
     ///
     /// * `wgsl` - `CompiledWgsl`のArc参照。
     /// * `params` - シェーダーのStorage Bufferに渡すパラメータ。`bytemuck`でシリアライズされたバイト列を渡します。
+    /// * `output_width` - このステップの出力画像の幅。
+    /// * `output_height` - このステップの出力画像の高さ。
     pub fn add_wgsl(
         self,
         wgsl: CompiledWgsl,
@@ -95,6 +102,9 @@ impl ImageGenerateBuilder {
     /// # Arguments
     ///
     /// * `func` - `CompiledFunc`参照。
+    /// * `params` - 関数に渡す任意のパラメータ。
+    /// * `output_width` - このステップの出力画像の幅。
+    /// * `output_height` - このステップの出力画像の高さ。
     pub fn add_func(
         self,
         func: CompiledFunc,
@@ -102,9 +112,45 @@ impl ImageGenerateBuilder {
         output_width: u32,
         output_height: u32,
     ) -> Self {
-        // Copy-on-Write: 新しいVecを作成して要素を追加
         let mut new_steps = (*self.steps).clone();
         new_steps.push(PipelineStep::CpuFunc {
+            func,
+            params,
+            output_width,
+            output_height,
+        });
+
+        Self {
+            steps: Arc::new(new_steps),
+        }
+    }
+
+    /// GPUテクスチャ関数処理ステップをパイプラインに追加します。
+    ///
+    /// stateをすべてGPUテクスチャに変換したうえで関数を呼び出します。
+    /// widthとheightは関数の戻り値によって決定されるため、add時には指定不要です。
+    ///
+    /// # Arguments
+    ///
+    /// * `func` - `CompiledTextureFunc`参照。
+    /// * `params` - 関数に渡す任意のパラメータ。
+    /// GPUテクスチャ関数処理ステップをパイプラインに追加します。
+    ///
+    /// # Arguments
+    ///
+    /// * `func` - `CompiledTextureFunc`参照。
+    /// * `params` - 関数に渡す任意のパラメータ。
+    /// * `output_width` - このステップの出力画像の幅。
+    /// * `output_height` - このステップの出力画像の高さ。
+    pub fn add_texture_func(
+        self,
+        func: CompiledTextureFunc,
+        params: Option<Vec<u8>>,
+        output_width: u32,
+        output_height: u32,
+    ) -> Self {
+        let mut new_steps = (*self.steps).clone();
+        new_steps.push(PipelineStep::TextureFunc {
             func,
             params,
             output_width,

@@ -13,7 +13,7 @@ pub fn handle_wgsl_step(
     step_index: usize,
     output_width: u32,
     output_height: u32,
-) -> Result<(ProcessingState, Vec<wgpu::CommandEncoder>)> {
+) -> Result<ProcessingState> {
     // --- 入力データの準備 ---
     // すべての入力をGPUバッファに変換する。
     let mut encoder = generator.device.create_command_encoder(&Default::default());
@@ -147,10 +147,13 @@ pub fn handle_wgsl_step(
         cpass.dispatch_workgroups((output_width + 15) / 16, (output_height + 15) / 16, 1);
     }
 
+    // このステップ単位でキューにsubmitする
+    generator.queue.submit([encoder.finish()]);
+
     let new_state = vec![StepOutput::Gpu {
         texture: output_texture,
         width: output_width,
         height: output_height,
     }];
-    Ok((new_state, vec![encoder]))
+    Ok(new_state)
 }

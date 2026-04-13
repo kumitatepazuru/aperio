@@ -347,8 +347,9 @@ class PluginManager:
                     layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                      layer_frame.output_width, layer_frame.output_height)
                 elif isinstance(layer_frame, GeneratorFuncReturn):
-                    layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params,
-                                      layer_frame.output_width, layer_frame.output_height)
+                    layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
+                elif isinstance(layer_frame, GeneratorTextureReturn):
+                    layer_builder = layer_builder.add_texture_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
 
                 # エフェクト適用
                 for effect in layer["effects"]:
@@ -365,8 +366,9 @@ class PluginManager:
                         layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                          layer_frame.output_width, layer_frame.output_height)
                     elif isinstance(layer_frame, GeneratorFuncReturn):
-                        layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params,
-                                          layer_frame.output_width, layer_frame.output_height)
+                        layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
+                    elif isinstance(layer_frame, GeneratorTextureReturn):
+                        layer_builder = layer_builder.add_texture_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
 
                 layer_builders.append(layer_builder)
 

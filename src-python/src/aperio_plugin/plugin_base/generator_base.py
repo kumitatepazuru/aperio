@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from aperio.frame_structure import NewEffectGeneratorReturn, NewObjectGeneratorReturn, RequestStructureParameter
-from aperio.gpu_util import PyCompiledFunc, PyCompiledWgsl, PyImageGenerator
+from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerator
 
 from . import SubPluginBase
 
@@ -16,6 +16,13 @@ class GeneratorWgslReturn:
 @dataclass
 class GeneratorFuncReturn:
     compiled: PyCompiledFunc
+    params: object
+    output_width: int
+    output_height: int
+
+@dataclass
+class GeneratorTextureReturn:
+    compiled: PyCompiledTextureFunc
     params: object
     output_width: int
     output_height: int
@@ -46,7 +53,7 @@ class GeneratorBase(SubPluginBase):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -57,7 +64,7 @@ class GeneratorBase(SubPluginBase):
             height (int): 生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn: 生成されたフレームデータ
         """
         raise NotImplementedError("Subclasses must implement this method")
 

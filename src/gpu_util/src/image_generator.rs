@@ -2,6 +2,7 @@
 pub mod cpu_func_process;
 pub mod final_process;
 pub mod parallel_process;
+pub mod texture_func_process;
 pub mod wgsl_process;
 
 #[cfg(target_os = "linux")]
@@ -15,7 +16,8 @@ use crate::{
     image_generate_builder::{ImageGenerateBuilder, PipelineStep},
     image_generator::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
-        parallel_process::handle_parallel_step, wgsl_process::handle_wgsl_step,
+        parallel_process::handle_parallel_step, texture_func_process::handle_texture_func_step,
+        wgsl_process::handle_wgsl_step,
     },
     resource_pool::{LruCache, ResourcePool},
     SharedTextureFormat,
@@ -322,19 +324,16 @@ impl ImageGenerator {
     }
 
     /// 指定されたステップリストを、与えられた初期状態から実行する内部関数。
-    /// 最終的な状態と、生成されたコマンドエンコーダを返す。
+    /// 各ステップはそれぞれ自身のコマンドをキューにsubmitする。
     pub(crate) async fn execute_pipeline(
         &self,
         steps: &[PipelineStep],
         initial_state: ProcessingState,
-    ) -> Result<(ProcessingState, Vec<wgpu::CommandEncoder>)> {
+    ) -> Result<ProcessingState> {
         let mut state = initial_state;
-        let mut all_encoders = Vec::new();
 
         for (i, step) in steps.iter().enumerate() {
-            // 各ハンドラは `&self` を受け取るように変更する必要がある
-
-            let (new_state, mut encoder_opt) = match step {
+            state = match step {
                 PipelineStep::Wgsl {
                     wgsl,
                     params,
@@ -344,14 +343,13 @@ impl ImageGenerator {
                     handle_wgsl_step(self, &state, wgsl, params, i, *output_width, *output_height)?
                 }
                 PipelineStep::Parallel { pipelines } => {
-                    // ここが新しいロジック
-                    handle_parallel_step(self, &mut state, pipelines, i, &mut all_encoders).await?
+                    handle_parallel_step(self, &mut state, pipelines, i).await?
                 }
                 PipelineStep::CpuFunc {
                     func,
                     params,
-                    output_height,
                     output_width,
+                    output_height,
                 } => {
                     handle_cpu_func_step(
                         self,
@@ -360,16 +358,29 @@ impl ImageGenerator {
                         params,
                         *output_width,
                         *output_height,
-                        &mut all_encoders,
+                    )
+                    .await?
+                }
+                PipelineStep::TextureFunc {
+                    func,
+                    params,
+                    output_width,
+                    output_height,
+                } => {
+                    handle_texture_func_step(
+                        self,
+                        &mut state,
+                        func,
+                        params,
+                        *output_width,
+                        *output_height,
                     )
                     .await?
                 }
             };
-            state = new_state;
-            all_encoders.append(&mut encoder_opt);
         }
 
-        Ok((state, all_encoders))
+        Ok(state)
     }
 
     /// ImageGenerateBuilderで構築されたパイプラインを実行し、画像を生成する。
@@ -382,9 +393,7 @@ impl ImageGenerator {
         self.texture_pool.lock().unwrap().reset_used();
         self.buffer_pool.lock().unwrap().reset_used();
 
-        let (final_state_vec, encoders) = self.execute_pipeline(&builder.steps, Vec::new()).await?;
-
-        self.queue.submit(encoders.into_iter().map(|e| e.finish()));
+        let final_state_vec = self.execute_pipeline(&builder.steps, Vec::new()).await?;
 
         // final_state_vecは単一の要素を持つはず
         if final_state_vec.len() != 1 {

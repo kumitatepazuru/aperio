@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
 // gpu_util crate の純粋 Rust 型をインポート（ローカルモジュール名と衝突しないよう明示的に)
-use gpu_util::compiled_func::{self, CpuFunction, CpuInputImage, CpuOutput};
+use gpu_util::compiled_func::{
+    self, CpuFunction, CpuInputImage, CpuOutput, GpuInputTexture, GpuTextureOutput, TextureFunction,
+};
 use gpu_util::image_generate_builder::ImageGenerateBuilder;
 use gpu_util::image_generator;
 use gpu_util::{compiled_wgsl, image_generate_builder, SharedTextureFormat};
@@ -44,7 +46,24 @@ pub struct PyCompiledWgsl {
 #[pyclass(module = "aperio.gpu_util")]
 pub struct PyCompiledFunc {
     _id: String,
-    pub inner: compiled_func::CompiledFunc,
+    py_callback: Py<PyAny>,
+}
+
+/// wgpu::Texture のPythonラッパー。
+/// Pythonから直接生成することはできず、TextureFunc の引数・戻り値として使用する。
+#[gen_stub_pyclass]
+#[pyclass(module = "aperio.gpu_util")]
+pub struct PyTexture {
+    pub inner: std::sync::Arc<wgpu::Texture>,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[gen_stub_pyclass]
+#[pyclass(module = "aperio.gpu_util")]
+pub struct PyCompiledTextureFunc {
+    _id: String,
+    py_callback: Py<PyAny>,
 }
 
 #[gen_stub_pyclass]
@@ -65,6 +84,82 @@ pub struct PyImageGenerateBuilder {
 pub struct PyImageGenerator {
     pub inner: image_generator::ImageGenerator,
     rt: Runtime,
+}
+
+fn make_cpu_func(
+    py_callback: Py<PyAny>,
+    py_params: Option<Py<PyAny>>,
+) -> compiled_func::CompiledFunc {
+    let func: Box<CpuFunction> = Box::new(move |data: &[CpuInputImage], _: Option<&[u8]>| {
+        Python::attach(|py| {
+            let py_data = data
+                .iter()
+                .map(|n| {
+                    let py_data = PyDict::new(py);
+                    py_data.set_item("data", n.data.to_pyarray(py))?;
+                    py_data.set_item("width", n.width)?;
+                    py_data.set_item("height", n.height)?;
+                    Ok(py_data)
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            let py_data = PyList::new(py, py_data)?;
+
+            let py_p = py_params.as_ref().map(|p| p.bind(py));
+
+            // ndarray (f32) を直接返す
+            let output = py_callback.call1(py, (py_data, py_p))?;
+            let out_data: PyReadonlyArray1<f32> = output
+                .bind(py)
+                .extract()
+                .map_err(|e: pyo3::CastError<'_, '_>| anyhow::anyhow!(e.to_string()))?;
+
+            Ok(CpuOutput {
+                data: out_data.as_slice()?.to_vec(),
+            })
+        })
+    });
+    compiled_func::CompiledFunc::new(func)
+}
+
+fn make_texture_func(
+    py_callback: Py<PyAny>,
+    py_params: Option<Py<PyAny>>,
+) -> compiled_func::CompiledTextureFunc {
+    let func: Box<TextureFunction> =
+        Box::new(move |inputs: Vec<GpuInputTexture>, _: Option<&[u8]>| {
+            Python::attach(|py| {
+                // Vec<GpuInputTexture> を PyTexture のリストに変換
+                let py_inputs = inputs
+                    .into_iter()
+                    .map(|input| {
+                        Py::new(
+                            py,
+                            PyTexture {
+                                inner: input.texture,
+                                width: input.width,
+                                height: input.height,
+                            },
+                        )
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))
+                    })
+                    .collect::<anyhow::Result<Vec<Py<PyTexture>>>>()?;
+
+                let py_p = py_params.as_ref().map(|p| p.bind(py));
+
+                // PyTexture を直接返す
+                let output = py_callback.call1(py, (py_inputs, py_p))?;
+                let py_texture = output
+                    .bind(py)
+                    .cast::<PyTexture>()
+                    .map_err(|e| anyhow::anyhow!("Expected PyTexture: {}", e))?;
+                let inner_texture = py_texture.borrow().inner.clone();
+
+                Ok(GpuTextureOutput {
+                    texture: inner_texture,
+                })
+            })
+        });
+    compiled_func::CompiledTextureFunc::new(func)
 }
 
 #[gen_stub_pymethods]
@@ -129,55 +224,35 @@ impl PyCompiledWgsl {
 impl PyCompiledFunc {
     #[new]
     pub fn new(id: &str, func: Py<PyAny>) -> PyResult<Self> {
-        let func_ref = func;
-        let func: Box<CpuFunction> =
-            Box::new(move |data: &[CpuInputImage], params: Option<&[u8]>| {
-                Python::attach(|py| {
-                    let pickle = py.import("pickle")?;
-                    let pickle_loads = pickle.getattr("loads")?;
-
-                    // パラメータをPythonの型に変換
-                    let py_data = data
-                        .iter()
-                        .map(|n| {
-                            let py_data = PyDict::new(py);
-                            py_data.set_item("data", n.data.to_pyarray(py))?;
-                            py_data.set_item("width", n.width)?;
-                            py_data.set_item("height", n.height)?;
-                            Ok(py_data)
-                        })
-                        .collect::<PyResult<Vec<_>>>()?;
-                    let py_data = PyList::new(py, py_data)?;
-
-                    let py_params = if let Some(param_bytes) = params {
-                        Some(pickle_loads.call1((param_bytes,))?)
-                    } else {
-                        None
-                    };
-
-                    // { data: ndarray, width: int, height: int }
-                    let output = func_ref.call1(py, (py_data, py_params))?;
-                    let output = output.bind(py);
-                    let out_data: PyReadonlyArray1<f32> = output
-                        .getattr("data")?
-                        .extract()
-                        .map_err(|e: pyo3::CastError<'_, '_>| anyhow::anyhow!(e.to_string()))?;
-
-                    // 全部変換
-                    let output = CpuOutput {
-                        data: out_data.as_slice()?.to_vec(),
-                        width: output.getattr("width")?.extract()?,
-                        height: output.getattr("height")?.extract()?,
-                    };
-                    Ok(output)
-                })
-            });
-
-        let inner = compiled_func::CompiledFunc::new(func);
-
         Ok(Self {
             _id: id.to_string(),
-            inner,
+            py_callback: func,
+        })
+    }
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyTexture {
+    #[getter]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    #[getter]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyCompiledTextureFunc {
+    #[new]
+    pub fn new(id: &str, func: Py<PyAny>) -> PyResult<Self> {
+        Ok(Self {
+            _id: id.to_string(),
+            py_callback: func,
         })
     }
 }
@@ -241,22 +316,27 @@ impl PyImageGenerateBuilder {
         output_width: u32,
         output_height: u32,
     ) -> PyResult<Self> {
-        let params = if let Some(p) = params {
-            let pickle = py.import("pickle")?;
-            let pickle_dumps = pickle.getattr("dumps")?;
-            let dumped: Py<PyAny> = pickle_dumps.call1((p,))?.unbind();
-            let dumped = dumped.bind(py);
-            let dumped: Vec<u8> = dumped.extract()?;
-            Some(dumped)
-        } else {
-            None
-        };
+        let compiled = make_cpu_func(func.py_callback.clone_ref(py), params);
+        let new_inner = self
+            .inner
+            .clone()
+            .add_func(compiled, None, output_width, output_height);
+        Ok(Self { inner: new_inner })
+    }
 
-        let new_inner =
-            self.inner
-                .clone()
-                .add_func(func.inner.clone(), params, output_width, output_height);
-
+    pub fn add_texture_func<'py>(
+        &self,
+        py: Python<'py>,
+        func: &PyCompiledTextureFunc,
+        params: Option<Py<PyAny>>,
+        output_width: u32,
+        output_height: u32,
+    ) -> PyResult<Self> {
+        let compiled = make_texture_func(func.py_callback.clone_ref(py), params);
+        let new_inner = self
+            .inner
+            .clone()
+            .add_texture_func(compiled, None, output_width, output_height);
         Ok(Self { inner: new_inner })
     }
 }
@@ -315,6 +395,8 @@ pub fn gpu_util_register(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySamplerOptions>()?;
     m.add_class::<PyCompiledWgsl>()?;
     m.add_class::<PyCompiledFunc>()?;
+    m.add_class::<PyTexture>()?;
+    m.add_class::<PyCompiledTextureFunc>()?;
     m.add_class::<PyImageGenerateBuilder>()?;
     m.add_class::<PyImageGenerator>()?;
     m.add_class::<PySharedTextureHandle>()?;

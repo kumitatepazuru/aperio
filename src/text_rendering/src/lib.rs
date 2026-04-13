@@ -647,7 +647,6 @@ impl TextRenderer {
                 rpass.draw(0..6, 0..draw.count);
             }
         }
-        self.queue.submit(Some(encoder.finish()));
 
         Ok(Some(output_tex))
     }

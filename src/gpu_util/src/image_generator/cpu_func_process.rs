@@ -74,16 +74,10 @@ pub async fn handle_cpu_func_step(
     params: &Option<Vec<u8>>,
     output_width: u32,
     output_height: u32,
-    all_encoders: &mut Vec<wgpu::CommandEncoder>,
-) -> Result<(ProcessingState, Vec<wgpu::CommandEncoder>)> {
-    // CPU関数処理では事前にすべてのエンコーダをsubmitする
-    if !all_encoders.is_empty() {
-        generator
-            .queue
-            .submit(all_encoders.drain(..).map(|e| e.finish()));
-    }
-
+) -> Result<ProcessingState> {
     // --- 入力データの準備 ---
+    // 各ステップがsubmit済みのため、ここでは追加のsubmitは不要。
+    // GPUテクスチャのダウンロードはdownload_gpu_texture内でpollして完了を待つ。
     let mut download_futures = Vec::new();
     // 元の順序を保持しつつ、CPUデータとGPUダウンロード結果を区別する
     enum TempInput {
@@ -170,5 +164,5 @@ pub async fn handle_cpu_func_step(
         height: output_height,
     }];
 
-    Ok((new_state, Vec::new()))
+    Ok(new_state)
 }
