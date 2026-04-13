@@ -31,12 +31,10 @@ class TextObject(ObjectGeneratorBase):
         return self.base_structure
         
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorTextureReturn:
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorTextureReturn | None:
         text = args.get("text", "Hello, Aperio!")
-
-        return GeneratorTextureReturn(
-            compiled=self.compiled_func,
-            params=PyTextSpec(
+        prepared = self.text_renderer.prepare_render_text(
+            PyTextSpec(
                 text=text,
                 font_size=48,
                 color=(255, 255, 255, 255),
@@ -44,7 +42,15 @@ class TextObject(ObjectGeneratorBase):
                 max_width=None,
                 line_spacing=1.0,
                 char_spacing=0.0,
-            ),
-            output_width=width,
-            output_height=height,
+            )
+        )
+
+        if prepared is None:
+            return None
+        
+        return GeneratorTextureReturn(
+            compiled=self.compiled_func,
+            params=prepared,
+            output_width=prepared.width,
+            output_height=prepared.height,
         )

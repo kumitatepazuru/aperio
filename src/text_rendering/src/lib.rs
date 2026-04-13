@@ -3,9 +3,10 @@ use bytemuck::{Pod, Zeroable};
 mod glyph_atlas;
 pub mod text_renderer;
 
+pub use text_renderer::PreparedText;
+
 // ── アトラスのサイズ（px）。2048×2048 で約 16,000 グリフ（12px 時）をカバーする ──
 pub const ATLAS_SIZE: u32 = 2048;
-pub const CACHE_SIZE: usize = 256;
 
 // ────────────────────────────────────────────────
 //  GPU インスタンスデータ（グリフ 1 つ = 1 インスタンス）
@@ -29,7 +30,7 @@ struct Uniforms {
 }
 
 // ────────────────────────────────────────────────
-//  TextSpec / キャッシュキー
+//  TextSpec / CharGlyphData
 // ────────────────────────────────────────────────
 
 /// テキスト描画の仕様。
@@ -62,27 +63,15 @@ impl Default for TextSpec {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone)]
-struct TextCacheKey {
-    text: String,
-    font_size_bits: u32,
-    color: [u8; 4],
-    font_family: Option<String>,
-    max_width: Option<u32>,
-    line_spacing_bits: u32,
-    char_spacing_bits: u32,
-}
-
-impl TextCacheKey {
-    fn from_spec(spec: &TextSpec) -> Self {
-        Self {
-            text: spec.text.clone(),
-            font_size_bits: spec.font_size.to_bits(),
-            color: spec.color,
-            font_family: spec.font_family.clone(),
-            max_width: spec.max_width,
-            line_spacing_bits: spec.line_spacing.to_bits(),
-            char_spacing_bits: spec.char_spacing.to_bits(),
-        }
-    }
+/// 1 文字分のグリフ位置情報。`run_render_chars` の戻り値要素。
+pub struct CharGlyphData {
+    pub ch: char,
+    /// 全体テクスチャ上の左端 x 座標（px）
+    pub x: u32,
+    /// 全体テクスチャ上の上端 y 座標（px）
+    pub y: u32,
+    /// 文字グリフの幅（px）
+    pub w: u32,
+    /// 文字グリフの高さ（px）
+    pub h: u32,
 }

@@ -6,11 +6,74 @@ import typing
 from aperio.gpu_util import PyImageGenerator, PyTexture
 
 @typing.final
+class PyCharGlyphData:
+    r"""
+    1 文字分のグリフ位置情報。`run_render_chars` の戻り値要素。
+    """
+    @property
+    def ch(self) -> builtins.str:
+        r"""
+        文字
+        """
+    @property
+    def x(self) -> builtins.int:
+        r"""
+        全体テクスチャ上の左端 x 座標（px）
+        """
+    @property
+    def y(self) -> builtins.int:
+        r"""
+        全体テクスチャ上の上端 y 座標（px）
+        """
+    @property
+    def w(self) -> builtins.int:
+        r"""
+        文字グリフの幅（px）
+        """
+    @property
+    def h(self) -> builtins.int:
+        r"""
+        文字グリフの高さ（px）
+        """
+
+@typing.final
+class PyPreparedText:
+    r"""
+    `prepare_render_text` の戻り値。グリフデータを保持し、`run_render_text` / `run_render_chars` に渡す。
+    """
+    @property
+    def width(self) -> builtins.int:
+        r"""
+        出力テクスチャの幅（px）
+        """
+    @property
+    def height(self) -> builtins.int:
+        r"""
+        出力テクスチャの高さ（px）
+        """
+
+@typing.final
 class PyTextRenderer:
     def __new__(cls, device: PyImageGenerator) -> PyTextRenderer: ...
-    def render_text(self, spec: PyTextSpec) -> typing.Optional[PyTexture]: ...
-    def render_text_for_pipeline(self, _inputs: typing.Sequence[PyTexture], spec: PyTextSpec) -> typing.Optional[PyTexture]: ...
-    def render_chars(self, spec: PyTextSpec) -> builtins.list[tuple[builtins.str, PyTexture]]: ...
+    def prepare_render_text(self, spec: PyTextSpec) -> typing.Optional[PyPreparedText]:
+        r"""
+        テキストをシェイプしてグリフをアトラスに登録し、描画準備済みデータを返す。
+        グリフが存在しない場合（空文字列・スペースのみ等）は `None` を返す。
+        """
+    def run_render_text(self, prepared: PyPreparedText) -> PyTexture:
+        r"""
+        `PyPreparedText` を受け取り GPU レンダーパスを実行して出力テクスチャを返す。
+        """
+    def run_render_chars(self, prepared: PyPreparedText) -> builtins.list[tuple[PyCharGlyphData, PyTexture]]:
+        r"""
+        `PyPreparedText` を受け取り、文字ごとに切り抜いたテクスチャのリストを返す。
+        戻り値は `(PyCharGlyphData, PyTexture)` のリスト（文字順）。
+        """
+    def render_text_for_pipeline(self, _inputs: typing.Sequence[PyTexture], prepared: PyPreparedText) -> typing.Optional[PyTexture]:
+        r"""
+        パイプライン経由でテキストをレンダリングする利便メソッド。
+        `prepare_render_text` + `run_render_text` を一括で実行する。
+        """
 
 @typing.final
 class PyTextSpec:

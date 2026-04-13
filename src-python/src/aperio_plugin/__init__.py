@@ -320,10 +320,6 @@ class PluginManager:
                 raise TypeError("width and height must be integers")
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
-            if len(frame_structure) == 0:
-                # 空のフレーム構造の場合はfill_black.wgslを適用
-                layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.fill_black_wgsl, None, width, height)
-                return layer_builder, {}
 
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
@@ -339,6 +335,8 @@ class PluginManager:
 
                 obj_plugin = self.object_plugins[obj_name]
                 layer_frame = obj_plugin.generate(frame_number, layer["object"]["parameters"], width, height)
+                if layer_frame is None:
+                    continue
                 frame_results[layer_id] = ItemResult(
                     width=layer_frame.output_width,
                     height=layer_frame.output_height
@@ -357,7 +355,11 @@ class PluginManager:
                         raise ValueError(f"Effect plugin {effect['name']} is not registered")
 
                     effect_plugin = self.effect_plugins[effect["name"]]
+                    if layer_frame is None: # pylanceのための冗長なチェック。実際にはこの時点でlayer_frameがNoneのケースはないはず。
+                        continue
                     layer_frame = effect_plugin.generate(frame_number, effect["parameters"], layer_frame.output_width, layer_frame.output_height)
+                    if layer_frame is None:
+                        continue
                     frame_results[layer_id] = ItemResult(
                         width=layer_frame.output_width, 
                         height=layer_frame.output_height
@@ -384,6 +386,11 @@ class PluginManager:
                 fmt += "4f"  # rotation_matrix (2x2 floats)
                 params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"] / 100, alpha, *rotation_matrix)
                 params.append(params_bytes)
+
+            if len(layer_builders) == 0:
+                # 空のフレーム構造の場合はfill_black.wgslを適用
+                layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.fill_black_wgsl, None, width, height)
+                return layer_builder, {}
 
             # builderを作成
             builder = gpu_util.PyImageGenerateBuilder() \

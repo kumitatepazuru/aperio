@@ -53,7 +53,7 @@ class GeneratorBase(SubPluginBase):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn:
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -64,7 +64,7 @@ class GeneratorBase(SubPluginBase):
             height (int): 生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn: 生成されたフレームデータ
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None: 生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
         raise NotImplementedError("Subclasses must implement this method")
 
