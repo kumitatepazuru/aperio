@@ -4,7 +4,7 @@ use pyo3::{
     Bound, Py, PyResult,
 };
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use text_rendering::{TextRenderer, TextSpec};
+use text_rendering::{text_renderer::TextRenderer, TextSpec};
 
 use crate::gpu_util::PyTexture;
 
