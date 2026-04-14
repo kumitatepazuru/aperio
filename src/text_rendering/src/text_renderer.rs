@@ -1,12 +1,14 @@
 use anyhow::Result;
-use cosmic_text::{Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache};
+use cosmic_text::{Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, Weight};
 use gpu_util::image_generator::ImageGenerator;
+use std::collections::HashMap;
 use std::sync::Arc;
 use wgpu::include_wgsl;
 use wgpu::TextureUsages;
 
 use crate::glyph_atlas::GlyphAtlas;
 use crate::CharGlyphData;
+use crate::FontsList;
 use crate::GlyphInstance;
 use crate::TextSpec;
 use crate::Uniforms;
@@ -19,8 +21,10 @@ use crate::Uniforms;
 /// グリフのシェイプ・アトラス登録済みの状態を保持し、
 /// `run_render_text` / `run_render_chars` に渡して実際の描画を行う。
 pub struct PreparedText {
-    /// ページ別グリフインスタンス（内部用）
-    pub(crate) page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>>,
+    /// マスクグリフのページ別インスタンス (R8Unorm アトラス用)（内部用）
+    pub(crate) mask_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>>,
+    /// カラーグリフのページ別インスタンス (Rgba8Unorm アトラス用)（内部用）
+    pub(crate) color_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>>,
     /// 文字ごとのバウンディングボックス `(ch, x, y, w, h)`（内部用）
     pub(crate) char_bounds: Vec<(char, u32, u32, u32, u32)>,
     /// 出力テクスチャの幅（px）
@@ -47,7 +51,10 @@ pub struct TextRenderer {
     font_system: FontSystem,
     swash_cache: SwashCache,
     atlas: GlyphAtlas,
-    render_pipeline: wgpu::RenderPipeline,
+    /// R8Unorm アトラス用パイプライン（マスクグリフ）
+    mask_pipeline: wgpu::RenderPipeline,
+    /// Rgba8Unorm アトラス用パイプライン（カラーグリフ）
+    color_pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     atlas_sampler: wgpu::Sampler,
 }
@@ -98,67 +105,56 @@ impl TextRenderer {
             push_constant_ranges: &[],
         });
 
-        // インスタンスバッファレイアウト（stride = 48 bytes）
+        // インスタンスバッファ頂点属性（stride = 48 bytes）
+        let vertex_attrs = [
+            wgpu::VertexAttribute { shader_location: 0, offset: 0,  format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { shader_location: 1, offset: 8,  format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { shader_location: 2, offset: 16, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { shader_location: 4, offset: 32, format: wgpu::VertexFormat::Float32x4 },
+        ];
         let vertex_buffer_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<GlyphInstance>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    shader_location: 0,
-                    offset: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    shader_location: 1,
-                    offset: 8,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    shader_location: 2,
-                    offset: 16,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    shader_location: 3,
-                    offset: 24,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    shader_location: 4,
-                    offset: 32,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
+            attributes: &vertex_attrs,
         };
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("TextRenderer Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[vertex_buffer_layout],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        // 共通パイプライン設定クロージャ（出力フォーマットは常に Rgba16Float）
+        let make_pipeline = |label: &str, fs_entry: &str| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[vertex_buffer_layout.clone()],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(fs_entry),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba16Float,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+        };
+
+        // R8Unorm アトラス用（マスクグリフ）: fs_mask で coverage を .r チャンネルから読む
+        let mask_pipeline = make_pipeline("TextRenderer Mask Pipeline", "fs_mask");
+        // Rgba8Unorm アトラス用（カラーグリフ）: fs_color で RGBA をそのまま読む
+        let color_pipeline = make_pipeline("TextRenderer Color Pipeline", "fs_color");
 
         let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Atlas Sampler"),
@@ -174,7 +170,8 @@ impl TextRenderer {
             font_system: FontSystem::new(),
             swash_cache: SwashCache::new(),
             atlas: GlyphAtlas::new(image_generator.device.clone()),
-            render_pipeline,
+            mask_pipeline,
+            color_pipeline,
             bind_group_layout: bgl,
             atlas_sampler,
         }
@@ -192,24 +189,20 @@ impl TextRenderer {
             buffer.set_size(&mut self.font_system, Some(max_w as f32), None);
         }
 
-        if let Some(ref fam) = spec.font_family {
-            let attrs = Attrs::new().family(Family::Name(fam.as_str()));
-            buffer.set_text(
-                &mut self.font_system,
-                &spec.text,
-                &attrs,
-                Shaping::Advanced,
-                None,
-            );
-        } else {
-            buffer.set_text(
-                &mut self.font_system,
-                &spec.text,
-                &Attrs::new(),
-                Shaping::Advanced,
-                None,
-            );
+        let mut attrs = match spec.font_family {
+            Some(ref fam) => Attrs::new().family(Family::Name(fam.as_str())),
+            None => Attrs::new(),
+        };
+        if let Some(w) = spec.font_weight {
+            attrs = attrs.weight(Weight(w));
         }
+        buffer.set_text(
+            &mut self.font_system,
+            &spec.text,
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
         buffer.shape_until_scroll(&mut self.font_system, false);
 
         // 2. 文字バイトオフセット → char のマッピング（文字順を保持）
@@ -234,13 +227,7 @@ impl TextRenderer {
             byte_start: usize,
         }
 
-        let [r, g, b, a] = spec.color;
-        let default_color = [
-            r as f32 / 255.0,
-            g as f32 / 255.0,
-            b as f32 / 255.0,
-            a as f32 / 255.0,
-        ];
+        let default_color = spec.color;
 
         let mut glyph_infos: Vec<GlyphInfo> = Vec::new();
         let mut text_width: u32 = 1;
@@ -301,7 +288,9 @@ impl TextRenderer {
         }
 
         // 5. ページ別インスタンスバッファと文字バウンドを同時に構築
-        let mut page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>> =
+        let mut mask_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>> =
+            Default::default();
+        let mut color_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>> =
             Default::default();
         let mut bounds_map: std::collections::HashMap<usize, (i32, i32, i32, i32)> =
             Default::default();
@@ -341,27 +330,28 @@ impl TextRenderer {
                 (region.y + region.height) as f32 * inv_h,
             ];
 
-            // カラーグリフは固有色を使うため tint は alpha のみ適用
-            let inst_color = if region.is_color {
-                [1.0, 1.0, 1.0, info.color[3]]
-            } else {
-                info.color
+            let inst = GlyphInstance {
+                pos: [dest_x as f32, dest_y as f32],
+                size: [region.width as f32, region.height as f32],
+                uv_min,
+                uv_max,
+                // カラーグリフは固有色を使うため tint は alpha のみ適用
+                color: if region.is_color {
+                    [1.0, 1.0, 1.0, info.color[3]]
+                } else {
+                    info.color
+                },
             };
 
-            page_instances
-                .entry(region.page)
-                .or_default()
-                .push(GlyphInstance {
-                    pos: [dest_x as f32, dest_y as f32],
-                    size: [region.width as f32, region.height as f32],
-                    uv_min,
-                    uv_max,
-                    color: inst_color,
-                });
+            if region.is_color {
+                color_page_instances.entry(region.page).or_default().push(inst);
+            } else {
+                mask_page_instances.entry(region.page).or_default().push(inst);
+            }
         }
 
         // グリフが何もない（空文字列・スペースのみ等）
-        if page_instances.is_empty() {
+        if mask_page_instances.is_empty() && color_page_instances.is_empty() {
             return Ok(None);
         }
 
@@ -380,7 +370,8 @@ impl TextRenderer {
             .collect();
 
         Ok(Some(PreparedText {
-            page_instances,
+            mask_page_instances,
+            color_page_instances,
             char_bounds,
             width: text_width,
             height: text_height,
@@ -392,11 +383,11 @@ impl TextRenderer {
         let text_width = prepared.width;
         let text_height = prepared.height;
 
-        // 出力テクスチャ（COPY_SRC を含めて run_render_chars での切り抜きに対応）
+        // 出力テクスチャ: Rgba16Float（COPY_SRC を含めて run_render_chars での切り抜きに対応）
         let output_tex = self.image_generator.get_or_create_texture(
             text_width,
             text_height,
-            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba16Float,
             TextureUsages::TEXTURE_BINDING
                 | TextureUsages::RENDER_ATTACHMENT
                 | TextureUsages::COPY_SRC,
@@ -416,53 +407,67 @@ impl TextRenderer {
         self.queue
             .write_buffer(&uniform_buf, 0, bytemuck::bytes_of(&uniforms));
 
-        // ページ別にバインドグループとインスタンスバッファを事前構築
+        // ページ別にバインドグループとインスタンスバッファを構築するヘルパー
         struct PageDraw {
             bind_group: wgpu::BindGroup,
             instance_buf: Arc<wgpu::Buffer>,
             count: u32,
         }
-        let mut page_order: Vec<usize> = prepared.page_instances.keys().copied().collect();
-        page_order.sort_unstable();
-        let page_draws: Vec<PageDraw> = page_order
-            .iter()
-            .map(|&page| {
-                let insts = &prepared.page_instances[&page];
-                let atlas_view = self.atlas.textures[page].create_view(&Default::default());
-                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Text BG"),
-                    layout: &self.bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&atlas_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&self.atlas_sampler),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: uniform_buf.as_entire_binding(),
-                        },
-                    ],
-                });
-                let instance_buf = self.image_generator.get_or_create_buffer(
-                    (std::mem::size_of::<GlyphInstance>() * insts.len()) as u64,
-                    wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    Some("Glyph Instances"),
-                );
-                self.queue
-                    .write_buffer(&instance_buf, 0, bytemuck::cast_slice(insts));
-                PageDraw {
-                    bind_group,
-                    instance_buf,
-                    count: insts.len() as u32,
-                }
-            })
-            .collect();
 
-        // レンダーパスで全グリフを描画（ページごとにバインドグループを切り替え）
+        let build_page_draws = |page_instances: &std::collections::HashMap<usize, Vec<GlyphInstance>>,
+                                     textures: &[Arc<wgpu::Texture>]| {
+            let mut page_order: Vec<usize> = page_instances.keys().copied().collect();
+            page_order.sort_unstable();
+            page_order
+                .iter()
+                .map(|&page| {
+                    let insts = &page_instances[&page];
+                    let atlas_view = textures[page].create_view(&Default::default());
+                    let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("Text BG"),
+                        layout: &self.bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&atlas_view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(&self.atlas_sampler),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: uniform_buf.as_entire_binding(),
+                            },
+                        ],
+                    });
+                    let instance_buf = self.image_generator.get_or_create_buffer(
+                        (std::mem::size_of::<GlyphInstance>() * insts.len()) as u64,
+                        wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        Some("Glyph Instances"),
+                    );
+                    self.queue
+                        .write_buffer(&instance_buf, 0, bytemuck::cast_slice(insts));
+                    PageDraw {
+                        bind_group,
+                        instance_buf,
+                        count: insts.len() as u32,
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // マスクページ（R8Unorm）とカラーページ（Rgba8Unorm）を別々に構築
+        let mask_draws = build_page_draws(
+            &prepared.mask_page_instances,
+            &self.atlas.mask_textures,
+        );
+        let color_draws = build_page_draws(
+            &prepared.color_page_instances,
+            &self.atlas.color_textures,
+        );
+
+        // レンダーパスで全グリフを描画（マスク → カラーの順）
         let output_view = output_tex.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
@@ -480,12 +485,25 @@ impl TextRenderer {
                 depth_stencil_attachment: None,
                 ..Default::default()
             });
-            rpass.set_pipeline(&self.render_pipeline);
-            for draw in &page_draws {
-                rpass.set_bind_group(0, &draw.bind_group, &[]);
-                rpass.set_vertex_buffer(0, draw.instance_buf.slice(..));
-                // 6 頂点（2 三角形）× インスタンス数
-                rpass.draw(0..6, 0..draw.count);
+
+            // マスクグリフ（R8Unorm アトラス）
+            if !mask_draws.is_empty() {
+                rpass.set_pipeline(&self.mask_pipeline);
+                for draw in &mask_draws {
+                    rpass.set_bind_group(0, &draw.bind_group, &[]);
+                    rpass.set_vertex_buffer(0, draw.instance_buf.slice(..));
+                    rpass.draw(0..6, 0..draw.count);
+                }
+            }
+
+            // カラーグリフ（Rgba8Unorm アトラス）
+            if !color_draws.is_empty() {
+                rpass.set_pipeline(&self.color_pipeline);
+                for draw in &color_draws {
+                    rpass.set_bind_group(0, &draw.bind_group, &[]);
+                    rpass.set_vertex_buffer(0, draw.instance_buf.slice(..));
+                    rpass.draw(0..6, 0..draw.count);
+                }
             }
         }
 
@@ -509,7 +527,7 @@ impl TextRenderer {
             let char_tex = self.image_generator.get_or_create_texture(
                 w,
                 h,
-                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::TextureFormat::Rgba16Float,
                 TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
                 Some("Char Crop"),
             );
@@ -533,4 +551,30 @@ impl TextRenderer {
         self.queue.submit(Some(encoder.finish()));
         Ok(result)
     }
+
+    /// 既存の FontSystem からシステムフォント一覧を返す。
+    pub fn get_fonts_list(&mut self) -> FontsList {
+        build_fonts_map(self.font_system.db())
+    }
+}
+
+// ────────────────────────────────────────────────
+//  フォント列挙ユーティリティ
+// ────────────────────────────────────────────────
+
+fn build_fonts_map(db: &cosmic_text::fontdb::Database) -> FontsList {
+    let mut map: HashMap<String, Vec<u16>> = HashMap::new();
+    for face in db.faces() {
+        if let Some((family, _)) = face.families.first() {
+            let weights = map.entry(family.clone()).or_default();
+            let w = face.weight.0;
+            if !weights.contains(&w) {
+                weights.push(w);
+            }
+        }
+    }
+    for weights in map.values_mut() {
+        weights.sort_unstable();
+    }
+    map
 }

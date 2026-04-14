@@ -8,7 +8,7 @@ from aperio.gpu_util import PyCompiledWgsl, PyImageGenerator
 
 class BlurEffect(EffectGeneratorBase):
     def __init__(self, generator: PyImageGenerator) -> None:
-        super().__init__(generator)
+        super().__init__()
         self.name = "base.blur_effect"
         self.display_name = "ブラー"
         self.description = "Applies a blur effect to the input frame."

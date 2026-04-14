@@ -1,5 +1,9 @@
 // text_render.wgsl
 // グリフアトラスから文字をインスタンシング描画するシェーダー
+//
+// アトラスのフォーマットによって 2 つのフラグメントエントリポイントを使い分ける:
+//   fs_mask  … R8Unorm アトラス（マスクグリフ）: .r チャンネルが coverage
+//   fs_color … Rgba8Unorm アトラス（カラーグリフ）: .rgba がそのままグリフ色
 
 struct Uniforms {
     output_size: vec2<f32>,
@@ -50,11 +54,20 @@ fn vs_main(
     return out;
 }
 
+// ── マスクグリフ (R8Unorm アトラス) ──────────────────────────────────────────
+// R8Unorm をサンプルすると vec4(r, 0, 0, 1) が返る。
+// r = coverage（グリフの被覆率）、in.color = 指定テキストカラー。
 @fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+fn fs_mask(in: VertexOut) -> @location(0) vec4<f32> {
+    let coverage = textureSample(t_atlas, s_atlas, in.uv).r;
+    return vec4(in.color.rgb, coverage * in.color.a);
+}
+
+// ── カラーグリフ (Rgba8Unorm アトラス) ───────────────────────────────────────
+// s.rgba = 絵文字本来の色、in.color = (1,1,1,alpha) で不透明度のみ制御。
+// 統一式: output.rgb = s.rgb * color.rgb、output.a = s.a * color.a
+@fragment
+fn fs_color(in: VertexOut) -> @location(0) vec4<f32> {
     let s = textureSample(t_atlas, s_atlas, in.uv);
-    // マスクグリフ: s.rgb = (1,1,1),  s.a = カバレッジ → in.color で着色
-    // カラーグリフ: s.rgba = 絵文字本来の色,  in.color = (1,1,1,alpha)
-    // 統一式: output.rgb = s.rgb * color.rgb,  output.a = s.a * color.a
     return vec4(s.rgb * in.color.rgb, s.a * in.color.a);
 }

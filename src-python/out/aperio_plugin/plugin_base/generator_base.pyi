@@ -1,6 +1,7 @@
 from . import SubPluginBase as SubPluginBase
 from aperio.frame_structure import NewEffectGeneratorReturn as NewEffectGeneratorReturn, NewObjectGeneratorReturn as NewObjectGeneratorReturn, RequestStructureParameter as RequestStructureParameter
 from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
+from aperio.text_rendering import PyTextRenderer as PyTextRenderer
 from dataclasses import dataclass
 
 @dataclass
@@ -31,7 +32,7 @@ class GeneratorBase(SubPluginBase):
     オブジェクトジェネレーターは、前提となる映像データがない状態でフレームを生成するためのもので、エフェクトジェネレーターは、前提となる映像データが必要な状態でフレームを生成するためのものである。
     ジェネレーターは、生成時に必要な情報を引数として受け取り、生成されたフレームデータを返却する。
     """
-    def __init__(self, generator: PyImageGenerator) -> None:
+    def __init__(self) -> None:
         """
         フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """

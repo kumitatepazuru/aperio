@@ -15,13 +15,14 @@ use gpu_util::texture_to_native::windows::SharedTextureHandle;
 use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
+use pyo3::IntoPyObject;
 use pyo3::{types::PyAnyMethods, Py, PyAny, PyResult, Python};
+use text_rendering::FontsList;
 use wrapper::{
     frame_structure::*,
     gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
     utils::json_to_pyobject,
 };
-use pyo3::IntoPyObject;
 
 mod app_config;
 mod node_shared_texture;
@@ -287,5 +288,20 @@ impl AperioManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
         Ok(output)
+    }
+
+    /// システムにインストールされているフォントの一覧を返す。
+    /// 戻り値はフォントファミリー名 → ウェイト値（100/200/…/900）の配列。
+    #[napi]
+    pub fn get_fonts_list(&self) -> napi::Result<FontsList> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<FontsList> {
+            let pl_manager = pl_manager.bind(py);
+            Ok(pl_manager.call_method0("get_fonts_list")?.extract()?)
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get fonts list: {:?}", e)))?;
+
+        Ok(result)
     }
 }

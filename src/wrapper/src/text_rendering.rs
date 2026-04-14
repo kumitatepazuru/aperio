@@ -4,7 +4,7 @@ use pyo3::{
     Bound, Py, PyResult,
 };
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use text_rendering::{text_renderer::TextRenderer, CharGlyphData, PreparedText, TextSpec};
+use text_rendering::{CharGlyphData, FontsList, PreparedText, TextSpec, text_renderer::TextRenderer};
 
 use crate::gpu_util::PyTexture;
 
@@ -46,10 +46,7 @@ impl PyTextRenderer {
 
     /// テキストをシェイプしてグリフをアトラスに登録し、描画準備済みデータを返す。
     /// グリフが存在しない場合（空文字列・スペースのみ等）は `None` を返す。
-    pub fn prepare_render_text(
-        &mut self,
-        spec: &PyTextSpec,
-    ) -> PyResult<Option<PyPreparedText>> {
+    pub fn prepare_render_text(&mut self, spec: &PyTextSpec) -> PyResult<Option<PyPreparedText>> {
         let prepared = self.inner.prepare_render_text(&spec.inner)?;
         Ok(prepared.map(|p| PyPreparedText { inner: p }))
     }
@@ -59,7 +56,11 @@ impl PyTextRenderer {
         let tex = self.inner.run_render_text(&prepared.inner)?;
         let width = tex.width();
         let height = tex.height();
-        Ok(PyTexture { inner: tex, width, height })
+        Ok(PyTexture {
+            inner: tex,
+            width,
+            height,
+        })
     }
 
     /// `PyPreparedText` を受け取り、文字ごとに切り抜いたテクスチャのリストを返す。
@@ -76,10 +77,20 @@ impl PyTextRenderer {
                 let height = tex.height();
                 (
                     PyCharGlyphData { inner: glyph_data },
-                    PyTexture { inner: tex, width, height },
+                    PyTexture {
+                        inner: tex,
+                        width,
+                        height,
+                    },
                 )
             })
             .collect())
+    }
+
+    /// システムにインストールされているフォントの一覧を返す。
+    /// 戻り値は `{ "フォントファミリー名": [ウェイト値, ...] }` の辞書。
+    pub fn get_fonts_list(&mut self) -> FontsList {
+        self.inner.get_fonts_list()
     }
 
     /// パイプライン経由でテキストをレンダリングする利便メソッド。
@@ -92,7 +103,11 @@ impl PyTextRenderer {
         let tex = self.inner.run_render_text(&prepared.inner)?;
         let width = tex.width();
         let height = tex.height();
-        Ok(Some(PyTexture { inner: tex, width, height }))
+        Ok(Some(PyTexture {
+            inner: tex,
+            width,
+            height,
+        }))
     }
 }
 
@@ -153,8 +168,9 @@ impl PyTextSpec {
     pub fn new(
         text: String,
         font_size: f32,
-        color: [u8; 4],
+        color: [f32; 4],
         font_family: Option<String>,
+        font_weight: Option<u16>,
         max_width: Option<u32>,
         line_spacing: f32,
         char_spacing: f32,
@@ -165,6 +181,7 @@ impl PyTextSpec {
                 font_size,
                 color,
                 font_family,
+                font_weight,
                 max_width,
                 line_spacing,
                 char_spacing,

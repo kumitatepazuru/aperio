@@ -1,4 +1,5 @@
 use bytemuck::{Pod, Zeroable};
+use std::collections::HashMap;
 
 mod glyph_atlas;
 pub mod text_renderer;
@@ -30,6 +31,14 @@ struct Uniforms {
 }
 
 // ────────────────────────────────────────────────
+//  FontsList
+// ────────────────────────────────────────────────
+
+/// フォントファミリー名 → ウェイト値（100/200/…/900）のリスト。
+/// `TextRenderer::get_fonts_list` の戻り値型。
+pub type FontsList = HashMap<String, Vec<u16>>;
+
+// ────────────────────────────────────────────────
 //  TextSpec / CharGlyphData
 // ────────────────────────────────────────────────
 
@@ -37,10 +46,13 @@ struct Uniforms {
 pub struct TextSpec {
     pub text: String,
     pub font_size: f32,
-    /// RGBA 各 0‥255
-    pub color: [u8; 4],
+    /// RGBA 各 0.0‥1.0
+    pub color: [f32; 4],
     /// None のときはシステムデフォルトフォント
     pub font_family: Option<String>,
+    /// フォントウェイト（100=Thin / 400=Regular / 500=Medium / 700=Bold など）。
+    /// None のときはシステムデフォルト（通常 400）
+    pub font_weight: Option<u16>,
     /// 折り返し最大幅（px）。None のとき折り返しなし
     pub max_width: Option<u32>,
     /// 行間の追加スペース（px）。0.0 のとき行間変更なし
@@ -54,8 +66,9 @@ impl Default for TextSpec {
         Self {
             text: String::new(),
             font_size: 16.0,
-            color: [255, 255, 255, 255],
+            color: [1.0, 1.0, 1.0, 1.0],
             font_family: None,
+            font_weight: None,
             max_width: None,
             line_spacing: 0.0,
             char_spacing: 0.0,

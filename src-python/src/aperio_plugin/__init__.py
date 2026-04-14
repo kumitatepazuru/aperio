@@ -4,9 +4,11 @@ import math
 import os.path
 import shutil
 import struct
+import traceback
 from typing import Callable
 from aperio import gpu_util
 from aperio import logger
+from aperio import text_rendering
 from aperio.frame_structure import *
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
@@ -74,6 +76,7 @@ class PluginManager:
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
         self.generator = gpu_util.PyImageGenerator()
+        self.text_renderer = text_rendering.PyTextRenderer(self.generator)
 
         shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
         with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:
@@ -95,6 +98,7 @@ class PluginManager:
             try:
                 __import__(f"{self.plugin_dir_name}.{plugin_name}")
             except Exception as e:
+                logger.error(traceback.format_exc())
                 logger.error(f"Failed to import plugin {plugin_name}: {e}")
 
         self.__load_plugins()
@@ -111,10 +115,15 @@ class PluginManager:
                 continue  # 既に登録されている場合はスキップ
 
             try:
-                plugin_instance = plugin_cls(self, self.generator)  # PluginManagerのインスタンスを渡す
+                plugin_cls.manager = self
+                plugin_cls.image_generator = self.generator
+                plugin_cls.text_renderer = self.text_renderer
+
+                plugin_instance = plugin_cls()  # PluginManagerのインスタンスを渡す
                 self.plugins[name] = plugin_instance
                 logger.info(f"Registered plugin: {plugin_instance.name}")
             except Exception as e:
+                logger.error(traceback.format_exc())
                 logger.error(f"Failed to load plugin {name}: {e}")
 
             logger.info("Loaded Plugins ---")
@@ -228,6 +237,15 @@ class PluginManager:
         self.__load_plugins()
         return True
     
+    def get_fonts_list(self) -> dict[str, list[int]]:
+        """
+        システムにインストールされているフォントの一覧を返す。
+
+        Returns:
+            dict[str, list[int]]: フォントファミリー名 → ウェイト値（100/200/…/900）のリスト
+        """
+        return self.text_renderer.get_fonts_list()
+
     def get_plugin_names(self) -> PluginNameInfo:
         """
         登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
@@ -398,7 +416,6 @@ class PluginManager:
                 .add_wgsl(self.compose_wgsl, b"".join(params), width, height) # TODO: render Passを使っての高速化と簡潔化を試みる
 
         except Exception as e:
-            import traceback
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 

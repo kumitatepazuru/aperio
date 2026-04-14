@@ -69,6 +69,11 @@ class PyTextRenderer:
         `PyPreparedText` を受け取り、文字ごとに切り抜いたテクスチャのリストを返す。
         戻り値は `(PyCharGlyphData, PyTexture)` のリスト（文字順）。
         """
+    def get_fonts_list(self) -> builtins.dict[builtins.str, builtins.list[builtins.int]]:
+        r"""
+        システムにインストールされているフォントの一覧を返す。
+        戻り値は `{ "フォントファミリー名": [ウェイト値, ...] }` の辞書。
+        """
     def render_text_for_pipeline(self, _inputs: typing.Sequence[PyTexture], prepared: PyPreparedText) -> typing.Optional[PyTexture]:
         r"""
         パイプライン経由でテキストをレンダリングする利便メソッド。
@@ -77,5 +82,5 @@ class PyTextRenderer:
 
 @typing.final
 class PyTextSpec:
-    def __new__(cls, text: builtins.str, font_size: builtins.float, color: typing.Sequence[builtins.int], font_family: typing.Optional[builtins.str], max_width: typing.Optional[builtins.int], line_spacing: builtins.float, char_spacing: builtins.float) -> PyTextSpec: ...
+    def __new__(cls, text: builtins.str, font_size: builtins.float, color: typing.Sequence[builtins.float], font_family: typing.Optional[builtins.str], font_weight: typing.Optional[builtins.int], max_width: typing.Optional[builtins.int], line_spacing: builtins.float, char_spacing: builtins.float) -> PyTextSpec: ...
 

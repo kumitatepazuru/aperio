@@ -19,7 +19,7 @@ class TestObject(ObjectGeneratorBase):
     # frame.set(cv2.CAP_PROP_FPS, 60)
 
     def __init__(self, generator: PyImageGenerator):
-        super().__init__(generator)
+        super().__init__()
         print("--- System Information ---")
         print(f"OpenCV version: {cv2.__version__}")
         print(f"Numpy version: {np.__version__}")

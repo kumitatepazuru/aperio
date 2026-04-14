@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from aperio.frame_structure import NewEffectGeneratorReturn, NewObjectGeneratorReturn, RequestStructureParameter
 from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerator
+from aperio.text_rendering import PyTextRenderer
 
 from . import SubPluginBase
 
@@ -35,7 +36,7 @@ class GeneratorBase(SubPluginBase):
     ジェネレーターは、生成時に必要な情報を引数として受け取り、生成されたフレームデータを返却する。
     """
 
-    def __init__(self, generator: PyImageGenerator):
+    def __init__(self):
         """
         フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """

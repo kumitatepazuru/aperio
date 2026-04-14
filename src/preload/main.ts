@@ -110,6 +110,8 @@ contextBridge.exposeInMainWorld("main", {
     };
   },
   getPluginNames: () => ipcRenderer.invoke("get-plugin-names"),
+  getFontsList: (): Promise<Record<string, number[]>> =>
+    ipcRenderer.invoke("get-fonts-list"),
   requestParameterStruct: (
     pluginName: string,
     params: Record<string, unknown>,
