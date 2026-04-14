@@ -4,6 +4,7 @@ import {
   getDefaultValue,
   type ColorValue,
   type ConfigableValue,
+  type FontValue,
   type Vec2Value,
   type Vec3Value,
   type Vec4Value,
@@ -17,6 +18,7 @@ import Vec4 from "./components/Vec4";
 import StringInput from "./components/StringInput";
 import Color from "./components/Color";
 import ListSelect from "./components/ListSelect";
+import Font from "./components/Font";
 import type { RequestStructureParameter } from "native";
 
 const ConfigableRow = memo(
@@ -129,6 +131,14 @@ const ConfigableRow = memo(
           <ListSelect
             value={value as string}
             values={param.values}
+            onChange={onChange}
+          />
+        );
+        break;
+      case "Font":
+        input = (
+          <Font
+            value={value as FontValue}
             onChange={onChange}
           />
         );

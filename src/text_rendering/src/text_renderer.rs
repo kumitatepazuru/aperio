@@ -22,9 +22,9 @@ use crate::Uniforms;
 /// `run_render_text` / `run_render_chars` に渡して実際の描画を行う。
 pub struct PreparedText {
     /// マスクグリフのページ別インスタンス (R8Unorm アトラス用)（内部用）
-    pub(crate) mask_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>>,
+    pub(crate) mask_page_instances: HashMap<usize, Vec<GlyphInstance>>,
     /// カラーグリフのページ別インスタンス (Rgba8Unorm アトラス用)（内部用）
-    pub(crate) color_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>>,
+    pub(crate) color_page_instances: HashMap<usize, Vec<GlyphInstance>>,
     /// 文字ごとのバウンディングボックス `(ch, x, y, w, h)`（内部用）
     pub(crate) char_bounds: Vec<(char, u32, u32, u32, u32)>,
     /// 出力テクスチャの幅（px）
@@ -288,11 +288,11 @@ impl TextRenderer {
         }
 
         // 5. ページ別インスタンスバッファと文字バウンドを同時に構築
-        let mut mask_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>> =
+        let mut mask_page_instances: HashMap<usize, Vec<GlyphInstance>> =
             Default::default();
-        let mut color_page_instances: std::collections::HashMap<usize, Vec<GlyphInstance>> =
+        let mut color_page_instances: HashMap<usize, Vec<GlyphInstance>> =
             Default::default();
-        let mut bounds_map: std::collections::HashMap<usize, (i32, i32, i32, i32)> =
+        let mut bounds_map: HashMap<usize, (i32, i32, i32, i32)> =
             Default::default();
 
         for info in &glyph_infos {
@@ -414,7 +414,7 @@ impl TextRenderer {
             count: u32,
         }
 
-        let build_page_draws = |page_instances: &std::collections::HashMap<usize, Vec<GlyphInstance>>,
+        let build_page_draws = |page_instances: &HashMap<usize, Vec<GlyphInstance>>,
                                      textures: &[Arc<wgpu::Texture>]| {
             let mut page_order: Vec<usize> = page_instances.keys().copied().collect();
             page_order.sort_unstable();

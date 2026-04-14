@@ -92,6 +92,11 @@ pub enum RequestStructureParameter {
         values: HashMap<String, String>, // key: valueのペア
         default_value: String,
     },
+    Font {
+        id: String,
+        title: String,
+        // デフォルト値は固定: family=None, weight=400
+    },
 }
 
 #[napi(object)]

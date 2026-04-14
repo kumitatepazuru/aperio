@@ -20,6 +20,7 @@ class TextObject(ObjectGeneratorBase):
         self.base_structure: list[RequestStructureParameter] = [
             RequestStructureParameter.String("text", "文字", "ここにテキストを入力"),
             RequestStructureParameter.Color("color", "色", (1.0, 1.0, 1.0, 1.0), use_alpha=True),
+            RequestStructureParameter.Font("font", "フォント"),
             RequestStructureParameter.Int("font_size", "フォントサイズ", 48, suffix="px"),
         ]
         self.compiled_func = PyCompiledTextureFunc("text_render", text_renderer.render_text_for_pipeline)
@@ -34,13 +35,14 @@ class TextObject(ObjectGeneratorBase):
 
     def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorTextureReturn | None:
         text = args.get("text", "ここにテキストを入力")
+        font = args.get("font", {})
         prepared = self.text_renderer.prepare_render_text(
             PyTextSpec(
                 text=text,
                 font_size=args.get("font_size", 48),
                 color=args.get("color", (1.0, 1.0, 1.0, 1.0)),
-                font_family=None,
-                font_weight=400,
+                font_family=font.get("family", None),
+                font_weight=font.get("weight", 400),
                 max_width=None,
                 line_spacing=1.0,
                 char_spacing=0.0,

@@ -27,7 +27,7 @@ const Color = ({ value, useAlpha, onChange }: Props) => (
         {toColor(value).toString({ format: "hex" })}
       </span>
     </Reference>
-    <Floating>
+    <Floating className="p-3">
       <ColorPickerPanel value={value} useAlpha={useAlpha} onChange={onChange} />
     </Floating>
   </FloatingBase>

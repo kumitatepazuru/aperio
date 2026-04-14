@@ -220,7 +220,7 @@ export function Floating({ children, className, style }: FloatingProps) {
         ref={setFloating}
         style={{ ...floatingStyles, ...style }}
         {...getFloatingProps({
-          className: `z-50 shadow-lg rounded-xl bg-base-200 p-3 ${className}`,
+          className: `z-50 shadow-lg rounded-xl bg-base-200 ${className}`,
         })}
       >
         {children}
