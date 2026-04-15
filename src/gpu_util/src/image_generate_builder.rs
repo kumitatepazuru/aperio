@@ -127,15 +127,6 @@ impl ImageGenerateBuilder {
 
     /// GPUテクスチャ関数処理ステップをパイプラインに追加します。
     ///
-    /// stateをすべてGPUテクスチャに変換したうえで関数を呼び出します。
-    /// widthとheightは関数の戻り値によって決定されるため、add時には指定不要です。
-    ///
-    /// # Arguments
-    ///
-    /// * `func` - `CompiledTextureFunc`参照。
-    /// * `params` - 関数に渡す任意のパラメータ。
-    /// GPUテクスチャ関数処理ステップをパイプラインに追加します。
-    ///
     /// # Arguments
     ///
     /// * `func` - `CompiledTextureFunc`参照。

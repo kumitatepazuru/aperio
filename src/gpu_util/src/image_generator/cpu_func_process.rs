@@ -64,7 +64,7 @@ async fn download_gpu_texture(
         let dst = &mut pixels[y * row_size as usize..(y + 1) * row_size as usize];
         dst.copy_from_slice(src);
     }
-    Ok((bytemuck::cast_slice(&data).to_vec(), width, height))
+    Ok((bytemuck::cast_slice(&pixels).to_vec(), width, height))
 }
 
 pub async fn handle_cpu_func_step(
