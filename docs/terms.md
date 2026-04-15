@@ -68,7 +68,7 @@
 
 **注意:**
 - 旧称は `obj`。`object` に統一済み。
-- Rust構造体での定義: `pub object: GenerateStructure`（`src/native/src/structs.rs`）
+- Rust構造体での定義: `pub object: GenerateStructure`（`src/wrapper/src/frame_structure.rs`）
 - Pythonプラグインへ渡る際もフィールド名は `object` になる。
 
 ---
@@ -118,7 +118,7 @@
 
 **定義:** Object・Effect 両方が共有する実行時のプラグインインスタンス構造。napi-rs により native から生成される。
 
-**型定義:** `dist/native/index.d.ts` → `interface GenerateStructure`
+**型定義:** `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface GenerateStructure`
 
 **用法:**
 - `item.object` — オブジェクト本体としての GenerateStructure
@@ -131,9 +131,9 @@
 **定義:** napi-rs が生成する native の構造体。Rust → Python・TypeScript 間のアイテムデータ転送フォーマット。TypeScript側の `TimelineItemStructure` の基底型。
 
 **型定義:**
-- Rust: `src/native/src/structs.rs` → `pub struct ItemStructure`
-- TypeScript: `dist/native/index.d.ts` → `interface ItemStructure`
-- Python: `src-python/src/aperio_plugin/types/frame_structure.py` → `class ItemStructure(TypedDict)`
+- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct ItemStructure`
+- TypeScript: `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface ItemStructure`
+- Python: `src/wrapper/src/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemStructure`
 
 **フィールド（Python側）:**
 - `id`, `x`, `y`, `scale`, `rotation`, `alpha` — アイテムの基本プロパティ
@@ -151,9 +151,9 @@
 **定義:** フレームレンダリング後、各アイテムの出力サイズ情報を格納する型。
 
 **型定義:**
-- Rust: `src/native/src/structs.rs` → `pub struct ItemResult`
-- TypeScript: `dist/native/index.d.ts` → `interface ItemResult`
-- Python: `src-python/src/aperio_plugin/types/frame_structure.py` → `class ItemResult`
+- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct ItemResult`
+- TypeScript: `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface ItemResult`
+- Python: `src/wrapper/src/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemResult`
 
 **フィールド:** `width: number`, `height: number`
 

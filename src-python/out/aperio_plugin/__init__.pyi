@@ -1,8 +1,8 @@
+from aperio.frame_structure import *
 from .plugin_base.generator_base import *
-import gpu_util
-from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
-from .types.frame_structure import ItemResult, ItemStructure as ItemStructure, RequestStructureParameter as RequestStructureParameter
+from .plugin_base import MainPluginBase, SubPluginBase
 from _typeshed import Incomplete
+from aperio import gpu_util
 from typing import Callable
 
 class PluginManager:
@@ -15,6 +15,7 @@ class PluginManager:
     data_dir: Incomplete
     plugin_dir_name: Incomplete
     generator: Incomplete
+    text_renderer: Incomplete
     compose_wgsl: Incomplete
     fill_black_wgsl: Incomplete
     def __init__(self, data_dir: str, plugin_dir_name: str = 'plugins') -> None:
@@ -75,6 +76,13 @@ class PluginManager:
 
         Returns:
             bool: プラグインが正常に追加または更新された場合はTrue、それ以外の場合はFalse
+        """
+    def get_fonts_list(self) -> dict[str, list[int]]:
+        """
+        システムにインストールされているフォントの一覧を返す。
+
+        Returns:
+            dict[str, list[int]]: フォントファミリー名 → ウェイト値（100/200/…/900）のリスト
         """
     def get_plugin_names(self) -> PluginNameInfo:
         """

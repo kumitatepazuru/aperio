@@ -11,7 +11,11 @@ import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
 import { NativeModule } from "./nativeModule";
-import { AperioConfig, ItemStructure, NodeSharedTextureFormat } from "native";
+import {
+  AperioConfig,
+  ItemStructure,
+  WrappedSharedTextureFormat,
+} from "native";
 import setMenu from "./menu";
 import { registerContextMenuIpc } from "./contextMenu";
 
@@ -115,7 +119,9 @@ ipcMain.handle("resize-osr", (_, width: number, height: number) => {
   // 物理テクスチャサイズ = ユーザーが指定したフレーム解像度になる。
   const display = screen.getDisplayMatching(osrWin.getBounds());
   const sf = display.scaleFactor;
-  console.log(`Resizing OSR window to ${width}x${height} (scale factor: ${sf})`);
+  console.log(
+    `Resizing OSR window to ${width}x${height} (scale factor: ${sf})`,
+  );
   osrWin.setSize(Math.round(width / sf), Math.round(height / sf), false);
 });
 
@@ -129,6 +135,10 @@ ipcMain.handle("save-config", (_, config: Partial<AperioConfig>) => {
 
 ipcMain.handle("get-plugin-names", () => {
   return nativeModule.aperioManager.getPluginNames();
+});
+
+ipcMain.handle("get-fonts-list", () => {
+  return nativeModule.aperioManager.getFontsList();
 });
 
 ipcMain.handle(
@@ -222,10 +232,10 @@ async function createWindow() {
   if (config.fastPreview) {
     let format: "argb" | "rgbaf16" | undefined;
     switch (config.texPixelFormat) {
-      case NodeSharedTextureFormat.Rgba16Float:
+      case WrappedSharedTextureFormat.Rgba16Float:
         format = "rgbaf16";
         break;
-      case NodeSharedTextureFormat.Bgra8Unorm:
+      case WrappedSharedTextureFormat.Bgra8Unorm:
         format = "argb";
         break;
       default:

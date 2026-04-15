@@ -170,7 +170,12 @@ const Timeline = () => {
           );
           const defaultParams: Record<string, unknown> = {};
           structure.structure.forEach((param) => {
-            defaultParams[param.id] = param.defaultValue;
+            if (param.type === "Font") {
+              defaultParams[param.id] = { family: null, weight: 400 };
+              return;
+            } else {
+              defaultParams[param.id] = param.defaultValue;
+            }
           });
 
           const currentFrame = await getCurrentFrameCount();

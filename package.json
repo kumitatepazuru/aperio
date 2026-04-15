@@ -17,13 +17,13 @@
     "artifacts": "napi artifacts",
     "napi:build": "bun run scripts/pmkdir.ts dist/native && napi build --package aperio --platform --release --output-dir dist/ --js native/index.js --esm --dts native/index.d.ts",
     "napi:debug": "bun run scripts/pmkdir.ts dist/native && napi build --package aperio --platform --output-dir dist/ --js native/index.js --esm --dts native/index.d.ts",
-    "python:stubgen": "rm -r src-python/out/aperio_plugin && uv run stubgen src-python/src/ -o src-python/out --include-docstrings",
+    "python:stubgen": "rm -rf src-python/out/aperio_plugin && uv run stubgen src-python/src/ -o src-python/out --include-docstrings",
     "python:check": "uv run python -m mypy.stubtest src-python/src/aperio_plugin",
     "uv:update": "uv run scripts/update-uv.py",
-    "gpu:build": "uvx maturin build -m src/gpu_util/Cargo.toml",
-    "gpu:release": "uvx maturin build -m src/gpu_util/Cargo.toml --release",
-    "gpu:stub": "cargo run --bin stub_gen",
-    "gpu:stubgen": "run-s gpu:stub && bun run scripts/pmkdir.ts src-python/out/gpu_util && mv src/gpu_util/gpu_util.pyi src-python/out/gpu_util/__init__.pyi"
+    "wrapper:build": "uvx maturin build -m src/wrapper/pyproject.toml",
+    "wrapper:release": "uvx maturin build -m src/wrapper/pyproject.toml --release",
+    "wrapper:stub": "cargo run -p wrapper --bin stub_gen",
+    "wrapper:stubgen": "run-s wrapper:stub && rm -rf src-python/out/aperio && mv src/wrapper/aperio src-python/out/aperio"
   },
   "dependencies": {
     "@dnd-kit/react": "^0.3.2",

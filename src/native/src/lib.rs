@@ -2,23 +2,28 @@ use std::collections::HashMap;
 
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
-    node_shared_texture::{NodeOffscreenSharedTextureInfo, NodeSharedTextureFormat},
-    structs::{
-        Dirs, ItemResult, ItemStructure, NewEffectGeneratorReturn, NewObjectGeneratorReturn,
-        PluginNameInfo, RequestStructureParameter,
-    },
-    util::{get_local_data_dir, json_to_pyobject},
+    node_shared_texture::NodeOffscreenSharedTextureInfo,
+    structs::Dirs,
+    util::get_local_data_dir,
 };
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
 #[cfg(target_os = "windows")]
 use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
-use gpu_util::{PySharedTextureHandle, SharedTextureFormat};
+// Python公開用の型は wrapper クレートから使用する
 use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
-use pyo3::{types::PyAnyMethods, IntoPyObject, Py, PyAny, PyResult, Python};
+use pyo3::IntoPyObject;
+use pyo3::{types::PyAnyMethods, Py, PyAny, PyResult, Python};
+use text_rendering::FontsList;
+use wrapper::{
+    frame_structure::*,
+    gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
+    utils::json_to_pyobject,
+};
+
 mod app_config;
 mod node_shared_texture;
 mod python;
@@ -240,7 +245,7 @@ impl AperioManager {
     pub fn get_frame_texture(
         &self,
         count: i32,
-        format: NodeSharedTextureFormat,
+        tex_format: WrappedSharedTextureFormat,
         frame_struct: Vec<ItemStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
     ) -> napi::Result<HashMap<String, ItemResult>> {
@@ -248,23 +253,23 @@ impl AperioManager {
 
         let content_size = base_texture.coded_size;
         // formatとbase_texture.pixel_formatが一致してなければエラー
-        if (format == NodeSharedTextureFormat::Rgba16Float
+        if (tex_format == WrappedSharedTextureFormat::Rgba16Float
             && base_texture.pixel_format != "rgbaf16")
-            || (format == NodeSharedTextureFormat::Bgra8Unorm
+            || (tex_format == WrappedSharedTextureFormat::Bgra8Unorm
                 && base_texture.pixel_format != "bgra")
         {
             return Err(napi::Error::from_reason(format!(
                 "Pixel format mismatch: expected {:?}, got {}",
-                format, base_texture.pixel_format
+                tex_format, base_texture.pixel_format
             )));
         }
 
         let output = Python::attach(|py| -> PyResult<HashMap<String, ItemResult>> {
             let pl_manager = pl_manager.bind(py);
             let frame_struct = frame_struct.into_pyobject(py)?;
+
             let base_texture: SharedTextureHandle = base_texture.handle.into();
             let base_texture = PySharedTextureHandle::new(base_texture);
-            let format: SharedTextureFormat = format.into();
 
             let func = pl_manager.getattr("make_frame_shared_texture")?;
             let results: HashMap<String, ItemResult> = func
@@ -274,7 +279,7 @@ impl AperioManager {
                     content_size.width,
                     content_size.height,
                     base_texture,
-                    format,
+                    tex_format,
                 ))?
                 .extract()?;
 
@@ -283,5 +288,20 @@ impl AperioManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
         Ok(output)
+    }
+
+    /// システムにインストールされているフォントの一覧を返す。
+    /// 戻り値はフォントファミリー名 → ウェイト値（100/200/…/900）の配列。
+    #[napi]
+    pub fn get_fonts_list(&self) -> napi::Result<FontsList> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<FontsList> {
+            let pl_manager = pl_manager.bind(py);
+            Ok(pl_manager.call_method0("get_fonts_list")?.extract()?)
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get fonts list: {:?}", e)))?;
+
+        Ok(result)
     }
 }

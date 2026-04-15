@@ -2,11 +2,11 @@ import os
 import site
 import sys
 
+from aperio.frame_structure import RequestStructureParameter
 import cv2
-from gpu_util import PyCompiledWgsl, PyImageGenerator
+from aperio.gpu_util import PyCompiledWgsl, PyImageGenerator
 import numpy as np
 
-from aperio_plugin.types.frame_structure import BoolParam, ColorParam, RequestStructureParameter, Vec2IntParam
 from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
 
 
@@ -19,7 +19,7 @@ class TestObject(ObjectGeneratorBase):
     # frame.set(cv2.CAP_PROP_FPS, 60)
 
     def __init__(self, generator: PyImageGenerator):
-        super().__init__(generator)
+        super().__init__()
         print("--- System Information ---")
         print(f"OpenCV version: {cv2.__version__}")
         print(f"Numpy version: {np.__version__}")
@@ -37,7 +37,7 @@ class TestObject(ObjectGeneratorBase):
             self.shader = PyCompiledWgsl("test", f.read(), generator, None)
 
         self.base_structure: list[RequestStructureParameter] = [
-            BoolParam("draw_text", "フレームテキストを描画", False),
+            RequestStructureParameter.Bool("draw_text", "フレームテキストを描画", False),
         ]
 
     def on_new(self, args: dict) -> NewObjectGeneratorReturn:
@@ -46,8 +46,8 @@ class TestObject(ObjectGeneratorBase):
     def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
         if params.get("draw_text", False):
             return self.base_structure + [
-            Vec2IntParam(id="text_pos", title="テキスト位置", default_value=(50, 50), suffix="px"),
-            ColorParam(id="text_color", title="テキスト色", default_value=(1.0, 1.0, 1.0, 1.0), use_alpha=False),
+            RequestStructureParameter.Vec2Int("text_pos", "テキスト位置", (50, 50), "px"),
+            RequestStructureParameter.Color("text_color", "テキスト色", (1.0, 1.0, 1.0, 1.0), False),
         ]
         else:
             return self.base_structure

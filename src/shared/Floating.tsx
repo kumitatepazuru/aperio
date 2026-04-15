@@ -218,12 +218,15 @@ export function Floating({ children, className, style }: FloatingProps) {
     <FloatingPortal>
       <div
         ref={setFloating}
-        style={{ ...floatingStyles, ...style }}
-        {...getFloatingProps({
-          className: `z-50 shadow-lg rounded-xl bg-base-200 p-3 ${className}`,
-        })}
+        style={{ ...floatingStyles }}
+        {...getFloatingProps()}
       >
-        {children}
+        <div
+          className={`z-50 shadow-lg rounded-xl bg-base-200 ${className}`}
+          style={style}
+        >
+          {children}
+        </div>
         <div
           ref={arrowRef}
           className="absolute w-2 h-2 bg-base-200 rotate-45"

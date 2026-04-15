@@ -6,6 +6,9 @@ import {
   type PluginNameInfo,
   type ItemStructure,
 } from "native";
+
+/** フォントファミリー名 → ウェイト値（100/200/…/900）の配列 */
+type FontsList = Record<string, number[]>;
 import { sharedTexture } from "electron";
 import type { SyncableState } from "../shared/store";
 
@@ -52,6 +55,7 @@ declare global {
     };
     main: {
       getPluginNames: () => Promise<PluginNameInfo>;
+      getFontsList: () => Promise<FontsList>;
       requestNewObjectGenerator: (
         pluginName: string,
         args: Record<string, unknown>,

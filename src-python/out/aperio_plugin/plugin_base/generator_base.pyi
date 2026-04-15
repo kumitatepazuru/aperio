@@ -1,7 +1,8 @@
 from . import SubPluginBase as SubPluginBase
-from ..types.frame_structure import RequestStructureParameter as RequestStructureParameter
+from aperio.frame_structure import NewEffectGeneratorReturn as NewEffectGeneratorReturn, NewObjectGeneratorReturn as NewObjectGeneratorReturn, RequestStructureParameter as RequestStructureParameter
+from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
+from aperio.text_rendering import PyTextRenderer as PyTextRenderer
 from dataclasses import dataclass
-from gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
 
 @dataclass
 class GeneratorWgslReturn:
@@ -18,15 +19,11 @@ class GeneratorFuncReturn:
     output_height: int
 
 @dataclass
-class NewObjectGeneratorReturn:
-    display_name: str
-    duration_frames: int
-    structure: list[RequestStructureParameter]
-
-@dataclass
-class NewEffectGeneratorReturn:
-    display_name: str
-    structure: list[RequestStructureParameter]
+class GeneratorTextureReturn:
+    compiled: PyCompiledTextureFunc
+    params: object
+    output_width: int
+    output_height: int
 
 class GeneratorBase(SubPluginBase):
     """
@@ -35,7 +32,7 @@ class GeneratorBase(SubPluginBase):
     オブジェクトジェネレーターは、前提となる映像データがない状態でフレームを生成するためのもので、エフェクトジェネレーターは、前提となる映像データが必要な状態でフレームを生成するためのものである。
     ジェネレーターは、生成時に必要な情報を引数として受け取り、生成されたフレームデータを返却する。
     """
-    def __init__(self, generator: PyImageGenerator) -> None:
+    def __init__(self) -> None:
         """
         フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """
@@ -49,7 +46,7 @@ class GeneratorBase(SubPluginBase):
         Returns:
             list[RequestStructureParameter]: オブジェクトのパラメーター構造
         """
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -60,7 +57,7 @@ class GeneratorBase(SubPluginBase):
             height (int): 生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None: 生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
 
 class ObjectGeneratorBase(GeneratorBase):

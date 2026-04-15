@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-
-from gpu_util import PyCompiledFunc, PyCompiledWgsl, PyImageGenerator
+from aperio.frame_structure import NewEffectGeneratorReturn, NewObjectGeneratorReturn, RequestStructureParameter
+from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerator
+from aperio.text_rendering import PyTextRenderer
 
 from . import SubPluginBase
-from ..types.frame_structure import RequestStructureParameter
 
 @dataclass
 class GeneratorWgslReturn:
@@ -22,15 +22,11 @@ class GeneratorFuncReturn:
     output_height: int
 
 @dataclass
-class NewObjectGeneratorReturn:
-    display_name: str
-    duration_frames: int
-    structure: list[RequestStructureParameter]
-
-@dataclass
-class NewEffectGeneratorReturn:
-    display_name: str
-    structure: list[RequestStructureParameter]
+class GeneratorTextureReturn:
+    compiled: PyCompiledTextureFunc
+    params: object
+    output_width: int
+    output_height: int
 
 class GeneratorBase(SubPluginBase):
     """
@@ -40,7 +36,7 @@ class GeneratorBase(SubPluginBase):
     ジェネレーターは、生成時に必要な情報を引数として受け取り、生成されたフレームデータを返却する。
     """
 
-    def __init__(self, generator: PyImageGenerator):
+    def __init__(self):
         """
         フレーム生成プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。
         """
@@ -58,7 +54,7 @@ class GeneratorBase(SubPluginBase):
         """
         raise NotImplementedError("Subclasses must implement this method")
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn:
+    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -69,7 +65,7 @@ class GeneratorBase(SubPluginBase):
             height (int): 生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn: 生成されたフレームデータ
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None: 生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
         raise NotImplementedError("Subclasses must implement this method")
 

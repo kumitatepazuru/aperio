@@ -1,14 +1,14 @@
 import os
 import struct
 
+from aperio.frame_structure import RequestStructureParameter
 from aperio_plugin.plugin_base.generator_base import EffectGeneratorBase, GeneratorWgslReturn, NewEffectGeneratorReturn
-from aperio_plugin.types.frame_structure import IntParam, RequestStructureParameter
-from gpu_util import PyCompiledWgsl, PyImageGenerator
+from aperio.gpu_util import PyCompiledWgsl, PyImageGenerator
 
 
 class BlurEffect(EffectGeneratorBase):
     def __init__(self, generator: PyImageGenerator) -> None:
-        super().__init__(generator)
+        super().__init__()
         self.name = "base.blur_effect"
         self.display_name = "ブラー"
         self.description = "Applies a blur effect to the input frame."
@@ -21,7 +21,7 @@ class BlurEffect(EffectGeneratorBase):
         return NewEffectGeneratorReturn(
             display_name=self.display_name,
             structure=[
-                IntParam(
+                RequestStructureParameter.Int(
                     id="blur_radius",
                     title="強さ",
                     default_value=5,
@@ -32,7 +32,7 @@ class BlurEffect(EffectGeneratorBase):
 
     def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
         return [
-                IntParam(
+                RequestStructureParameter.Int(
                     id="blur_radius",
                     title="強さ",
                     default_value=5,

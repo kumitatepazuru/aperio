@@ -10,6 +10,10 @@ class PyCompiledFunc:
     def __new__(cls, id: builtins.str, func: typing.Any) -> PyCompiledFunc: ...
 
 @typing.final
+class PyCompiledTextureFunc:
+    def __new__(cls, id: builtins.str, func: typing.Any) -> PyCompiledTextureFunc: ...
+
+@typing.final
 class PyCompiledWgsl:
     def __new__(cls, id: builtins.str, wgsl_code: builtins.str, generator: PyImageGenerator, sampler_options: typing.Optional[PySamplerOptions]) -> PyCompiledWgsl: ...
 
@@ -19,6 +23,7 @@ class PyImageGenerateBuilder:
     def add_wgsl(self, wgsl: PyCompiledWgsl, params: typing.Optional[bytes], output_width: builtins.int, output_height: builtins.int) -> PyImageGenerateBuilder: ...
     def add_parallel_wgsl(self, pipelines: typing.Sequence[PyImageGenerateBuilder]) -> PyImageGenerateBuilder: ...
     def add_func(self, func: PyCompiledFunc, params: typing.Optional[typing.Any], output_width: builtins.int, output_height: builtins.int) -> PyImageGenerateBuilder: ...
+    def add_texture_func(self, func: PyCompiledTextureFunc, params: typing.Optional[typing.Any], output_width: builtins.int, output_height: builtins.int) -> PyImageGenerateBuilder: ...
 
 @typing.final
 class PyImageGenerator:
@@ -33,6 +38,17 @@ class PySamplerOptions:
 @typing.final
 class PySharedTextureHandle:
     ...
+
+@typing.final
+class PyTexture:
+    r"""
+    wgpu::Texture のPythonラッパー。
+    Pythonから直接生成することはできず、TextureFunc の引数・戻り値として使用する。
+    """
+    @property
+    def width(self) -> builtins.int: ...
+    @property
+    def height(self) -> builtins.int: ...
 
 @typing.final
 class SharedTextureFormat(enum.Enum):

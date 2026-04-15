@@ -4,10 +4,12 @@ import math
 import os.path
 import shutil
 import struct
+import traceback
 from typing import Callable
-import gpu_util
-# TODO: stubを生成するように
-import logger # type: ignore
+from aperio import gpu_util
+from aperio import logger
+from aperio import text_rendering
+from aperio.frame_structure import *
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
@@ -30,9 +32,8 @@ except ImportError as e:
                       "\n3. For Linux: Make sure that libpython is preloaded as RTLD_GLOBAL correctly. In linux, libpython must be able to be seen globally because of policy of manylinux."
                       "\n  Try add the environment LD_PRELOAD to specify the path to libpython3.x.so explicitly.") from e
 
-from .plugin_base import MainPluginBase, PluginNameInfo, SubPluginBase
+from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import *
-from .types.frame_structure import ItemResult, ItemStructure, RequestStructureParameter
 
 
 class PluginManager:
@@ -75,6 +76,7 @@ class PluginManager:
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
         self.generator = gpu_util.PyImageGenerator()
+        self.text_renderer = text_rendering.PyTextRenderer(self.generator)
 
         shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
         with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:
@@ -90,12 +92,13 @@ class PluginManager:
         for dir in dirs:
             plugin_name = os.path.basename(dir)
             if not os.path.exists(f"{dir}/__init__.py"):
-                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warning(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 continue
 
             try:
                 __import__(f"{self.plugin_dir_name}.{plugin_name}")
             except Exception as e:
+                logger.error(traceback.format_exc())
                 logger.error(f"Failed to import plugin {plugin_name}: {e}")
 
         self.__load_plugins()
@@ -112,10 +115,15 @@ class PluginManager:
                 continue  # 既に登録されている場合はスキップ
 
             try:
-                plugin_instance = plugin_cls(self, self.generator)  # PluginManagerのインスタンスを渡す
+                plugin_cls.manager = self
+                plugin_cls.image_generator = self.generator
+                plugin_cls.text_renderer = self.text_renderer
+
+                plugin_instance = plugin_cls()  # PluginManagerのインスタンスを渡す
                 self.plugins[name] = plugin_instance
                 logger.info(f"Registered plugin: {plugin_instance.name}")
             except Exception as e:
+                logger.error(traceback.format_exc())
                 logger.error(f"Failed to load plugin {name}: {e}")
 
             logger.info("Loaded Plugins ---")
@@ -201,7 +209,7 @@ class PluginManager:
             # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
             logger.info(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
             if not os.path.exists(f"{plugin_dir}/__init__.py"):
-                logger.warn(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                logger.warning(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
                 return False
 
             with open(f"{plugin_dir}/__init__.py", "rb") as f:
@@ -216,7 +224,7 @@ class PluginManager:
 
         # プラグインを再読み込みして登録する
         if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
-            logger.warn(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
+            logger.warning(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
             return False
         try:
             __import__(f"{self.plugin_dir_name}.{plugin_name}")
@@ -229,6 +237,15 @@ class PluginManager:
         self.__load_plugins()
         return True
     
+    def get_fonts_list(self) -> dict[str, list[int]]:
+        """
+        システムにインストールされているフォントの一覧を返す。
+
+        Returns:
+            dict[str, list[int]]: フォントファミリー名 → ウェイト値（100/200/…/900）のリスト
+        """
+        return self.text_renderer.get_fonts_list()
+
     def get_plugin_names(self) -> PluginNameInfo:
         """
         登録されているプラグインのnameとdisplay_nameの対応表を取得するメソッド。
@@ -321,10 +338,6 @@ class PluginManager:
                 raise TypeError("width and height must be integers")
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
-            if len(frame_structure) == 0:
-                # 空のフレーム構造の場合はfill_black.wgslを適用
-                layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.fill_black_wgsl, None, width, height)
-                return layer_builder, {}
 
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
@@ -340,6 +353,8 @@ class PluginManager:
 
                 obj_plugin = self.object_plugins[obj_name]
                 layer_frame = obj_plugin.generate(frame_number, layer["object"]["parameters"], width, height)
+                if layer_frame is None:
+                    continue
                 frame_results[layer_id] = ItemResult(
                     width=layer_frame.output_width,
                     height=layer_frame.output_height
@@ -348,8 +363,9 @@ class PluginManager:
                     layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                      layer_frame.output_width, layer_frame.output_height)
                 elif isinstance(layer_frame, GeneratorFuncReturn):
-                    layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params,
-                                      layer_frame.output_width, layer_frame.output_height)
+                    layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
+                elif isinstance(layer_frame, GeneratorTextureReturn):
+                    layer_builder = layer_builder.add_texture_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
 
                 # エフェクト適用
                 for effect in layer["effects"]:
@@ -357,7 +373,11 @@ class PluginManager:
                         raise ValueError(f"Effect plugin {effect['name']} is not registered")
 
                     effect_plugin = self.effect_plugins[effect["name"]]
+                    if layer_frame is None: # pylanceのための冗長なチェック。実際にはこの時点でlayer_frameがNoneのケースはないはず。
+                        continue
                     layer_frame = effect_plugin.generate(frame_number, effect["parameters"], layer_frame.output_width, layer_frame.output_height)
+                    if layer_frame is None:
+                        continue
                     frame_results[layer_id] = ItemResult(
                         width=layer_frame.output_width, 
                         height=layer_frame.output_height
@@ -366,8 +386,9 @@ class PluginManager:
                         layer_builder = layer_builder.add_wgsl(layer_frame.compiled, layer_frame.params, 
                                          layer_frame.output_width, layer_frame.output_height)
                     elif isinstance(layer_frame, GeneratorFuncReturn):
-                        layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params,
-                                          layer_frame.output_width, layer_frame.output_height)
+                        layer_builder = layer_builder.add_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
+                    elif isinstance(layer_frame, GeneratorTextureReturn):
+                        layer_builder = layer_builder.add_texture_func(layer_frame.compiled, layer_frame.params, layer_frame.output_width, layer_frame.output_height)
 
                 layer_builders.append(layer_builder)
 
@@ -384,13 +405,17 @@ class PluginManager:
                 params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"] / 100, alpha, *rotation_matrix)
                 params.append(params_bytes)
 
+            if len(layer_builders) == 0:
+                # 空のフレーム構造の場合はfill_black.wgslを適用
+                layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.fill_black_wgsl, None, width, height)
+                return layer_builder, {}
+
             # builderを作成
             builder = gpu_util.PyImageGenerateBuilder() \
                 .add_parallel_wgsl(layer_builders) \
                 .add_wgsl(self.compose_wgsl, b"".join(params), width, height) # TODO: render Passを使っての高速化と簡潔化を試みる
 
         except Exception as e:
-            import traceback
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
