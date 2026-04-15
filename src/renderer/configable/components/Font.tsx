@@ -1,6 +1,5 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { LuPencil } from "react-icons/lu";
 import {
   FloatingBase,
   Reference,
@@ -38,6 +37,15 @@ const Font = ({ value, onChange }: Props) => {
     null,
   );
   const [radioName, setRadioName] = useState(`font-selection-${uuidv4()}`);
+  const [filter, setFilter] = useState("");
+
+  const scrollToSelected = useCallback((node: HTMLElement | null) => {
+    if (node) {
+      requestAnimationFrame(() => {
+        node.scrollIntoView({ block: "nearest" });
+      });
+    }
+  }, []);
 
   const handleFloatingChange = (isOpen: boolean) => {
     if (isOpen) {
@@ -59,23 +67,32 @@ const Font = ({ value, onChange }: Props) => {
 
   return (
     <FloatingBase ref={floatingRef} onChange={handleFloatingChange}>
-      <Reference className="flex items-center gap-2 min-w-0">
-        <span className="flex-1 text-sm truncate min-w-0" style={previewStyle}>
-          {value.family ?? "(なし)"}{" "}
-          {WEIGHT_NAMES[value.weight] ?? value.weight}
-        </span>
+      <Reference className="min-w-0">
         <button
           type="button"
-          className="btn btn-square btn-sm shrink-0"
+          className="btn btn-sm btn-block"
           onClick={() => floatingRef.current?.switch()}
         >
-          <LuPencil />
+          <span style={previewStyle} className="truncate">
+            {value.family ?? "(なし)"}{" "}
+            {WEIGHT_NAMES[value.weight] ?? value.weight}
+          </span>
         </button>
       </Reference>
-      <Floating className="max-h-[min(80vh,50rem)] overflow-y-auto overflow-x-hidden bg-base-300">
+      <Floating className="h-[min(80vh,50rem)] overflow-y-auto bg-base-300">
         {fontsList ? (
           <div className="join join-vertical">
+            <input
+              type="text"
+              placeholder="フォントを検索..."
+              className="input input-sm w-full mb-2 sticky top-0 z-10"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value.toLowerCase())}
+            />
             {Object.entries(fontsList).map(([family, weights]) => {
+              if (filter && !family.toLowerCase().includes(filter)) {
+                return null;
+              }
               const sorted = [...weights].sort((a, b) => a - b);
               const displayWeight = sorted.includes(400)
                 ? 400
@@ -87,12 +104,13 @@ const Font = ({ value, onChange }: Props) => {
                 return (
                   <button
                     key={family}
+                    ref={isSelected ? scrollToSelected : undefined}
                     type="button"
-                    className={`btn join-item btn-sm text-left justify-start ${isSelected ? " btn-primary" : ""}`}
+                    className={`btn join-item text-left justify-start ${isSelected ? " btn-primary" : ""}`}
                     style={{ fontFamily: family, fontWeight: displayWeight }}
                     onClick={() => selectFont(family, w)}
                   >
-                    {family}
+                    {family} {WEIGHT_NAMES[w] ?? String(w)}
                   </button>
                 );
               }
@@ -102,15 +120,16 @@ const Font = ({ value, onChange }: Props) => {
                   key={family}
                   className="collapse collapse-arrow join-item border-base-300 border"
                 >
-                  <input type="radio" name={radioName} />
+                  <input type="radio" name={radioName} defaultChecked={isSelected} />
                   <div
-                    className={`collapse-title text-sm ${isSelected ? " bg-primary text-primary-content" : "bg-base-200"}`}
+                    ref={isSelected ? scrollToSelected : undefined}
+                    className={`collapse-title text-sm h-10 flex items-center ${isSelected ? " bg-primary text-primary-content" : "bg-base-200"}`}
                     style={{ fontFamily: family, fontWeight: displayWeight }}
                   >
                     {family}
                   </div>
                   <div className="collapse-content p-0">
-                    <div className="join join-vertical w-full pb-5">
+                    <div className="join join-vertical w-full">
                       {sorted.map((w) => {
                         const isWeightSelected =
                           isSelected && value.weight === w;
@@ -118,11 +137,11 @@ const Font = ({ value, onChange }: Props) => {
                           <button
                             key={w}
                             type="button"
-                            className={`btn join-item btn-sm text-left justify-start ${isWeightSelected ? " btn-primary" : ""}`}
+                            className={`btn join-item btn-sm pl-5 text-left justify-start ${isWeightSelected ? " btn-primary" : ""}`}
                             onClick={() => selectFont(family, w)}
                           >
                             <span style={{ fontWeight: w }}>
-                              {WEIGHT_NAMES[w] ?? String(w)}
+                              {w} {WEIGHT_NAMES[w] ?? ""}
                             </span>
                           </button>
                         );
