@@ -1,0 +1,156 @@
+name: Build GStreamer with Cerbero
+description: Bootstrap 後の共通ビルドステップ (バージョン収集 → 設定 → キャッシュ → deps → パッケージ → アップロード)
+
+inputs:
+  cerbero_shell:
+    description: 'Cerbero コマンドを実行するシェル (bash / msys2 -eo pipefail {0})'
+    required: true
+  cerbero_flags:
+    description: 'Cerbero への追加フラグ (例: -c config/cross-win-arm64.cbc)'
+    default: ''
+  artifact_name:
+    description: 'アーティファクト名のサフィックス (例: linux-amd64)'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # ── バージョン情報の収集 ──────────────────────────────────────────────────
+    - id: version-info
+      name: Gather Version Information
+      working-directory: cerbero
+      shell: ${{ inputs.cerbero_shell }}
+      env:
+        CI_PROJECT_NAME: cerbero
+      run: |
+        gstreamer_version=$(./cerbero-uninstalled packageinfo gstreamer-1.0 | awk '/Version:/ {print $2}')
+        echo "gstreamer-version=${gstreamer_version}" >> $GITHUB_OUTPUT
+
+        cerbero_short_sha=$(git rev-parse --short HEAD)
+        echo "cerbero-short-sha=${cerbero_short_sha}" >> $GITHUB_OUTPUT
+
+    # ── Cerbero ビルド設定 ────────────────────────────────────────────────────
+    - id: cerbero-config
+      name: Configure Cerbero Build
+      working-directory: cerbero
+      shell: ${{ inputs.cerbero_shell }}
+      run: |
+        echo "cerbero-sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+        CERBERO_HOME=cerbero-build
+        CERBERO_SOURCES=cerbero-sources
+        echo "cerbero-home=cerbero/${CERBERO_HOME}" >> $GITHUB_OUTPUT
+        echo "cerbero-sources=cerbero/${CERBERO_SOURCES}" >> $GITHUB_OUTPUT
+
+        if command -v cygpath &>/dev/null; then
+          pwd_native=$(cygpath -am .)
+        else
+          pwd_native=$(pwd)
+        fi
+
+        {
+          echo "home_dir = \"${pwd_native}/${CERBERO_HOME}\""
+          echo "local_sources = \"${pwd_native}/${CERBERO_SOURCES}\""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "num_of_cpus = ${NUMBER_OF_PROCESSORS}"
+          else
+            ncpus=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+            echo "num_of_cpus = ${ncpus}"
+          fi
+          echo "package_origin = \"${{ steps.version-info.outputs.gstreamer-version }}-${{ steps.version-info.outputs.cerbero-short-sha }}\""
+        } > localconf.cbc
+
+        git clean -xdf -e localconf.cbc -e "${CERBERO_SOURCES}"
+
+        cerbero_cmd="./cerbero-uninstalled ${{ inputs.cerbero_flags }}"
+        echo "CERBERO=${cerbero_cmd} -c localconf.cbc" >> $GITHUB_ENV
+        echo "CERBERO_ARGS=-v nocdparanoia,nodebug,nogi,nogtk,nomingw,nopython,noqt5,noqt6,norpi,notestspackage,nounwind,nov4l2,rust --clocktime --timestamps" >> $GITHUB_ENV
+        echo "CERBERO_PACKAGE_ARGS=--artifact=tarball" >> $GITHUB_ENV
+
+        config_hash=$(echo "${{ inputs.cerbero_flags }}${{ inputs.artifact_name }}" | sha256sum | cut -d' ' -f1)
+        echo "config-hash=${config_hash}" >> $GITHUB_OUTPUT
+
+    # ── キャッシュの復元 ──────────────────────────────────────────────────────
+    - id: restore-cerbero-sources-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.cerbero-config.outputs.cerbero-sources }}
+        key: cerbero-sources-${{ inputs.artifact_name }}-${{ steps.version-info.outputs.gstreamer-version }}-${{ steps.cerbero-config.outputs.cerbero-sha }}
+        restore-keys: |
+          cerbero-sources-${{ inputs.artifact_name }}-${{ steps.version-info.outputs.gstreamer-version }}-
+          cerbero-sources-${{ inputs.artifact_name }}-
+
+    - id: restore-cerbero-deps-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.cerbero-config.outputs.cerbero-home }}/cerbero-deps.tar.xz
+        key: cerbero-deps-${{ inputs.artifact_name }}-${{ steps.version-info.outputs.gstreamer-version }}-${{ steps.cerbero-config.outputs.cerbero-sha }}-${{ steps.cerbero-config.outputs.config-hash }}
+        restore-keys: |
+          cerbero-deps-${{ inputs.artifact_name }}-${{ steps.version-info.outputs.gstreamer-version }}-${{ steps.cerbero-config.outputs.cerbero-sha }}-${{ steps.cerbero-config.outputs.config-hash }}-
+
+    - if: steps.restore-cerbero-deps-cache.outputs.cache-matched-key
+      shell: ${{ inputs.cerbero_shell }}
+      run: |
+        deps_file='${{ steps.cerbero-config.outputs.cerbero-home }}/cerbero-deps.tar.xz'
+        [ -f "$deps_file" ] && tar -xJf "${deps_file}" -C '${{ steps.cerbero-config.outputs.cerbero-home }}' && rm -f "${deps_file}"
+
+    # ── 依存関係のビルド ──────────────────────────────────────────────────────
+    - id: build-gstreamer-deps
+      working-directory: cerbero
+      shell: ${{ inputs.cerbero_shell }}
+      env:
+        CI_PROJECT_NAME: cerbero
+      run: |
+        build_deps="gstreamer-1.0 gst-plugins-base-1.0 gst-plugins-good-1.0
+            gst-plugins-bad-1.0 gst-plugins-ugly-1.0"
+
+        $CERBERO $CERBERO_ARGS fetch-bootstrap --jobs=4
+        $CERBERO $CERBERO_ARGS fetch-package --jobs=4 --deps gstreamer-1.0
+        $CERBERO $CERBERO_ARGS bootstrap --offline --system=no
+        $CERBERO $CERBERO_ARGS build-deps --offline $build_deps
+        $CERBERO $CERBERO_ARGS gen-cache
+
+    - if: steps.build-gstreamer-deps.outcome == 'success' && ! steps.restore-cerbero-sources-cache.outputs.cache-hit
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.cerbero-config.outputs.cerbero-sources }}
+        key: ${{ steps.restore-cerbero-sources-cache.outputs.cache-primary-key }}
+
+    - if: steps.build-gstreamer-deps.outcome == 'success' && ! steps.restore-cerbero-deps-cache.outputs.cache-hit
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.cerbero-config.outputs.cerbero-home }}/cerbero-deps.tar.xz
+        key: ${{ steps.restore-cerbero-deps-cache.outputs.cache-primary-key }}
+
+    # ── パッケージのビルド ────────────────────────────────────────────────────
+    - id: build-packages
+      working-directory: cerbero
+      shell: ${{ inputs.cerbero_shell }}
+      env:
+        CI_PROJECT_NAME: cerbero
+      run: |
+        if command -v cygpath &>/dev/null; then
+          out_dir=$(cygpath -am .)
+        else
+          out_dir=$(pwd)
+        fi
+        $CERBERO $CERBERO_ARGS package --offline ${CERBERO_PACKAGE_ARGS} -o "${out_dir}" gstreamer-1.0
+
+    # ── 成果物のアップロード ──────────────────────────────────────────────────
+    - name: Find generated tarballs
+      shell: bash
+      run: |
+        echo "=== Searching for tarballs ==="
+        find cerbero -maxdepth 3 \( -name "*.tar.xz" -o -name "*.tar.bz2" -o -name "*.tar.gz" \) 2>/dev/null || true
+
+    - name: Upload tarballs
+      uses: actions/upload-artifact@v4
+      with:
+        name: gstreamer-${{ inputs.artifact_name }}
+        path: |
+          cerbero/*.tar.xz
+          cerbero/*.tar.bz2
+          cerbero/*.tar.gz
+        if-no-files-found: warn
+        compression-level: 0
+        retention-days: 30
