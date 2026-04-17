@@ -1,0 +1,22 @@
+[package]
+name = "avloader"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "avloader"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+gstreamer = "0.25.1"
+gstreamer-app = "0.25.0"
+gstreamer-video = "0.25.0"
+gpu_util = { path = "../gpu_util" }
+wgpu = { workspace = true }
+anyhow = { workspace = true }
+bytemuck = { workspace = true }

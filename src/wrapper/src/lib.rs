@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 use pyo3_stub_gen::define_stub_info_gatherer;
 
+pub mod avloader;
 pub mod frame_structure;
 pub mod gpu_util;
 pub mod logger;
@@ -11,6 +12,8 @@ pub mod utils;
 /// maturin でスタンドアロンビルドする場合のエントリポイント
 #[pymodule]
 pub mod aperio {
+    #[pymodule_export]
+    use super::avloader::avloader_register;
     #[pymodule_export]
     use super::frame_structure::frame_structure;
     #[pymodule_export]
@@ -35,6 +38,7 @@ pub fn register_all(py: Python<'_>, sys_modules: &Bound<'_, PyDict>) -> PyResult
         ("logger", logger::logger),
         ("frame_structure", frame_structure::frame_structure),
         ("text_rendering", text_rendering::text_rendering_register),
+        ("avloader", avloader::avloader_register),
     ] {
         let sub = PyModule::new(py, &format!("aperio.{name}"))?;
         init(&sub)?;
