@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env, path::PathBuf, str::FromStr};
 
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
@@ -17,10 +17,10 @@ use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::IntoPyObject;
 use pyo3::{types::PyAnyMethods, Py, PyAny, PyResult, Python};
-use text_rendering::FontsList;
 use wrapper::{
     frame_structure::*,
     gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
+    text_rendering::FontsList,
     utils::json_to_pyobject,
 };
 
@@ -51,6 +51,21 @@ fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> 
     let default_version = &config.python.default_version;
     let local_data_dir = get_local_data_dir(dirs)?;
     let python_path = local_data_dir.join("python"); // pythonがある
+
+    // gstreamerのプラグイン場所を設定
+    // PATHにdist_dirを追加
+    env::set_var(
+        "PATH",
+        format!(
+            "{};{}",
+            dirs.dist_dir.to_string(),
+            env::var("PATH").unwrap_or_default()
+        ),
+    );
+    env::set_var(
+        "GST_PLUGIN_PATH",
+        PathBuf::from_str(&dirs.dist_dir)?.join("gst"),
+    );
 
     // pythonがインストールされているか確認
     // python環境変数の設定
@@ -216,6 +231,7 @@ impl AperioManager {
         count: i32,
         width: i32,
         height: i32,
+        fps: f64,
         frame_struct: Vec<ItemStructure>,
     ) -> napi::Result<HashMap<String, ItemResult>> {
         let pl_manager = &self.plmanager;
@@ -231,7 +247,7 @@ impl AperioManager {
 
             let func = pl_manager.getattr("make_frame_buf")?;
             let results: HashMap<String, ItemResult> = func
-                .call1((count, frame_struct, width, height, buffer_ptr))?
+                .call1((count, frame_struct, width, height, fps, buffer_ptr))?
                 .extract()?;
 
             Ok(results)
@@ -246,6 +262,7 @@ impl AperioManager {
         &self,
         count: i32,
         tex_format: WrappedSharedTextureFormat,
+        fps: f64,
         frame_struct: Vec<ItemStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
     ) -> napi::Result<HashMap<String, ItemResult>> {
@@ -278,6 +295,7 @@ impl AperioManager {
                     frame_struct,
                     content_size.width,
                     content_size.height,
+                    fps,
                     base_texture,
                     tex_format,
                 ))?

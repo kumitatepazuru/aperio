@@ -2,12 +2,6 @@ import type { ItemResult, ItemStructure } from "native";
 import { create } from "zustand";
 import type { ColorValue } from "@/configable/utils";
 
-export type TimelineItemStructure = ItemStructure & {
-  layer: number; // レイヤー番号（z-index）
-  from: number; // 開始フレーム
-  to: number; // 終了フレーム
-};
-
 type ViewerState = {
   state: "playing" | "paused";
   changeTime: number; // 状態変更時刻のタイムスタンプ Date.now()基準（クロスrenderer同期のため）
@@ -17,17 +11,17 @@ type ViewerState = {
 type FrameState = {
   width: number;
   height: number;
+  fps: number;
 };
 
 export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
 export type DisplayMode = "0-1" | "0-255";
 
 type Store = {
-  fps: number;
   frameState: FrameState;
   frameResults: Record<string, ItemResult>;
   viewerState: ViewerState;
-  timelineItems: TimelineItemStructure[];
+  timelineItems: ItemStructure[];
   selectedItemIds: string[];
   mainSelectedItemId: string | null;
   colorPicker: {
@@ -40,8 +34,7 @@ type Store = {
   setFrameState: (frameState: FrameState) => void;
   setFrameResults: (frameResults: Record<string, ItemResult>) => void;
   setFrameCount: (frame: number) => void;
-  setFps: (fps: number) => void;
-  setTimelineItems: (items: TimelineItemStructure[]) => void;
+  setTimelineItems: (items: ItemStructure[]) => void;
   setSelectedItemId: (id: string | null) => void;
   addSelectedItemId: (id: string) => void;
   setSelectedItems: (ids: string[], mainId: string | null) => void;
@@ -51,7 +44,6 @@ type Store = {
 // 同期対象の直列化可能なstateのみ
 export type SyncableState = Pick<
   Store,
-  | "fps"
   | "viewerState"
   | "timelineItems"
   | "frameState"
@@ -166,10 +158,10 @@ const _useStore = create<Store>()((set, get) => {
   };
 
   return {
-    fps: 60,
     frameState: {
       width: 1920,
       height: 1080,
+      fps: 60,
     },
     frameResults: {},
     viewerState: {
@@ -212,7 +204,6 @@ const _useStore = create<Store>()((set, get) => {
           beginFrame: frame,
         },
       }),
-    setFps: (fps) => syncSet({ fps }),
     setTimelineItems: (items) => syncSet({ timelineItems: items }),
     setSelectedItemId: (id: string | null) =>
       syncSet({ selectedItemIds: id ? [id] : [], mainSelectedItemId: id }),
@@ -264,21 +255,23 @@ export async function getStoreState(): Promise<Store> {
 }
 
 export const getCurrentFrameCount = async (): Promise<number> => {
-  const { viewerState, fps } = await getStoreState();
+  const { viewerState, frameState } = await getStoreState();
   if (viewerState.state === "playing") {
     const elapsedTime = (Date.now() - viewerState.changeTime) / 1000;
-    return viewerState.beginFrame + Math.floor(elapsedTime * fps);
+    return viewerState.beginFrame + Math.floor(elapsedTime * frameState.fps);
   }
   return viewerState.beginFrame;
 };
 
 export const getCurrentFrameStruct = async () => {
   const state = await getStoreState();
-  const { viewerState, fps } = state;
+  const { viewerState, frameState } = state;
   const currentFrame =
     viewerState.state === "playing"
       ? viewerState.beginFrame +
-        Math.floor(((Date.now() - viewerState.changeTime) / 1000) * fps)
+        Math.floor(
+          ((Date.now() - viewerState.changeTime) / 1000) * frameState.fps,
+        )
       : viewerState.beginFrame;
   return state.timelineItems
     .filter((item) => currentFrame >= item.from && currentFrame <= item.to)
@@ -297,7 +290,6 @@ function getSyncableState(): SyncableState {
   // 内部呼び出し（provideState ハンドラ）なのでロックを bypass して直接取得する
   const s = _useStore.getState();
   return {
-    fps: s.fps,
     viewerState: s.viewerState,
     timelineItems: s.timelineItems,
     frameState: s.frameState,

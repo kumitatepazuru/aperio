@@ -115,6 +115,9 @@ pub struct GenerateStructure {
 #[pyclass(module = "aperio.frame_structure", extends = PyDict)]
 pub struct ItemStructure {
     pub id: String,                      // アイテムのUUID
+    pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）
+    pub from: i32,                       // アイテムの開始フレーム
+    pub to: i32,                         // アイテムの終了フレーム
     pub x: i32,                          // アイテムのX座標
     pub y: i32,                          // アイテムのY座標
     pub scale: f64,                      // アイテムのスケール
@@ -176,6 +179,9 @@ impl<'py> IntoPyObject<'py> for ItemStructure {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let dict = PyDict::new(py);
         dict.set_item("id", self.id)?;
+        dict.set_item("layer", self.layer)?;
+        dict.set_item("from", self.from)?;
+        dict.set_item("to", self.to)?;
         dict.set_item("x", self.x)?;
         dict.set_item("y", self.y)?;
         dict.set_item("scale", self.scale)?;

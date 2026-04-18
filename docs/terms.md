@@ -9,7 +9,7 @@
 
 **定義:** タイムライン上に配置された編集要素の単位。動画・画像・テキストなどのオブジェクトと、それに付随するエフェクトをまとめたもの。
 
-**型:** `TimelineItemStructure`（`src/shared/store.ts`）
+**型:** `ItemStructure`（`src/shared/store.ts`）
 
 | フィールド | 型 | 意味 |
 |---|---|---|
@@ -25,7 +25,7 @@
 | `effects` | `GenerateStructure[]` | 適用されているエフェクトのリスト |
 
 **Store上の名称:**
-- `timelineItems: TimelineItemStructure[]` — 全アイテムのリスト
+- `timelineItems: ItemStructure[]` — 全アイテムのリスト
 - `selectedItemIds: string[]` — 選択中アイテムのIDリスト（複数選択対応）
 - `mainSelectedItemId: string | null` — パラメータ編集の基準となる「メイン選択」アイテムのID
 
@@ -33,6 +33,23 @@
 - 旧称は `timelineLayers` / `TimelineLayerStructure`。Layer はz-index概念に限定するためリネーム済み。
 - `selectedItemIds` は複数形。かつての `selectedItemId: string[]`（単数形・複数値）から改名。
 - ループ変数は `item` を使う（`layer` は使わない）。
+
+### ItemStructure（ネイティブブリッジ型）
+
+**定義:** napi-rs が生成する native の構造体。Rust → Python・TypeScript 間のアイテムデータ転送フォーマット。
+
+**型定義:**
+- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct ItemStructure`
+- TypeScript: `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface ItemStructure`
+- Python: `src/wrapper/src/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemStructure`
+
+**フィールド（Python側）:**
+- `id`, `layer`, `from`, `to`, `x`, `y`, `scale`, `rotation`, `alpha` — アイテムの基本プロパティ
+- `object: GenerateStructure` — オブジェクトプラグインのインスタンス情報
+- `effects: list[GenerateStructure]` — エフェクトプラグインのインスタンスリスト
+
+**注意:**
+- Python側では `item["object"]["name"]` でオブジェクト名にアクセスする。
 
 ---
 
@@ -64,7 +81,7 @@
 | `displayName` | `string` | UIに表示する名前 |
 | `parameters` | `Record<string, any>` | プラグインへ渡すパラメータ値の辞書 |
 
-**アクセス方法:** `item.object`（`TimelineItemStructure` のフィールド）
+**アクセス方法:** `item.object`（`ItemStructure` のフィールド）
 
 **注意:**
 - 旧称は `obj`。`object` に統一済み。
@@ -123,26 +140,6 @@
 **用法:**
 - `item.object` — オブジェクト本体としての GenerateStructure
 - `item.effects[i]` — エフェクトとしての GenerateStructure
-
----
-
-## ItemStructure（ネイティブブリッジ型）
-
-**定義:** napi-rs が生成する native の構造体。Rust → Python・TypeScript 間のアイテムデータ転送フォーマット。TypeScript側の `TimelineItemStructure` の基底型。
-
-**型定義:**
-- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct ItemStructure`
-- TypeScript: `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface ItemStructure`
-- Python: `src/wrapper/src/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemStructure`
-
-**フィールド（Python側）:**
-- `id`, `x`, `y`, `scale`, `rotation`, `alpha` — アイテムの基本プロパティ
-- `object: GenerateStructure` — オブジェクトプラグインのインスタンス情報
-- `effects: list[GenerateStructure]` — エフェクトプラグインのインスタンスリスト
-
-**注意:**
-- TypeScript内でアイテムとして扱う場合は `TimelineItemStructure`（`ItemStructure & { layer, from, to }`）を使う。
-- Python側では `item["object"]["name"]` でオブジェクト名にアクセスする。
 
 ---
 
@@ -279,7 +276,7 @@
 
 | 概念 | TypeScript変数/型 | 複数形 |
 |---|---|---|
-| タイムライン上の要素 | `item: TimelineItemStructure` | `timelineItems` |
+| タイムライン上の要素 | `item: ItemStructure` | `timelineItems` |
 | 選択中IDリスト | `selectedItemIds: string[]` | — |
 | メイン選択ID | `mainSelectedItemId: string \| null` | — |
 | z-index位置 | `item.layer: number` | — |

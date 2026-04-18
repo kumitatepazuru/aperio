@@ -36,9 +36,9 @@ const TimelineBaseUI = ({
   visibleVerticalLineIndices,
   children,
 }: TimelineBaseUIProps) => {
-  const { fps, viewerState, pause, setSelectedItemId } = useStore(
+  const { frameState, viewerState, pause, setSelectedItemId } = useStore(
     useShallow((state) => ({
-      fps: state.fps,
+      frameState: state.frameState,
       viewerState: state.viewerState,
       pause: state.pause,
       setSelectedItemId: state.setSelectedItemId,
@@ -175,7 +175,7 @@ const TimelineBaseUI = ({
               >
                 {index % 5 === 0 && (
                   <span className="absolute bottom-2 text-xs font-mono">
-                    {frameToDate(graduationInterval * index, fps)}
+                    {frameToDate(graduationInterval * index, frameState.fps)}
                   </span>
                 )}
               </div>

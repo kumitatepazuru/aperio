@@ -4,6 +4,7 @@ type PendingRequest = {
   frameCount: number;
   width: number;
   height: number;
+  fps: number;
   frameStruct: ItemStructure[];
   resolve: (data: BufferReturn) => void;
   reject: (err: unknown) => void;
@@ -70,6 +71,7 @@ const Frame = class {
       req.frameCount,
       req.width,
       req.height,
+      req.fps,
       req.frameStruct,
     );
   }
@@ -78,6 +80,7 @@ const Frame = class {
     frameCount: number,
     width: number,
     height: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ): Promise<BufferReturn> {
     if (!this.port) {
@@ -94,6 +97,7 @@ const Frame = class {
           frameCount,
           width,
           height,
+          fps,
           frameStruct,
           resolve,
           reject,
@@ -103,6 +107,7 @@ const Frame = class {
           frameCount,
           width,
           height,
+          fps,
           frameStruct,
           resolve,
           reject,

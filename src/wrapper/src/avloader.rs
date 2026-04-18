@@ -2,7 +2,6 @@ use avloader::{ColorFormat, VideoLoader};
 use numpy::{ndarray::Array3, IntoPyArray, PyArray3};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyModule};
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
-use std::sync::Arc;
 
 use crate::gpu_util::{PyImageGenerator, PyTexture};
 
@@ -23,10 +22,10 @@ pub enum PyColorFormat {
 impl From<ColorFormat> for PyColorFormat {
     fn from(cf: ColorFormat) -> Self {
         match cf {
-            ColorFormat::RgbUnorm    => Self::RgbUnorm,
-            ColorFormat::RgbaUnorm   => Self::RgbaUnorm,
-            ColorFormat::Rgb16Float   => Self::Rgb16Float,
-            ColorFormat::Rgba16Float  => Self::Rgba16Float,
+            ColorFormat::RgbUnorm => Self::RgbUnorm,
+            ColorFormat::RgbaUnorm => Self::RgbaUnorm,
+            ColorFormat::Rgb16Float => Self::Rgb16Float,
+            ColorFormat::Rgba16Float => Self::Rgba16Float,
         }
     }
 }
@@ -62,11 +61,7 @@ impl PyVideoLoader {
     /// - `target_fps`      : 出力フレームレート（videorate で変換）
     /// - `image_generator` : GPU リソース管理（`PyImageGenerator`）
     #[new]
-    pub fn new(
-        path: &str,
-        target_fps: f64,
-        image_generator: &PyImageGenerator,
-    ) -> PyResult<Self> {
+    pub fn new(path: &str, target_fps: f64, image_generator: &PyImageGenerator) -> PyResult<Self> {
         let inner = VideoLoader::new(path, target_fps, image_generator.inner.clone())
             .map_err(|e| PyValueError::new_err(format!("VideoLoader::new: {e}")))?;
         Ok(Self { inner })
@@ -74,15 +69,21 @@ impl PyVideoLoader {
 
     /// 動画の幅（px）。
     #[getter]
-    pub fn width(&self) -> u32 { self.inner.get_width() }
+    pub fn width(&self) -> u32 {
+        self.inner.get_width()
+    }
 
     /// 動画の高さ（px）。
     #[getter]
-    pub fn height(&self) -> u32 { self.inner.get_height() }
+    pub fn height(&self) -> u32 {
+        self.inner.get_height()
+    }
 
     /// カラーフォーマット。
     #[getter]
-    pub fn color_format(&self) -> PyColorFormat { self.inner.get_color_format().into() }
+    pub fn color_format(&self) -> PyColorFormat {
+        self.inner.get_color_format().into()
+    }
 
     /// 指定フレーム（1 始まり）を numpy 配列で返す。
     ///
@@ -102,7 +103,7 @@ impl PyVideoLoader {
             .map_err(|e| PyValueError::new_err(format!("get_frame: {e}")))?;
 
         let h = self.inner.get_height() as usize;
-        let w = self.inner.get_width()  as usize;
+        let w = self.inner.get_width() as usize;
         let c = self.inner.get_color_format().bytes_per_pixel();
 
         // Vec → ndarray::Array3 → numpy（所有権移譲、コピーなし）
@@ -115,19 +116,24 @@ impl PyVideoLoader {
     ///
     /// ネイティブ YUV フォーマット（I420/NV12/I422/I444 など）のまま GPU に転送するため
     /// CPU→GPU のデータ量を削減し、chroma subsampling の品質劣化が起きない。
-    pub fn get_texture_frame(
-        &self,
-        py: Python<'_>,
-        frame_number: u64,
-    ) -> PyResult<PyTexture> {
-        let tex = py.allow_threads(|| {
-            self.inner
-                .get_texture_frame(frame_number)
-                .map_err(|e| PyValueError::new_err(format!("get_texture_frame: {e}")))
-        })?;
-        let width  = tex.width();
+    pub fn get_texture_frame(&self, frame_number: u64) -> PyResult<PyTexture> {
+        let tex = self.inner.get_texture_frame(frame_number)?;
+        let width = tex.width();
         let height = tex.height();
-        Ok(PyTexture { inner: tex, width, height })
+        Ok(PyTexture {
+            inner: tex,
+            width,
+            height,
+        })
+    }
+
+    /// パイプライン経由で指定フレームを GPU テクスチャで返す利便メソッド。
+    pub fn get_frame_for_pipeline(
+        &mut self,
+        _inputs: Vec<Py<PyTexture>>,
+        frame_number: u64,
+    ) -> PyResult<Option<PyTexture>> {
+        self.get_texture_frame(frame_number).map(Some)
     }
 }
 

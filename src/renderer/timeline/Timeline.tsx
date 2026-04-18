@@ -1,9 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { useShallow } from "zustand/shallow";
-import useStore, {
-  getCurrentFrameCount,
-  type TimelineItemStructure,
-} from "@shared/store";
+import useStore, { getCurrentFrameCount } from "@shared/store";
 import {
   useCallback,
   type RefCallback,
@@ -17,6 +14,7 @@ import LayerItems from "./LayerItems";
 import MultipleSelect from "./MultipleSelect";
 import TimelineBaseUI from "./TimelineBaseUI";
 import { useMergeRefs } from "@floating-ui/react";
+import type { ItemStructure } from "native";
 
 const ZoomLevels = [20, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02]; // フレームあたりのピクセル数
 
@@ -195,7 +193,7 @@ const Timeline = () => {
             layer++;
           }
 
-          const newItem: TimelineItemStructure = {
+          const newItem: ItemStructure = {
             id: uuidv4(),
             layer,
             from: currentFrame,

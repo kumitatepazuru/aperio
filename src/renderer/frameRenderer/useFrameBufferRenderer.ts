@@ -120,6 +120,7 @@ const useFrameBufferRenderer = () => {
         currentFrameCount,
         frameState.width,
         frameState.height,
+        frameState.fps,
         await getCurrentFrameStruct(),
       );
       const uint8Data = new Uint8Array(data.frame);

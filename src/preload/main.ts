@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("frame", {
     count: number,
     width: number,
     height: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ) => {
     await ipcRenderer.invoke(
@@ -41,6 +42,7 @@ contextBridge.exposeInMainWorld("frame", {
       count,
       width,
       height,
+      fps,
       frameStruct,
     );
   },
@@ -50,9 +52,10 @@ contextBridge.exposeInMainWorld("frame", {
   },
   getFrameSharedTexture: async (
     count: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ) => {
-    await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
+    await ipcRenderer.invoke("get-frame-shared-texture", count, fps, frameStruct);
   },
 });
 

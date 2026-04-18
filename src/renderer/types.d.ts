@@ -43,6 +43,7 @@ declare global {
         count: number,
         width: number,
         height: number,
+        fps: number,
         frameStruct: ItemStructure[],
       ) => Promise<void>;
       setReceiver: (
@@ -50,6 +51,7 @@ declare global {
       ) => void;
       getFrameSharedTexture: (
         count: number,
+        fps: number,
         frameStruct: ItemStructure[],
       ) => Promise<void>;
     };

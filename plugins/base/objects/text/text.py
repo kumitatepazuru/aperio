@@ -2,7 +2,7 @@ from aperio.frame_structure import RequestStructureParameter
 from aperio.text_rendering import PyTextRenderer, PyTextSpec
 from aperio.gpu_util import PyCompiledTextureFunc, PyImageGenerator
 
-from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
 
 
 class TextObject(ObjectGeneratorBase):
@@ -33,7 +33,9 @@ class TextObject(ObjectGeneratorBase):
         return self.base_structure
         
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorTextureReturn | None:
+    def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
+        args = params.args
+
         text = args.get("text", "ここにテキストを入力")
         font = args.get("font", {})
         prepared = self.text_renderer.prepare_render_text(

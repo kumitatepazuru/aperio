@@ -91,16 +91,17 @@ ipcMain.handle(
     count: number,
     width: number,
     height: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ) => {
-    nativeModule.getFrameBuf(count, width, height, frameStruct);
+    nativeModule.getFrameBuf(count, width, height, fps, frameStruct);
   },
 );
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  (event, count: number, frameStruct: ItemStructure[]) => {
-    nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
+  (event, count: number, fps: number, frameStruct: ItemStructure[]) => {
+    nativeModule.getFrameSharedTexture(count, fps, frameStruct, event.sender);
   },
 );
 

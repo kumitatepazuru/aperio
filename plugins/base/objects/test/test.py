@@ -7,7 +7,7 @@ import cv2
 from aperio.gpu_util import PyCompiledWgsl, PyImageGenerator
 import numpy as np
 
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorWgslReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
 
 
 class TestObject(ObjectGeneratorBase):
@@ -53,17 +53,18 @@ class TestObject(ObjectGeneratorBase):
             return self.base_structure
         
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn:
+    def generate(self, params: GenerateParameters) -> GeneratorWgslReturn:
         ret, img = self.frame.read()
         if not ret:
             raise RuntimeError("Failed to read frame from videotestsrc")
         
+        args = params.args
         if args.get("draw_text", False):
             position = args.get("text_pos", [50, 50])
             text_color = args.get("text_color", (1.0, 1.0, 1.0, 1.0))
             text_color = [int(c * 255) for c in text_color]  # RGBAを整数に変換
 
-            cv2.putText(img, f"Frame: {frame_number}", (position[0], position[1]),
+            cv2.putText(img, f"Frame: {params.frame_number}", (position[0], position[1]),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (text_color[2], text_color[1], text_color[0]), 2, cv2.LINE_AA) # OpenCVはBGR形式なので、テキストカラーをBGRの順番で指定
         
         # float32に変換
