@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, path::PathBuf, str::FromStr};
+use std::{collections::HashMap};
 
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
@@ -51,21 +51,6 @@ fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> 
     let default_version = &config.python.default_version;
     let local_data_dir = get_local_data_dir(dirs)?;
     let python_path = local_data_dir.join("python"); // pythonがある
-
-    // gstreamerのプラグイン場所を設定
-    // PATHにdist_dirを追加
-    env::set_var(
-        "PATH",
-        format!(
-            "{};{}",
-            dirs.dist_dir.to_string(),
-            env::var("PATH").unwrap_or_default()
-        ),
-    );
-    env::set_var(
-        "GST_PLUGIN_PATH",
-        PathBuf::from_str(&dirs.dist_dir)?.join("gst"),
-    );
 
     // pythonがインストールされているか確認
     // python環境変数の設定

@@ -1,0 +1,27 @@
+{
+  "name": "avloader-cpp",
+  "version": "0.1.0",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "features": [
+        "avcodec",
+        "avformat",
+        "swscale",
+        "x264",
+        "x265",
+        "dav1d",
+        "vpx",
+        "nvcodec",
+        "qsv",
+        {
+          "platform": "linux",
+          "name": "vaapi"
+        },
+        "vorbis",
+        "vulkan",
+        "swresample"
+      ]
+    }
+  ]
+}
