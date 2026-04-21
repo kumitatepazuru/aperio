@@ -3,15 +3,14 @@ type Props = {
   onChange: (value: string) => void;
 };
 
-const StringInput = ({ value, onChange }: Props) => (
+const TextareaInput = ({ value, onChange }: Props) => (
   <div>
-    <input
-      type="text"
+    <textarea
+      className="textarea w-full"
       value={value}
-      className="input input-sm w-full"
       onChange={(e) => onChange(e.target.value)}
     />
   </div>
 );
 
-export default StringInput;
+export default TextareaInput;

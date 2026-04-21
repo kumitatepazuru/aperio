@@ -5,6 +5,8 @@ import {
   ipcMain,
   screen,
   webContents,
+  dialog,
+  type OpenDialogOptions,
 } from "electron";
 import { RendezvousServer } from "./rendezvousServer";
 import * as path from "path";
@@ -127,6 +129,10 @@ ipcMain.handle("resize-osr", (_, width: number, height: number) => {
 });
 
 ipcMain.handle("show-dialog", (_, id: string) => showDialog(id));
+
+ipcMain.handle("show-open-dialog", (_, options: OpenDialogOptions) => {
+  return dialog.showOpenDialogSync(options);
+});
 setMenu(showDialog);
 registerContextMenuIpc(nativeModule);
 

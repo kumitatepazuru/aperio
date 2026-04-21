@@ -9,7 +9,7 @@ import {
 
 /** フォントファミリー名 → ウェイト値（100/200/…/900）の配列 */
 type FontsList = Record<string, number[]>;
-import { sharedTexture } from "electron";
+import { sharedTexture, type OpenDialogOptions } from "electron";
 import type { SyncableState } from "../shared/store";
 
 declare global {
@@ -76,6 +76,7 @@ declare global {
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
       resizeOsr: (width: number, height: number) => Promise<void>;
+      showOpenDialog: (options: OpenDialogOptions) => Promise<string[] | undefined>;
     };
   }
 }

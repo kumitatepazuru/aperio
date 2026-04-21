@@ -3,6 +3,7 @@ import {
   ipcRenderer,
   IpcRendererEvent,
   sharedTexture,
+  type OpenDialogOptions,
 } from "electron";
 import { AperioConfig, type ItemStructure } from "native";
 
@@ -125,4 +126,6 @@ contextBridge.exposeInMainWorld("main", {
   ) => ipcRenderer.invoke("request-new-object-generator", pluginName, args),
   requestNewEffectGenerator: (pluginName: string) =>
     ipcRenderer.invoke("request-new-effect-generator", pluginName),
+  showOpenDialog: (options: OpenDialogOptions): Promise<string[] | undefined> =>
+    ipcRenderer.invoke("show-open-dialog", options),
 });

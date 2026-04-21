@@ -8,6 +8,13 @@ use pyo3::{
 };
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum};
 
+#[napi(object)]
+#[pydataclass(stub, module = "aperio.frame_structure")]
+pub struct FileFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
+}
+
 use crate::utils::json_to_pyobject;
 
 #[napi(object)]
@@ -96,6 +103,18 @@ pub enum RequestStructureParameter {
         id: String,
         title: String,
         // デフォルト値は固定: family=None, weight=400
+    },
+    Textarea {
+        id: String,
+        title: String,
+        default_value: String,
+    },
+    File {
+        id: String,
+        title: String,
+        multi_selections: bool,
+        open_type: String, // "file" | "directory"
+        filters: Vec<FileFilter>,
     },
 }
 
@@ -202,6 +221,7 @@ impl<'py> IntoPyObject<'py> for ItemStructure {
 
 #[pymodule]
 pub fn frame_structure(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_class::<FileFilter>()?;
     m.add_class::<ItemResult>()?;
     m.add_class::<RequestStructureParameter>()?;
     m.add_class::<GenerateStructure>()?;

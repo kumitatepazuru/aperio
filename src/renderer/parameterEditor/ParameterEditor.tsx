@@ -23,6 +23,8 @@ const ParameterEditor = () => {
       if (param.type === "Font") {
         defaultParams[param.id] = { family: null, weight: 400 };
         return;
+      } else if (param.type === "File") {
+        defaultParams[param.id] = [];
       } else {
         defaultParams[param.id] = param.defaultValue;
       }
