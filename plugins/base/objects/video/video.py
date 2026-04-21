@@ -1,7 +1,7 @@
 import os
 
 from aperio.avloader import PyVideoLoader
-from aperio.frame_structure import RequestStructureParameter
+from aperio.frame_structure import FileFilter, RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc, PyImageGenerator
 
 from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
@@ -20,7 +20,9 @@ class VideoObject(ObjectGeneratorBase):
         self.description = "動画を再生できます。動画ファイルのパスを指定してください。"
 
         self.base_structure: list[RequestStructureParameter] = [
-            RequestStructureParameter.String("video_path", "動画パス", ""),
+            RequestStructureParameter.File("video_path", "ファイル", False, "file", 
+                                           [FileFilter("動画ファイル", ["mp4", "mkv", "webm", "avi", "flv", "mpeg", "mpg", "mov", "wmv", "mts", "m2ts", "m4v"])],
+                                           ),
         ]
         self.image_generator = image_generator
         self.compiled_func: PyCompiledTextureFunc | None = None
@@ -35,7 +37,7 @@ class VideoObject(ObjectGeneratorBase):
         
 
     def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
-        path = params.args.get("video_path", "")
+        path = params.args.get("video_path", "")[0]
         if path != self.previous_video_path and os.path.exists(path):
             self.video_loader = PyVideoLoader(path=path, target_fps=params.fps, image_generator=self.image_generator)
             self.compiled_func = PyCompiledTextureFunc("video_frame", self.video_loader.get_frame_for_pipeline)
