@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
-#include <string>
 
 static inline double now_ms() {
     using namespace std::chrono;
@@ -96,11 +95,8 @@ static void compute_plane_info(const AvLoader* ldr, int plane_idx,
     int cw      = -((-ldr->width)  >> shift_w);
     int ch      = -((-ldr->height) >> shift_h);
 
-    bool semiplanar = false;
-    if (desc->name) {
-        std::string n(desc->name);
-        semiplanar = (n.find("nv") == 0) || (n.find("p0") == 0);
-    }
+    bool semiplanar = desc->nb_components >= 3 &&
+                      desc->comp[1].plane == desc->comp[2].plane;
 
     if (tex_w) *tex_w = cw;
     if (tex_h) *tex_h = ch;
@@ -133,48 +129,6 @@ static AVPixelFormat codec_hw_pix_fmt(const AVCodec* codec, AVHWDeviceType type)
     }
 }
 
-// Decode one frame to discover the software pixel format after HW transfer.
-// Resets decoder state (seek + flush) afterwards.
-static AVPixelFormat probe_sw_pix_fmt(AvLoader* ldr) {
-    AVPixelFormat result = AV_PIX_FMT_NONE;
-
-    while (result == AV_PIX_FMT_NONE) {
-        if (av_read_frame(ldr->fmt_ctx, ldr->packet) < 0) break;
-        if (ldr->packet->stream_index != ldr->video_stream_idx) {
-            av_packet_unref(ldr->packet);
-            continue;
-        }
-        if (avcodec_send_packet(ldr->codec_ctx, ldr->packet) < 0) {
-            av_packet_unref(ldr->packet);
-            continue;
-        }
-        av_packet_unref(ldr->packet);
-
-        while (avcodec_receive_frame(ldr->codec_ctx, ldr->frame) >= 0) {
-            if (ldr->hw_pix_fmt != AV_PIX_FMT_NONE
-                && ldr->frame->format == ldr->hw_pix_fmt) {
-                av_frame_unref(ldr->hw_frame);
-                if (av_hwframe_transfer_data(ldr->hw_frame, ldr->frame, 0) >= 0)
-                    result = static_cast<AVPixelFormat>(ldr->hw_frame->format);
-                av_frame_unref(ldr->hw_frame);
-            } else {
-                result = static_cast<AVPixelFormat>(ldr->frame->format);
-            }
-            av_frame_unref(ldr->frame);
-            if (result != AV_PIX_FMT_NONE) break;
-        }
-    }
-
-    // Reset decoder to the beginning of the stream
-    avcodec_flush_buffers(ldr->codec_ctx);
-    av_seek_frame(ldr->fmt_ctx, -1,
-                  static_cast<int64_t>(ldr->start_time * AV_TIME_BASE),
-                  AVSEEK_FLAG_BACKWARD);
-    ldr->last_decoded_time = -1.0;
-
-    return result;
-}
-
 // ─── core decode (must be called with decode_mutex held) ─────────────────────
 
 static bool decode_to_time(AvLoader* ldr, double target_time) {
@@ -186,12 +140,10 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
     const double seek_fwd_limit = (ldr->target_fps > 0.0)
                                     ? PREFETCH_RESET_THRESH / ldr->target_fps : 2.0;
 
-                                    bool going_backward = (ldr->last_target_time >= 0.0) && (target_time < ldr->last_target_time - 0.001);
+    bool going_backward = (ldr->last_target_time >= 0.0) && (target_time < ldr->last_target_time - 0.001);
     const bool need_seek = ldr->last_decoded_time < 0.0
                         || going_backward
                         || (target_time - ldr->last_decoded_time) > seek_fwd_limit;
-
-    const double t0 = now_ms();
 
     if (need_seek) {
         double margin    = (ldr->native_fps > 0.0) ? (1.0 / ldr->native_fps) : 0.04;
@@ -208,9 +160,6 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
                 return false;
         }
         avcodec_flush_buffers(ldr->codec_ctx);
-
-        printf("[avloader] SEEK  target=%.3fs  last_dec=%.3fs  last_req=%.3fs  seek_to=%.3fs  %.1fms\n",
-               target_time, ldr->last_decoded_time, ldr->last_target_time, seek_time, now_ms()-t0);
                
         ldr->last_decoded_time = -1.0;
     } else if (ldr->frame->data[0] != nullptr && ldr->last_decoded_time >= target_time - tol) {
@@ -243,6 +192,7 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
                         av_frame_unref(ldr->frame);
                         continue;
                     }
+                    av_frame_unref(ldr->frame); // <- HWフレームの参照を解放
                     av_frame_move_ref(ldr->frame, ldr->hw_frame);
                 }
                 
@@ -258,7 +208,6 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
     // Drain buffered decoder output first (avoids an unnecessary packet read on
     // sequential access, which is the common path for the prefetch thread).
     if (!need_seek && recv_frames()) {
-        printf("[avloader] DRAIN  ft=%.3fs  %.1fms\n", ldr->last_decoded_time, now_ms()-t0);
         found = true;
     }
 
@@ -276,13 +225,12 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
         if (ret < 0 && ret != AVERROR(EAGAIN)) break;
 
         if (recv_frames()) {
-            printf("[avloader] DECODE  ft=%.3fs  %.1fms\n", ldr->last_decoded_time, now_ms()-t0);
             found = true;
         }
     }
 
     if (!found)
-        printf("[avloader] DECODE failed  target=%.3fs  %.1fms\n", target_time, now_ms()-t0);
+        printf("[avloader] DECODE failed  target=%.3fs\n", target_time);
 
     return found && ldr->frame->data[0] != nullptr;
 }
@@ -367,10 +315,9 @@ AvLoaderHandle avloader_open(const char* path, double target_fps) {
         ldr->hw_frame = av_frame_alloc();
         if (!ldr->hw_frame) { delete ldr; return nullptr; }
 
-        // Probe one frame to learn the software pixel format after HW transfer
-        ldr->pix_fmt = probe_sw_pix_fmt(ldr);
+        ldr->pix_fmt = ldr->codec_ctx->sw_pix_fmt;
         if (ldr->pix_fmt == AV_PIX_FMT_NONE) {
-            printf("[avloader] HW probe failed, assuming NV12\n");
+            printf("[avloader] sw_pix_fmt unavailable, assuming NV12\n");
             ldr->pix_fmt = AV_PIX_FMT_NV12;
         }
     } else {
@@ -460,13 +407,11 @@ int avloader_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num,
         ldr->pix_fmt = src_fmt;
     }
 
-    const uint8_t* src_data[4]     = { ldr->frame->data[0], ldr->frame->data[1],
-                                        ldr->frame->data[2], ldr->frame->data[3] };
-    const int      src_linesize[4] = { ldr->frame->linesize[0], ldr->frame->linesize[1],
-                                        ldr->frame->linesize[2], ldr->frame->linesize[3] };
     uint8_t* dst_data[4]     = { out_buf, nullptr, nullptr, nullptr };
     int      dst_linesize[4] = { ldr->width * channels, 0, 0, 0 };
 
-    sws_scale(sws_ref, src_data, src_linesize, 0, ldr->height, dst_data, dst_linesize);
+    sws_scale(sws_ref,
+              const_cast<const uint8_t**>(ldr->frame->data), ldr->frame->linesize,
+              0, ldr->height, dst_data, dst_linesize);
     return 0;
 }
