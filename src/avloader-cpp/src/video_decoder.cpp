@@ -43,7 +43,8 @@ struct AvLoader {
     // Immutable after open (no lock needed)
     int           width      = 0;
     int           height     = 0;
-    AVPixelFormat pix_fmt    = AV_PIX_FMT_NONE;  // SW pixel format
+    // SW pixel format. HW path: NV12 at open, updated to actual format on first frame transfer.
+    AVPixelFormat pix_fmt    = AV_PIX_FMT_NONE;
     double        native_fps = 0.0;
     double        target_fps = 0.0;
     double        start_time = 0.0;  // stream start in seconds (absolute timestamp base)
@@ -192,8 +193,9 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
                         av_frame_unref(ldr->frame);
                         continue;
                     }
-                    av_frame_unref(ldr->frame); // <- HWフレームの参照を解放
+                    av_frame_unref(ldr->frame);
                     av_frame_move_ref(ldr->frame, ldr->hw_frame);
+                    ldr->pix_fmt = static_cast<AVPixelFormat>(ldr->frame->format);
                 }
                 
                 ldr->last_decoded_time = ft;
@@ -315,11 +317,7 @@ AvLoaderHandle avloader_open(const char* path, double target_fps) {
         ldr->hw_frame = av_frame_alloc();
         if (!ldr->hw_frame) { delete ldr; return nullptr; }
 
-        ldr->pix_fmt = ldr->codec_ctx->sw_pix_fmt;
-        if (ldr->pix_fmt == AV_PIX_FMT_NONE) {
-            printf("[avloader] sw_pix_fmt unavailable, assuming NV12\n");
-            ldr->pix_fmt = AV_PIX_FMT_NV12;
-        }
+        ldr->pix_fmt = AV_PIX_FMT_NV12;  // overwritten on first frame transfer
     } else {
         ldr->pix_fmt = ldr->codec_ctx->pix_fmt;
     }
@@ -394,7 +392,6 @@ int avloader_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num,
     AVPixelFormat dst_fmt = (channels == 4) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24;
     SwsContext*&  sws_ref = (channels == 4) ? ldr->sws_rgba : ldr->sws_rgb;
 
-    // Recreate sws context if pixel format changed (e.g. first frame after HW probe)
     if (sws_ref && src_fmt != ldr->pix_fmt) {
         sws_freeContext(sws_ref);
         sws_ref = nullptr;
