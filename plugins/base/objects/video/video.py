@@ -1,4 +1,5 @@
-from aperio import logger
+import os
+
 from aperio.avloader import PyVideoLoader
 from aperio.frame_structure import RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc, PyImageGenerator
@@ -35,8 +36,8 @@ class VideoObject(ObjectGeneratorBase):
 
     def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
         path = params.args.get("video_path", "")
-        if path != self.previous_video_path:
-            self.video_loader = PyVideoLoader(path=path, target_fps=30.0, image_generator=self.image_generator)
+        if path != self.previous_video_path and os.path.exists(path):
+            self.video_loader = PyVideoLoader(path=path, target_fps=params.fps, image_generator=self.image_generator)
             self.compiled_func = PyCompiledTextureFunc("video_frame", self.video_loader.get_frame_for_pipeline)
             self.previous_video_path = path
         if self.video_loader is None or self.compiled_func is None:
