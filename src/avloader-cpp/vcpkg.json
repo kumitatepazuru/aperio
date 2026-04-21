@@ -12,7 +12,10 @@
         "x265",
         "dav1d",
         "vpx",
-        "nvcodec",
+        {
+          "platform": "linux | (!osx & !uwp & !(arm64 & windows))",
+          "name": "nvcodec"
+        },
         "qsv",
         {
           "platform": "linux",

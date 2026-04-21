@@ -15,17 +15,15 @@ from aperio.frame_structure import *
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
 # また、OS管理のPythonを使っているとPYTHONHOMEを設定しているのにもかかわらずそれが適用されないケースが多い。
 try:
-    # import cv2
-    import numpy as np
+    import numpy as _
 except ImportError as e:
     # TODO: 診断情報を出力
     import traceback
+    logger.error(traceback.format_exc())
 
-    traceback.print_exc()
-
-    raise ImportError("Failed to import required modules. Make sure OpenCV (cv2) and numpy are installed."
+    raise ImportError("Failed to import required modules. Make sure numpy are installed."
                       "\n--- For Developer ---\nThis error was occured by many complicated reasons. Ensure the below check list and fix them:"
-                      "\n1. Make sure OpenCV (cv2) and numpy are installed in the python environment used by Aperio."
+                      "\n1. Make sure numpy are installed in the python environment used by Aperio."
                       "\n  Running Environment can be checked in below debug info. Generally, required packages should be installed during post running process."
                       "\n2. If you are using OS managed python (like apt install python3 on Debian/Ubuntu) to compile and run Aperio, it may cause this error."
                       "\n  Please try to install python separately (recommends uv) with `uv python install --reinstall --no-managed-python` and run `./scripts/copy-python.sh --uv`."

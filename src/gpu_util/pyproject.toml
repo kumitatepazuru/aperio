@@ -1,3 +1,0 @@
-# このクレートは純粋 Rust ライブラリになりました。
-# Python 拡張モジュールは src/wrapper に移植されています。
-# maturin でビルドする場合は src/wrapper/pyproject.toml を使用してください。

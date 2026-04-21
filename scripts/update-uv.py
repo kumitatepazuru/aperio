@@ -72,6 +72,8 @@ def download_and_decompress(url, output_path, decompressed_dir):
     os.makedirs(platform_output_path, exist_ok=True)
 
     final_output_path = os.path.join(platform_output_path, f"uv{ext}")
+    if os.path.exists(final_output_path):
+        os.remove(final_output_path)
     os.rename(os.path.join(decompressed_dir, f"uv{ext}"), final_output_path)
     # 実行権限を付与
     if not ext:  # Windows以外

@@ -27,7 +27,7 @@ PYTHON_LIB="$PYTHON_PATH/$PYTHON_LIB"
 
 # ファイルがリンクの可能性があるので実体になるまでたどる
 while [ -L "$PYTHON_LIB" ]; do
-  LINK_TARGET=$(readlink "$PYTHON_LIB") # 例：libpython3.13.so.1.0 -> libpython3.13.so.1.0.1
+  LINK_TARGET=$(readlink "$PYTHON_LIB") # 例：libpython3.14.so.1.0 -> libpython3.14.so.1.0.1
   if [[ "$LINK_TARGET" = /* ]]; then # 絶対パスかどうか
     PYTHON_LIB="$LINK_TARGET"
   else

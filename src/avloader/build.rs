@@ -5,9 +5,9 @@ fn main() {
     let triplet = env::var("VCPKG_DEFAULT_TRIPLET").unwrap_or_else(|_| {
         if cfg!(target_os = "windows") {
             if cfg!(target_arch = "aarch64") {
-                "arm64-windows".to_string()
+                "arm64-windows-static".to_string()
             } else {
-                "x64-windows".to_string()
+                "x64-windows-static".to_string()
             }
         } else if cfg!(target_os = "linux") {
             if cfg!(target_arch = "aarch64") {
