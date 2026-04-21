@@ -148,34 +148,25 @@ impl YuvPipeline {
         &self,
         ig: &ImageGenerator,
         plane_descs: &[PlaneDesc],
-        plane_data: &[Vec<u8>],
+        plane_data: &[&[u8]],
         out_width: u32,
         out_height: u32,
     ) -> Result<Arc<wgpu::Texture>> {
         let device = &ig.device;
         let queue = &ig.queue;
 
-        // ── upload each YUV plane to a per-frame texture ───────────────────
-        // Created directly (not through the pool) since these are transient;
-        // they are dropped at the end of this call.
-        let plane_textures: Vec<wgpu::Texture> = plane_descs
+        // ── upload each YUV plane to a pooled texture ─────────────────────
+        let plane_textures: Vec<Arc<wgpu::Texture>> = plane_descs
             .iter()
             .zip(plane_data.iter())
             .map(|(desc, data)| {
-                let tex = device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("YUV plane"),
-                    size: wgpu::Extent3d {
-                        width: desc.tex_width,
-                        height: desc.tex_height,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: desc.format,
-                    usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    view_formats: &[],
-                });
+                let tex = ig.get_or_create_texture(
+                    desc.tex_width,
+                    desc.tex_height,
+                    desc.format,
+                    TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                    Some("YUV plane"),
+                );
                 queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &tex,
@@ -199,23 +190,16 @@ impl YuvPipeline {
             })
             .collect();
 
-        // ── output texture – created fresh each call (caller owns it via Arc)
-        let output = Arc::new(device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("YUV output RGBA"),
-            size: wgpu::Extent3d {
-                width: out_width,
-                height: out_height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba16Float,
-            usage: TextureUsages::RENDER_ATTACHMENT
+        // ── output texture – pooled, caller must not hold across frames ────
+        let output = ig.get_or_create_texture(
+            out_width,
+            out_height,
+            wgpu::TextureFormat::Rgba16Float,
+            TextureUsages::RENDER_ATTACHMENT
                 | TextureUsages::TEXTURE_BINDING
                 | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        }));
+            Some("YUV output RGBA"),
+        );
 
         // ── bind group ──────────────────────────────────────────────────────
         let views: Vec<wgpu::TextureView> = plane_textures
