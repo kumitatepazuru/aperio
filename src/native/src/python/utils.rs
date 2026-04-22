@@ -228,6 +228,20 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
         run_uv(dir, args)?;
     }
 
+    // appdata_dirにpythonディレクトリかcpythonから始まるディレクトリ(複数あるかも)があれば削除
+    if appdata_path.join("python").exists() {
+        fs::remove_dir_all(appdata_path.join("python"))?;
+    }
+    if let Ok(entries) = fs::read_dir(&appdata_path) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            if file_name_str.starts_with("cpython") {
+                fs::remove_dir_all(entry.path()).ok();
+            }
+        }
+    }
+
     // uv python installコマンドを実行してpythonをインストール
     let python_type = format!("cpython-{}-{}-{}", python_version, consts::OS, consts::ARCH);
     let mut args = vec![

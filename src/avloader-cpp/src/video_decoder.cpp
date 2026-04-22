@@ -222,13 +222,25 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
             continue;
         }
 
-        ret = avcodec_send_packet(ldr->codec_ctx, ldr->packet);
+        // EAGAIN means "drain first, then retry the same packet"
+        for (;;) {
+            ret = avcodec_send_packet(ldr->codec_ctx, ldr->packet);
+            if (ret != AVERROR(EAGAIN)) break;
+            if (recv_frames()) { found = true; break; }
+        }
         av_packet_unref(ldr->packet);
-        if (ret < 0 && ret != AVERROR(EAGAIN)) break;
+        if (found) break;
+        if (ret < 0) break;
 
         if (recv_frames()) {
             found = true;
         }
+    }
+
+    // Flush decoder pipeline
+    if (!found) {
+        avcodec_send_packet(ldr->codec_ctx, nullptr);
+        if (recv_frames()) found = true;
     }
 
     if (!found)
