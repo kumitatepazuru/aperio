@@ -71,6 +71,7 @@ export class NativeModule {
     count: number,
     width: number,
     height: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ) {
     const size = width * height * 4;
@@ -81,12 +82,20 @@ export class NativeModule {
     }
     const data = new Uint8Array(this._sharedBuf);
 
-    const frameResults = this.aperioManager.getFrameBuf(data, count, width, height, frameStruct);
-    this.p1.postMessage({frame: this._sharedBuf, frameResults});
+    const frameResults = this.aperioManager.getFrameBuf(
+      data,
+      count,
+      width,
+      height,
+      fps,
+      frameStruct,
+    );
+    this.p1.postMessage({ frame: this._sharedBuf, frameResults });
   }
 
   getFrameSharedTexture(
     count: number,
+    fps: number,
     frameStruct: ItemStructure[],
     frame: Electron.WebContents,
   ) {
@@ -99,6 +108,7 @@ export class NativeModule {
       const frameResults = this.aperioManager.getFrameTexture(
         count,
         this.configManager.config.texPixelFormat,
+        fps,
         frameStruct,
         textureInfo as NodeOffscreenSharedTextureInfo,
       );
@@ -106,10 +116,13 @@ export class NativeModule {
       const imported = sharedTexture.importSharedTexture({
         textureInfo,
       });
-      await sharedTexture.sendSharedTexture({
-        frame: frame.mainFrame,
-        importedSharedTexture: imported,
-      }, frameResults);
+      await sharedTexture.sendSharedTexture(
+        {
+          frame: frame.mainFrame,
+          importedSharedTexture: imported,
+        },
+        frameResults,
+      );
 
       imported.release();
     };

@@ -5,6 +5,7 @@ export type Vec3Value = [number, number, number];
 export type Vec4Value = [number, number, number, number];
 export type ColorValue = [number, number, number, number];
 export type FontValue = { family: string | null; weight: number };
+export type FileValue = string[];
 
 export type ConfigableValue =
   | number
@@ -14,7 +15,8 @@ export type ConfigableValue =
   | Vec3Value
   | Vec4Value
   | ColorValue
-  | FontValue;
+  | FontValue
+  | FileValue;
 
 export const getDefaultValue = (
   param: RequestStructureParameter,
@@ -50,6 +52,10 @@ export const getDefaultValue = (
       ];
     case "Font":
       return { family: null, weight: 400 };
+    case "Textarea":
+      return param.defaultValue;
+    case "File":
+      return [];
   }
 };
 

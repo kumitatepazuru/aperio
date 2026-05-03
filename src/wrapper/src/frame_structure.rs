@@ -8,6 +8,13 @@ use pyo3::{
 };
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum};
 
+#[napi(object)]
+#[pydataclass(stub, module = "aperio.frame_structure")]
+pub struct FileFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
+}
+
 use crate::utils::json_to_pyobject;
 
 #[napi(object)]
@@ -97,6 +104,18 @@ pub enum RequestStructureParameter {
         title: String,
         // デフォルト値は固定: family=None, weight=400
     },
+    Textarea {
+        id: String,
+        title: String,
+        default_value: String,
+    },
+    File {
+        id: String,
+        title: String,
+        multi_selections: bool,
+        open_type: String, // "file" | "directory"
+        filters: Vec<FileFilter>,
+    },
 }
 
 #[napi(object)]
@@ -115,6 +134,9 @@ pub struct GenerateStructure {
 #[pyclass(module = "aperio.frame_structure", extends = PyDict)]
 pub struct ItemStructure {
     pub id: String,                      // アイテムのUUID
+    pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）
+    pub from: i32,                       // アイテムの開始フレーム
+    pub to: i32,                         // アイテムの終了フレーム
     pub x: i32,                          // アイテムのX座標
     pub y: i32,                          // アイテムのY座標
     pub scale: f64,                      // アイテムのスケール
@@ -176,6 +198,9 @@ impl<'py> IntoPyObject<'py> for ItemStructure {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let dict = PyDict::new(py);
         dict.set_item("id", self.id)?;
+        dict.set_item("layer", self.layer)?;
+        dict.set_item("from", self.from)?;
+        dict.set_item("to", self.to)?;
         dict.set_item("x", self.x)?;
         dict.set_item("y", self.y)?;
         dict.set_item("scale", self.scale)?;
@@ -196,6 +221,7 @@ impl<'py> IntoPyObject<'py> for ItemStructure {
 
 #[pymodule]
 pub fn frame_structure(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_class::<FileFilter>()?;
     m.add_class::<ItemResult>()?;
     m.add_class::<RequestStructureParameter>()?;
     m.add_class::<GenerateStructure>()?;

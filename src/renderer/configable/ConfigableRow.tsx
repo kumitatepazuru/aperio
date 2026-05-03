@@ -4,6 +4,7 @@ import {
   getDefaultValue,
   type ColorValue,
   type ConfigableValue,
+  type FileValue,
   type FontValue,
   type Vec2Value,
   type Vec3Value,
@@ -20,6 +21,8 @@ import Color from "./components/Color";
 import ListSelect from "./components/ListSelect";
 import Font from "./components/Font";
 import type { RequestStructureParameter } from "native";
+import TextareaInput from "./components/TextareaInput";
+import FileInput from "./components/FileInput";
 
 const ConfigableRow = memo(
   ({
@@ -139,6 +142,20 @@ const ConfigableRow = memo(
         input = (
           <Font
             value={value as FontValue}
+            onChange={onChange}
+          />
+        );
+        break;
+      case "Textarea":
+        input = (
+          <TextareaInput value={value as string} onChange={onChange} />
+        );
+        break;
+      case "File":
+        input = (
+          <FileInput
+            param={param}
+            value={value as FileValue}
             onChange={onChange}
           />
         );

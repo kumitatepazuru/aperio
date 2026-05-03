@@ -3,6 +3,7 @@ import {
   ipcRenderer,
   IpcRendererEvent,
   sharedTexture,
+  type OpenDialogOptions,
 } from "electron";
 import { AperioConfig, type ItemStructure } from "native";
 
@@ -34,6 +35,7 @@ contextBridge.exposeInMainWorld("frame", {
     count: number,
     width: number,
     height: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ) => {
     await ipcRenderer.invoke(
@@ -41,6 +43,7 @@ contextBridge.exposeInMainWorld("frame", {
       count,
       width,
       height,
+      fps,
       frameStruct,
     );
   },
@@ -50,9 +53,10 @@ contextBridge.exposeInMainWorld("frame", {
   },
   getFrameSharedTexture: async (
     count: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ) => {
-    await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
+    await ipcRenderer.invoke("get-frame-shared-texture", count, fps, frameStruct);
   },
 });
 
@@ -122,4 +126,6 @@ contextBridge.exposeInMainWorld("main", {
   ) => ipcRenderer.invoke("request-new-object-generator", pluginName, args),
   requestNewEffectGenerator: (pluginName: string) =>
     ipcRenderer.invoke("request-new-effect-generator", pluginName),
+  showOpenDialog: (options: OpenDialogOptions): Promise<string[] | undefined> =>
+    ipcRenderer.invoke("show-open-dialog", options),
 });

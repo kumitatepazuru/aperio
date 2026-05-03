@@ -1,11 +1,12 @@
 import Configable from "@/configable/Configable";
 import type { ConfigableValue } from "@/configable/utils";
 import { initValues } from "@/configable/utils";
-import useStore, {
-  getStoreState,
-  type TimelineItemStructure,
-} from "@shared/store";
-import type { GenerateStructure, RequestStructureParameter } from "native";
+import useStore, { getStoreState } from "@shared/store";
+import type {
+  GenerateStructure,
+  ItemStructure,
+  RequestStructureParameter,
+} from "native";
 import { useEffect, useState } from "react";
 import { DragDropProvider, type DragEndEvent } from "@dnd-kit/react";
 import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable";
@@ -25,7 +26,7 @@ interface SortableEffectItemProps {
   effect: GenerateStructure;
   index: number;
   selectedItemId: string | null;
-  selectedItem: TimelineItemStructure | undefined;
+  selectedItem: ItemStructure | undefined;
   onParamsChange: (
     index: number,
     params: Record<string, ConfigableValue>,
@@ -96,8 +97,7 @@ const SortableEffectItem = ({
   const changeOrder = async (amount: number) => {
     if (!selectedItemId || !currentItem) return;
 
-    const { timelineItems: timeline, setTimelineItems } =
-      await getStoreState();
+    const { timelineItems: timeline, setTimelineItems } = await getStoreState();
 
     const currentIndex = currentItem.effects.findIndex(
       (e) => e.id === effect.id,
@@ -117,8 +117,7 @@ const SortableEffectItem = ({
   const deleteEffect = async () => {
     if (!selectedItemId || !currentItem) return;
 
-    const { timelineItems: timeline, setTimelineItems } =
-      await getStoreState();
+    const { timelineItems: timeline, setTimelineItems } = await getStoreState();
 
     const newEffects = currentItem.effects.filter((e) => e.id !== effect.id);
     const newTimeline = timeline.map((item) =>

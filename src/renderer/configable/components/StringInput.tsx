@@ -8,7 +8,7 @@ const StringInput = ({ value, onChange }: Props) => (
     <input
       type="text"
       value={value}
-      className="input input-sm"
+      className="input input-sm w-full"
       onChange={(e) => onChange(e.target.value)}
     />
   </div>

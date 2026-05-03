@@ -2,7 +2,7 @@ import os
 import struct
 
 from aperio.frame_structure import RequestStructureParameter
-from aperio_plugin.plugin_base.generator_base import EffectGeneratorBase, GeneratorWgslReturn, NewEffectGeneratorReturn
+from aperio_plugin.plugin_base.generator_base import EffectGeneratorBase, GenerateParameters, GeneratorWgslReturn, NewEffectGeneratorReturn
 from aperio.gpu_util import PyCompiledWgsl, PyImageGenerator
 
 
@@ -40,16 +40,17 @@ class BlurEffect(EffectGeneratorBase):
                 )
             ]
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn:
+    def generate(self, params: GenerateParameters) -> GeneratorWgslReturn:
+        args = params.args
         blur_radius = args.get("blur_radius", 5)
         # ぼかしにより各辺 radius 分ずつ拡張
         if blur_radius < 0:
             blur_radius = 0
-            new_width = width
-            new_height = height
+            new_width = params.width
+            new_height = params.height
         else:
-            new_width = width + 2 * blur_radius
-            new_height = height + 2 * blur_radius
-        params = struct.pack("iii", blur_radius, new_width, new_height)
+            new_width = params.width + 2 * blur_radius
+            new_height = params.height + 2 * blur_radius
+        shader_params = struct.pack("iii", blur_radius, new_width, new_height)
 
-        return GeneratorWgslReturn(self.shader, params, new_width, new_height)
+        return GeneratorWgslReturn(self.shader, shader_params, new_width, new_height)

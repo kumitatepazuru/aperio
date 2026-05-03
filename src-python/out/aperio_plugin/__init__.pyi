@@ -123,7 +123,7 @@ class PluginManager:
         Returns:
             list[RequestStructureParameter]: ジェネレーターのパラメーター構造
         """
-    def make_frame_buf(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, buffer_ptr: int) -> dict[str, ItemResult]:
+    def make_frame_buf(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, fps: float, buffer_ptr: int) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
@@ -132,12 +132,13 @@ class PluginManager:
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
+            fps (float): フレームレート
             buffer_ptr (int): 書き込み先バッファのポインタ
 
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, ItemResult]:
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, fps: float, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -146,6 +147,7 @@ class PluginManager:
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
+            fps (float): フレームレート
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
         

@@ -15,17 +15,15 @@ from aperio.frame_structure import *
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
 # また、OS管理のPythonを使っているとPYTHONHOMEを設定しているのにもかかわらずそれが適用されないケースが多い。
 try:
-    import cv2
-    import numpy as np
+    import numpy as _
 except ImportError as e:
     # TODO: 診断情報を出力
     import traceback
+    logger.error(traceback.format_exc())
 
-    traceback.print_exc()
-
-    raise ImportError("Failed to import required modules. Make sure OpenCV (cv2) and numpy are installed."
+    raise ImportError("Failed to import required modules. Make sure numpy are installed."
                       "\n--- For Developer ---\nThis error was occured by many complicated reasons. Ensure the below check list and fix them:"
-                      "\n1. Make sure OpenCV (cv2) and numpy are installed in the python environment used by Aperio."
+                      "\n1. Make sure numpy are installed in the python environment used by Aperio."
                       "\n  Running Environment can be checked in below debug info. Generally, required packages should be installed during post running process."
                       "\n2. If you are using OS managed python (like apt install python3 on Debian/Ubuntu) to compile and run Aperio, it may cause this error."
                       "\n  Please try to install python separately (recommends uv) with `uv python install --reinstall --no-managed-python` and run `./scripts/copy-python.sh --uv`."
@@ -67,11 +65,11 @@ class PluginManager:
         """
 
         # openCLが使えるか確認して、有効化
-        if cv2.ocl.haveOpenCL():
-            cv2.ocl.setUseOpenCL(True)
-            logger.info(f"OpenCV: OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
-        else:
-            logger.info("OpenCV: OpenCL is not available.")
+        # if cv2.ocl.haveOpenCL():
+        #     cv2.ocl.setUseOpenCL(True)
+        #     logger.info(f"OpenCV: OpenCL is available. OpenCL is set to {cv2.ocl.useOpenCL()}")
+        # else:
+        #     logger.info("OpenCV: OpenCL is not available.")
 
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
@@ -313,7 +311,7 @@ class PluginManager:
             raise ValueError(f"Plugin {plugin_name} is not registered as object or effect plugin")
 
     def _make_frame(self, frame_number: int, frame_structure: list[ItemStructure], 
-                             width: int, height: int) -> tuple[gpu_util.PyImageGenerateBuilder, dict[str, ItemResult]]:
+                             width: int, height: int, fps: float) -> tuple[gpu_util.PyImageGenerateBuilder, dict[str, ItemResult]]:
         """
         指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
 
@@ -325,7 +323,7 @@ class PluginManager:
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-
+            fps (float): フレームレート
         Returns:
             tuple[gpu_util.PyImageGenerateBuilder, dict[str, ItemResult]]: フレーム生成のビルダーオブジェクトとフレーム結果の辞書
         """
@@ -341,7 +339,7 @@ class PluginManager:
 
             # レイヤーごとにフレームを生成して合成する
             layer_builders = []
-            params = []
+            generator_params = []
             frame_results: dict[str, ItemResult] = {}
             for layer in frame_structure:
                 layer_builder = gpu_util.PyImageGenerateBuilder()
@@ -352,7 +350,15 @@ class PluginManager:
                     raise ValueError(f"Object plugin {obj_name} is not registered")
 
                 obj_plugin = self.object_plugins[obj_name]
-                layer_frame = obj_plugin.generate(frame_number, layer["object"]["parameters"], width, height)
+                params = GenerateParameters(
+                    frame_number=frame_number,
+                    layer=layer,
+                    args=layer["object"]["parameters"],
+                    width=width,
+                    height=height,
+                    fps=fps
+                )
+                layer_frame = obj_plugin.generate(params)
                 if layer_frame is None:
                     continue
                 frame_results[layer_id] = ItemResult(
@@ -375,7 +381,15 @@ class PluginManager:
                     effect_plugin = self.effect_plugins[effect["name"]]
                     if layer_frame is None: # pylanceのための冗長なチェック。実際にはこの時点でlayer_frameがNoneのケースはないはず。
                         continue
-                    layer_frame = effect_plugin.generate(frame_number, effect["parameters"], layer_frame.output_width, layer_frame.output_height)
+                    params = GenerateParameters(
+                        frame_number=frame_number,
+                        layer=layer,
+                        args=effect["parameters"],
+                        width=layer_frame.output_width,
+                        height=layer_frame.output_height,
+                        fps=fps
+                    )
+                    layer_frame = effect_plugin.generate(params)
                     if layer_frame is None:
                         continue
                     frame_results[layer_id] = ItemResult(
@@ -403,7 +417,7 @@ class PluginManager:
                 fmt = "<iiff"  # x, y, scale, alpha
                 fmt += "4f"  # rotation_matrix (2x2 floats)
                 params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"] / 100, alpha, *rotation_matrix)
-                params.append(params_bytes)
+                generator_params.append(params_bytes)
 
             if len(layer_builders) == 0:
                 # 空のフレーム構造の場合はfill_black.wgslを適用
@@ -413,7 +427,7 @@ class PluginManager:
             # builderを作成
             builder = gpu_util.PyImageGenerateBuilder() \
                 .add_parallel_wgsl(layer_builders) \
-                .add_wgsl(self.compose_wgsl, b"".join(params), width, height) # TODO: render Passを使っての高速化と簡潔化を試みる
+                .add_wgsl(self.compose_wgsl, b"".join(generator_params), width, height) # TODO: render Passを使っての高速化と簡潔化を試みる
 
         except Exception as e:
             logger.error(traceback.format_exc())
@@ -422,7 +436,7 @@ class PluginManager:
         return builder, frame_results
     
     def make_frame_buf(self, frame_number: int, frame_structure: list[ItemStructure], 
-                             width: int, height: int, buffer_ptr: int) -> dict[str, ItemResult]:
+                             width: int, height: int, fps: float, buffer_ptr: int) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
@@ -431,12 +445,13 @@ class PluginManager:
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
+            fps (float): フレームレート
             buffer_ptr (int): 書き込み先バッファのポインタ
 
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-        builder, results = self._make_frame(frame_number, frame_structure, width, height)
+        builder, results = self._make_frame(frame_number, frame_structure, width, height, fps)
 
         if builder is not None:
             self.generator.generate_buf(builder, buffer_ptr)
@@ -444,7 +459,7 @@ class PluginManager:
         return results
 
     def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], 
-                             width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, ItemResult]:
+                             width: int, height: int, fps: float, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -453,13 +468,14 @@ class PluginManager:
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
+            fps (float): フレームレート
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
         
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-        builder, results = self._make_frame(frame_number, frame_structure, width, height)
+        builder, results = self._make_frame(frame_number, frame_structure, width, height, fps)
 
         if builder is not None:
             self.generator.generate_shared_texture(builder, texture_handle, format)

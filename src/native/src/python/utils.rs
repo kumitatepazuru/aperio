@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use pyo3::ffi::*;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::Python;
+use std::env::consts;
 use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -227,7 +228,22 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
         run_uv(dir, args)?;
     }
 
+    // appdata_dirにpythonディレクトリかcpythonから始まるディレクトリ(複数あるかも)があれば削除
+    if appdata_path.join("python").exists() {
+        fs::remove_dir_all(appdata_path.join("python"))?;
+    }
+    if let Ok(entries) = fs::read_dir(&appdata_path) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            if file_name_str.starts_with("cpython") {
+                fs::remove_dir_all(entry.path()).ok();
+            }
+        }
+    }
+
     // uv python installコマンドを実行してpythonをインストール
+    let python_type = format!("cpython-{}-{}-{}", python_version, consts::OS, consts::ARCH);
     let mut args = vec![
         "python",
         "install",
@@ -236,7 +252,7 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
         appdata_dir,
         "--project",
         appdata_dir,
-        &python_version_str,
+        python_type.as_str(),
     ];
     args.extend(get_base_args(appdata_dir));
     run_uv(dir, args)?;
@@ -259,26 +275,8 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
 
     fs::rename(cpython_dir, appdata_path.join("python")).ok();
 
-    // resources/wheelディレクトリの中からopencv-python-headlessのwhlファイルを探す
-    // TODO: インタープリタのバージョン不一致によってすぐ再インストールされることがあるため、別関数に移動させる
-    let wheel_dir = PathBuf::from_str(&dir.resource_dir)?.join("wheels");
-    let wheel_path = fs::read_dir(wheel_dir)?
-        .filter_map(|entry| entry.ok())
-        .find(|entry| {
-            let binding = entry.file_name();
-            let file_name = binding.to_string_lossy();
-            file_name.starts_with("opencv_python_headless") && file_name.ends_with(".whl")
-        })
-        .map(|entry| entry.path())
-        .context("No opencv-python-headless wheel file found in resources/wheel")?;
-
-    // uv addコマンドを実行してopencv-python-headlessをインストール
-    install_packages(
-        dir,
-        vec![wheel_path
-            .to_str()
-            .context("could not convert wheel path to str")?],
-    )?;
+    // uv addコマンドを実行してnumpyをインストール
+    install_packages(dir, vec!["numpy"])?;
     println!("Successfully installed Python and required packages");
 
     Ok(())

@@ -1,6 +1,6 @@
 {
   "python": {
-    "default_version": "3.13.0"
+    "default_version": "3.14.0"
   },
   "fast_preview": true,
   "tex_pixel_format": "Bgra8Unorm"

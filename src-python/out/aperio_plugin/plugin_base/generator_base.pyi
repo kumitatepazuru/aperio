@@ -1,7 +1,6 @@
 from . import SubPluginBase as SubPluginBase
-from aperio.frame_structure import NewEffectGeneratorReturn as NewEffectGeneratorReturn, NewObjectGeneratorReturn as NewObjectGeneratorReturn, RequestStructureParameter as RequestStructureParameter
-from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerator as PyImageGenerator
-from aperio.text_rendering import PyTextRenderer as PyTextRenderer
+from aperio.frame_structure import ItemStructure as ItemStructure, NewEffectGeneratorReturn as NewEffectGeneratorReturn, NewObjectGeneratorReturn as NewObjectGeneratorReturn, RequestStructureParameter as RequestStructureParameter
+from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl
 from dataclasses import dataclass
 
 @dataclass
@@ -25,6 +24,16 @@ class GeneratorTextureReturn:
     output_width: int
     output_height: int
 
+@dataclass
+class GenerateParameters:
+    """フレーム生成に必要なパラメーターをまとめたデータクラス。ジェネレーターのgenerateメソッドに渡される。"""
+    frame_number: int
+    layer: ItemStructure
+    args: dict
+    width: int
+    height: int
+    fps: float
+
 class GeneratorBase(SubPluginBase):
     """
     フレームを生成するための基底クラス。 サブクラスでオーバーライドして使用することを想定している。
@@ -46,15 +55,12 @@ class GeneratorBase(SubPluginBase):
         Returns:
             list[RequestStructureParameter]: オブジェクトのパラメーター構造
         """
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+    def generate(self, params: GenerateParameters) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
         Args:
-            frame_number (int): 生成するフレームの番号
-            args (dict): フレーム生成に必要な引数群
-            width (int): 生成元のフレームの幅。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
-            height (int): 生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている
+            params (GenerateParameters): フレーム生成に必要なパラメーター
 
         Returns:
             GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None: 生成されたフレームデータ。Noneを返すとその処理はスキップされる。

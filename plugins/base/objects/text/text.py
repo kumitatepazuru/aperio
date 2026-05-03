@@ -2,7 +2,7 @@ from aperio.frame_structure import RequestStructureParameter
 from aperio.text_rendering import PyTextRenderer, PyTextSpec
 from aperio.gpu_util import PyCompiledTextureFunc, PyImageGenerator
 
-from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
 
 
 class TextObject(ObjectGeneratorBase):
@@ -18,7 +18,7 @@ class TextObject(ObjectGeneratorBase):
         self.description = "テキストを表示できます。テキストの内容、色、フォント、字間を指定できます。"
 
         self.base_structure: list[RequestStructureParameter] = [
-            RequestStructureParameter.String("text", "文字", "ここにテキストを入力"),
+            RequestStructureParameter.Textarea("text", "文字", "ここにテキストを入力"),
             RequestStructureParameter.Color("color", "色", (1.0, 1.0, 1.0, 1.0), use_alpha=True),
             RequestStructureParameter.Font("font", "フォント"),
             RequestStructureParameter.Int("font_size", "フォントサイズ", 48, suffix="px"),
@@ -33,7 +33,9 @@ class TextObject(ObjectGeneratorBase):
         return self.base_structure
         
 
-    def generate(self, frame_number: int, args: dict, width: int, height: int) -> GeneratorTextureReturn | None:
+    def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
+        args = params.args
+
         text = args.get("text", "ここにテキストを入力")
         font = args.get("font", {})
         prepared = self.text_renderer.prepare_render_text(

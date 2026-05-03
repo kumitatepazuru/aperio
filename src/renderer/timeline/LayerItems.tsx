@@ -1,11 +1,7 @@
-import useStore, { type TimelineItemStructure } from "@shared/store";
+import useStore from "@shared/store";
 import { useShallow } from "zustand/shallow";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type MouseEvent,
-} from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
+import type { ItemStructure } from "native";
 
 const GraduationSnapThresholdPx = 8;
 
@@ -81,7 +77,7 @@ function clampLayerDelta(
  * - どこにも置けない場合は 0（ドラッグ開始位置）を返す。
  */
 function resolveGroupMoveDelta(
-  allItems: TimelineItemStructure[],
+  allItems: ItemStructure[],
   movingIds: Set<string>,
   initItems: Array<{ id: string; from: number; to: number; layer: number }>,
   layerDelta: number,
@@ -165,7 +161,7 @@ const LayerItems = ({
     anchorId: string,
     mode: DragMode,
     movingItemIds: string[],
-    allItems: TimelineItemStructure[],
+    allItems: ItemStructure[],
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -176,7 +172,12 @@ const LayerItems = ({
       startClientY: event.clientY,
       initItems: allItems
         .filter((item) => movingItemIds.includes(item.id))
-        .map((item) => ({ id: item.id, from: item.from, to: item.to, layer: item.layer })),
+        .map((item) => ({
+          id: item.id,
+          from: item.from,
+          to: item.to,
+          layer: item.layer,
+        })),
     };
   };
 
@@ -208,7 +209,10 @@ const LayerItems = ({
           ) - anchorInit.from;
 
         // アイテム同士が同じレイヤーに着地しないよう layerDelta を制限
-        const effectiveLayerDelta = clampLayerDelta(dragState.initItems, layerDelta);
+        const effectiveLayerDelta = clampLayerDelta(
+          dragState.initItems,
+          layerDelta,
+        );
 
         // グループ全体で有効なデルタを解決（相対位置保持 + 衝突解決）
         const resolvedDelta = resolveGroupMoveDelta(
@@ -225,7 +229,10 @@ const LayerItems = ({
             if (!init) return item;
             const duration = init.to - init.from;
             const newFrom = Math.max(0, init.from + resolvedDelta);
-            const targetLayerNum = Math.max(0, init.layer + effectiveLayerDelta);
+            const targetLayerNum = Math.max(
+              0,
+              init.layer + effectiveLayerDelta,
+            );
             return {
               ...item,
               from: newFrom,
@@ -357,13 +364,7 @@ const LayerItems = ({
             } else {
               setSelectedItemId(item.id);
               setIsDragging(true);
-              beginItemDrag(
-                event,
-                item.id,
-                "move",
-                [item.id],
-                timelineItems,
-              );
+              beginItemDrag(event, item.id, "move", [item.id], timelineItems);
             }
           }}
           style={{

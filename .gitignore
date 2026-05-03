@@ -30,4 +30,4 @@ resources/
 src-python/out/aperio_plugin_stubs.egg-info
 __pycache__
 .venv
-.cargo
+vcpkg_installed

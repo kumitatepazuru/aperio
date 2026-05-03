@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] refmvs: workaround MSVC 19.50/19.51 ARM64 miscompilation of
+ add_spatial_candidate
+
+Note: This is an AI Generated patch.
+
+MSVC 19.50 (Visual Studio 18.0) miscompiles src/refmvs.c when targeting ARM64,
+causing roughly half of dav1d's test cases to fail. Forcing the function to be
+out-of-line avoids the bad inlining decision that triggers the codegen bug.
+
+Reference: https://developercommunity.visualstudio.com/t/11032076
+
+The fix only kicks in for MSVC on ARM64; every other compiler/target keeps
+the original `static void` signature, so there is no perf impact elsewhere.
+---
+ src/refmvs.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/refmvs.c b/src/refmvs.c
+--- a/src/refmvs.c
++++ b/src/refmvs.c
+@@ -38,7 +38,14 @@
+ #include "src/mem.h"
+ #include "src/refmvs.h"
+ 
+-static void add_spatial_candidate(refmvs_candidate *const mvstack, int *const cnt,
++#if defined(_MSC_VER) && defined(_M_ARM64)
++/* Workaround for MSVC 19.50/19.51 ARM64 miscompilation, see
++ * https://developercommunity.visualstudio.com/t/11032076 */
++#define DAV1D_REFMVS_NOINLINE __declspec(noinline)
++#else
++#define DAV1D_REFMVS_NOINLINE
++#endif
++static DAV1D_REFMVS_NOINLINE void add_spatial_candidate(refmvs_candidate *const mvstack, int *const cnt,
+                                   const int weight, const refmvs_block *const b,
+                                   const union refmvs_refpair ref, const mv gmv[2],
+                                   int *const have_newmv_match,

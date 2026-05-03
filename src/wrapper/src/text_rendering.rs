@@ -1,12 +1,18 @@
+use std::collections::HashMap;
+
+use napi_derive::napi;
 use pyo3::{
     pyclass, pymethods, pymodule,
     types::{PyModule, PyModuleMethods},
     Bound, Py, PyResult,
 };
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use text_rendering::{CharGlyphData, FontsList, PreparedText, TextSpec, text_renderer::TextRenderer};
+use text_rendering::{text_renderer::TextRenderer, CharGlyphData, PreparedText, TextSpec};
 
 use crate::gpu_util::PyTexture;
+
+#[napi]
+pub type FontsList = HashMap<String, Vec<u16>>;
 
 #[gen_stub_pyclass]
 #[pyclass(module = "aperio.text_rendering")]
@@ -100,14 +106,7 @@ impl PyTextRenderer {
         _inputs: Vec<Py<PyTexture>>,
         prepared: &PyPreparedText,
     ) -> PyResult<Option<PyTexture>> {
-        let tex = self.inner.run_render_text(&prepared.inner)?;
-        let width = tex.width();
-        let height = tex.height();
-        Ok(Some(PyTexture {
-            inner: tex,
-            width,
-            height,
-        }))
+        self.run_render_text(prepared).map(Some)
     }
 }
 

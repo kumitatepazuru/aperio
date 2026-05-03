@@ -1,9 +1,7 @@
 import useContentSize from "@/hooks/useContentSize";
 import orgFloor from "@/utils/orgFloor";
-import useStore, {
-  getCurrentFrameStruct,
-  type TimelineItemStructure,
-} from "@shared/store";
+import useStore, { getCurrentFrameStruct } from "@shared/store";
+import type { ItemStructure } from "native";
 import { useEffect, useState } from "react";
 import { FaArrowRotateRight } from "react-icons/fa6";
 
@@ -22,7 +20,7 @@ const Overlay = () => {
     ref: overlayRef,
   } = useContentSize();
 
-  const [items, setItems] = useState<TimelineItemStructure[]>([]);
+  const [items, setItems] = useState<ItemStructure[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -262,7 +260,11 @@ const Overlay = () => {
   };
 
   return (
-    <div ref={overlayRef} className="absolute inset-0" onMouseDown={clearSelection}>
+    <div
+      ref={overlayRef}
+      className="absolute inset-0"
+      onMouseDown={clearSelection}
+    >
       {items.map((item) => {
         const result = frameResults[item.id];
         if (!result) return;

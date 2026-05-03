@@ -5,6 +5,8 @@ import {
   ipcMain,
   screen,
   webContents,
+  dialog,
+  type OpenDialogOptions,
 } from "electron";
 import { RendezvousServer } from "./rendezvousServer";
 import * as path from "path";
@@ -91,16 +93,17 @@ ipcMain.handle(
     count: number,
     width: number,
     height: number,
+    fps: number,
     frameStruct: ItemStructure[],
   ) => {
-    nativeModule.getFrameBuf(count, width, height, frameStruct);
+    nativeModule.getFrameBuf(count, width, height, fps, frameStruct);
   },
 );
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  (event, count: number, frameStruct: ItemStructure[]) => {
-    nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
+  (event, count: number, fps: number, frameStruct: ItemStructure[]) => {
+    nativeModule.getFrameSharedTexture(count, fps, frameStruct, event.sender);
   },
 );
 
@@ -126,6 +129,10 @@ ipcMain.handle("resize-osr", (_, width: number, height: number) => {
 });
 
 ipcMain.handle("show-dialog", (_, id: string) => showDialog(id));
+
+ipcMain.handle("show-open-dialog", (_, options: OpenDialogOptions) => {
+  return dialog.showOpenDialogSync(options);
+});
 setMenu(showDialog);
 registerContextMenuIpc(nativeModule);
 
