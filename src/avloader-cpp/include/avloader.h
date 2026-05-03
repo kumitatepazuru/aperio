@@ -18,6 +18,8 @@ void           avloader_close(AvLoaderHandle h);
 int    avloader_width(AvLoaderHandle h);
 int    avloader_height(AvLoaderHandle h);
 int    avloader_pixel_format(AvLoaderHandle h);   // AVPixelFormat value (SW format)
+// AVColorRange: 1=MPEG/limited (16-235), 2=JPEG/full (0-255), 0=unspecified (treat as limited)
+int    avloader_color_range(AvLoaderHandle h);
 double avloader_native_fps(AvLoaderHandle h);
 
 // YUV plane info

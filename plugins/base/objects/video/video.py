@@ -25,9 +25,8 @@ class VideoObject(ObjectGeneratorBase):
                                            ),
         ]
         self.image_generator = image_generator
-        self.compiled_func: PyCompiledTextureFunc | None = None
-        self.video_loader = None
-        self.previous_video_path = ""
+        self.compiled_funcs: dict[str, PyCompiledTextureFunc] = {}
+        self.video_loaders: dict[str, PyVideoLoader] = {}
 
     def on_new(self, args: dict) -> NewObjectGeneratorReturn:
         return NewObjectGeneratorReturn(display_name=self.display_name, duration_frames=300, structure=self.base_structure)
@@ -42,19 +41,24 @@ class VideoObject(ObjectGeneratorBase):
             return None
         
         path = paths[0]
-        if path != self.previous_video_path and os.path.exists(path):
-            self.video_loader = PyVideoLoader(path=path, target_fps=params.fps, image_generator=self.image_generator)
-            self.compiled_func = PyCompiledTextureFunc("video_frame", self.video_loader.get_frame_for_pipeline)
-            self.previous_video_path = path
-        if self.video_loader is None or self.compiled_func is None:
+        if path not in self.video_loaders:
+            # TODO: 開けなかったときにUIで通知する
+            if os.path.exists(path):
+                loader = PyVideoLoader(path=path, target_fps=params.fps, image_generator=self.image_generator)
+                self.video_loaders[path] = loader
+                self.compiled_funcs[path] = PyCompiledTextureFunc("video_frame", loader.get_frame_for_pipeline)
+
+        video_loader = self.video_loaders.get(path)
+        compiled_func = self.compiled_funcs.get(path)
+        if video_loader is None or compiled_func is None:
             return None
 
         # 取得する動画のフレーム番号を計算する。
         video_frame_number = params.frame_number - params.layer.get("from", 0) + 1 # 動画のフレーム番号は1始まり
 
         return GeneratorTextureReturn(
-            compiled=self.compiled_func,
+            compiled=compiled_func,
             params=video_frame_number,
-            output_width=self.video_loader.width,
-            output_height=self.video_loader.height,
+            output_width=video_loader.width,
+            output_height=video_loader.height,
         )

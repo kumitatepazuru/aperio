@@ -41,13 +41,15 @@ struct AvLoader {
     int              video_stream_idx = -1;
 
     // Immutable after open (no lock needed)
-    int           width      = 0;
-    int           height     = 0;
+    int           width       = 0;
+    int           height      = 0;
     // SW pixel format. HW path: NV12 at open, updated to actual format on first frame transfer.
-    AVPixelFormat pix_fmt    = AV_PIX_FMT_NONE;
-    double        native_fps = 0.0;
-    double        target_fps = 0.0;
-    double        start_time = 0.0;  // stream start in seconds (absolute timestamp base)
+    AVPixelFormat pix_fmt     = AV_PIX_FMT_NONE;
+    // AVCOL_RANGE_MPEG(1)=limited, AVCOL_RANGE_JPEG(2)=full, AVCOL_RANGE_UNSPECIFIED(0)=unknown
+    AVColorRange  color_range = AVCOL_RANGE_UNSPECIFIED;
+    double        native_fps  = 0.0;
+    double        target_fps  = 0.0;
+    double        start_time  = 0.0;  // stream start in seconds (absolute timestamp base)
 
     // Hardware decoding
     AVBufferRef*  hw_device_ctx = nullptr;
@@ -84,10 +86,11 @@ struct AvLoader {
 static void compute_plane_info(const AvLoader* ldr, int plane_idx,
                                int* tex_w, int* tex_h, int* bpt) {
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(ldr->pix_fmt);
-    if (!desc || plane_idx == 0) {
+    if (plane_idx == 0 || !desc) {
         if (tex_w) *tex_w = ldr->width;
         if (tex_h) *tex_h = ldr->height;
-        if (bpt)   *bpt   = 1;
+        // comp[0].step gives bytes per luma texel (1 for 8-bit, 2 for 10/12/16-bit)
+        if (bpt)   *bpt   = (desc && desc->nb_components > 0) ? desc->comp[0].step : 1;
         return;
     }
 
@@ -96,12 +99,14 @@ static void compute_plane_info(const AvLoader* ldr, int plane_idx,
     int cw      = -((-ldr->width)  >> shift_w);
     int ch      = -((-ldr->height) >> shift_h);
 
-    bool semiplanar = desc->nb_components >= 3 &&
-                      desc->comp[1].plane == desc->comp[2].plane;
-
     if (tex_w) *tex_w = cw;
     if (tex_h) *tex_h = ch;
-    if (bpt)   *bpt   = (semiplanar && plane_idx == 1) ? 2 : 1;
+    if (bpt) {
+        // comp[ci].step: for semi-planar UV this equals U_step which spans one full UV pair
+        // (e.g. NV12→2, P010→4); for planar chroma it equals one sample's byte width.
+        int ci = std::min(plane_idx, desc->nb_components - 1);
+        *bpt = desc->comp[ci].step;
+    }
 }
 
 static int plane_count_for(const AvLoader* ldr) {
@@ -128,6 +133,47 @@ static AVPixelFormat codec_hw_pix_fmt(const AVCodec* codec, AVHWDeviceType type)
             && cfg->device_type == type)
             return cfg->pix_fmt;
     }
+}
+
+// Decode one frame to discover the actual SW pixel format produced by the HW
+// decoder, then reset state so callers start from a clean position.
+// Called only from avloader_open before the handle is shared.
+static void probe_hw_pixel_format(AvLoader* ldr) {
+    AVPacket* pkt = av_packet_alloc();
+    if (!pkt) return;
+
+    AVFrame* sw = av_frame_alloc();
+    if (!sw) { av_packet_free(&pkt); return; }
+
+    bool found = false;
+    while (!found && av_read_frame(ldr->fmt_ctx, pkt) >= 0) {
+        if (pkt->stream_index != ldr->video_stream_idx) {
+            av_packet_unref(pkt);
+            continue;
+        }
+        if (avcodec_send_packet(ldr->codec_ctx, pkt) >= 0) {
+            while (avcodec_receive_frame(ldr->codec_ctx, ldr->frame) >= 0) {
+                if (ldr->frame->format == (int)ldr->hw_pix_fmt
+                        && av_hwframe_transfer_data(sw, ldr->frame, 0) >= 0) {
+                    ldr->pix_fmt = static_cast<AVPixelFormat>(sw->format);
+                    found = true;
+                }
+                av_frame_unref(ldr->frame);
+                if (found) break;
+            }
+        }
+        av_packet_unref(pkt);
+    }
+
+    av_frame_free(&sw);
+    av_packet_free(&pkt);
+
+    // Reset to stream start so the first real decode call begins cleanly.
+    AVStream* stream = ldr->fmt_ctx->streams[ldr->video_stream_idx];
+    int64_t seek_to = (stream->start_time != AV_NOPTS_VALUE) ? stream->start_time : 0;
+    av_seek_frame(ldr->fmt_ctx, ldr->video_stream_idx, seek_to, AVSEEK_FLAG_BACKWARD);
+    avcodec_flush_buffers(ldr->codec_ctx);
+    av_frame_unref(ldr->frame);
 }
 
 // ─── core decode (must be called with decode_mutex held) ─────────────────────
@@ -329,13 +375,22 @@ AvLoaderHandle avloader_open(const char* path, double target_fps) {
         ldr->hw_frame = av_frame_alloc();
         if (!ldr->hw_frame) { delete ldr; return nullptr; }
 
-        ldr->pix_fmt = AV_PIX_FMT_NV12;  // overwritten on first frame transfer
+        ldr->pix_fmt = AV_PIX_FMT_NV12;  // tentative; corrected by probe below
+        probe_hw_pixel_format(ldr);
     } else {
         ldr->pix_fmt = ldr->codec_ctx->pix_fmt;
     }
 
     ldr->width  = ldr->codec_ctx->width;
     ldr->height = ldr->codec_ctx->height;
+
+    // Probe gives the most accurate color_range for HW decoders (SEI/VUI parsed);
+    // fall back to container metadata when unspecified.
+    ldr->color_range = ldr->codec_ctx->color_range;
+    if (ldr->color_range == AVCOL_RANGE_UNSPECIFIED) {
+        ldr->color_range =
+            ldr->fmt_ctx->streams[ldr->video_stream_idx]->codecpar->color_range;
+    }
 
     return static_cast<AvLoaderHandle>(ldr);
 }
@@ -347,6 +402,7 @@ void avloader_close(AvLoaderHandle h) {
 int    avloader_width(AvLoaderHandle h)        { return static_cast<AvLoader*>(h)->width; }
 int    avloader_height(AvLoaderHandle h)       { return static_cast<AvLoader*>(h)->height; }
 int    avloader_pixel_format(AvLoaderHandle h) { return static_cast<int>(static_cast<AvLoader*>(h)->pix_fmt); }
+int    avloader_color_range(AvLoaderHandle h)  { return static_cast<int>(static_cast<AvLoader*>(h)->color_range); }
 double avloader_native_fps(AvLoaderHandle h)   { return static_cast<AvLoader*>(h)->native_fps; }
 
 int avloader_yuv_plane_count(AvLoaderHandle h) {

@@ -1,6 +1,6 @@
-// Converts 2-plane semi-planar YUV (NV12: Y + interleaved UV) to Rgba16Float.
+// Converts 2-plane semi-planar YUV with VU chroma order (NV21) to Rgba16Float.
 // Y  → R8Unorm / R16Unorm  texture (full luma size)
-// UV → Rg8Unorm / Rg16Unorm texture (chroma half-size; R=Cb, G=Cr)
+// VU → Rg8Unorm / Rg16Unorm texture (chroma half-size; R=Cr, G=Cb — reversed vs NV12)
 
 struct YuvParams {
     y_offset: f32,
@@ -9,10 +9,10 @@ struct YuvParams {
     c_scale:  f32,
 }
 
-@group(0) @binding(0) var y_tex:      texture_2d<f32>;
-@group(0) @binding(1) var uv_tex:     texture_2d<f32>;
+@group(0) @binding(0) var y_tex:       texture_2d<f32>;
+@group(0) @binding(1) var vu_tex:      texture_2d<f32>;
 @group(0) @binding(2) var yuv_sampler: sampler;
-@group(0) @binding(3) var<uniform>    params: YuvParams;
+@group(0) @binding(3) var<uniform>     params: YuvParams;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -40,11 +40,11 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let y_raw  = textureSample(y_tex,  yuv_sampler, in.uv).r;
-    let uv_raw = textureSample(uv_tex, yuv_sampler, in.uv).rg;
+    let vu_raw = textureSample(vu_tex, yuv_sampler, in.uv).rg;  // r=Cr, g=Cb
 
     let y  = (y_raw    - params.y_offset) * params.y_scale;
-    let cb = (uv_raw.r - params.c_offset) * params.c_scale;
-    let cr = (uv_raw.g - params.c_offset) * params.c_scale;
+    let cb = (vu_raw.g - params.c_offset) * params.c_scale;  // g=Cb
+    let cr = (vu_raw.r - params.c_offset) * params.c_scale;  // r=Cr
 
     let r = clamp(y + 1.5748 * cr,                 0.0, 1.0);
     let g = clamp(y - 0.18732 * cb - 0.46812 * cr, 0.0, 1.0);
