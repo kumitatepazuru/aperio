@@ -6,7 +6,9 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList, PyModuleMethods},
 };
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pyclass_enum};
+use pyo3_stub_gen::derive::{
+    gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pyclass_enum,
+};
 
 #[napi(object)]
 #[pydataclass(stub, module = "aperio.frame_structure")]
@@ -137,6 +139,8 @@ pub struct ItemStructure {
     pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）
     pub from: i32,                       // アイテムの開始フレーム
     pub to: i32,                         // アイテムの終了フレーム
+    pub min: Option<i32>,                // アイテムの有効な最小フレーム（省略可能）
+    pub max: Option<i32>,                // アイテムの有効な最大フレーム（省略可能）
     pub x: i32,                          // アイテムのX座標
     pub y: i32,                          // アイテムのY座標
     pub scale: f64,                      // アイテムのスケール

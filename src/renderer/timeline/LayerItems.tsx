@@ -1,9 +1,8 @@
 import useStore from "@shared/store";
 import { useShallow } from "zustand/shallow";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { snapFrame, clampLayerDelta, resolveGroupMoveDelta } from "@shared/utils/layerUtils";
 import type { ItemStructure } from "native";
-
-const GraduationSnapThresholdPx = 8;
 
 type DragMode = "move" | "resize-start" | "resize-end";
 
@@ -22,114 +21,6 @@ type LayerItemsProps = {
   graduationInterval: number;
   layerHeight: number;
 };
-
-const snapFrame = (
-  rawFrame: number,
-  graduationInterval: number,
-  zoomLevelPxPerFrame: number,
-) => {
-  const graduationFrame =
-    Math.round(rawFrame / graduationInterval) * graduationInterval;
-  const graduationDistancePx =
-    Math.abs(rawFrame - graduationFrame) * zoomLevelPxPerFrame;
-  if (graduationDistancePx <= GraduationSnapThresholdPx) {
-    return graduationFrame;
-  }
-  return Math.round(rawFrame);
-};
-
-/**
- * 移動アイテム同士がフレームで重なる場合、layer clamp で同じレイヤーに
- * 着地しないよう desiredLayerDelta を 0 方向へ制限して返す。
- */
-function clampLayerDelta(
-  initItems: Array<{ id: string; from: number; to: number; layer: number }>,
-  desiredLayerDelta: number,
-): number {
-  const hasConflict = (ld: number): boolean => {
-    for (let i = 0; i < initItems.length; i++) {
-      const a = initItems[i];
-      const aLayer = Math.max(0, a.layer + ld);
-      for (let j = i + 1; j < initItems.length; j++) {
-        const b = initItems[j];
-        if (Math.max(0, b.layer + ld) !== aLayer) continue;
-        if (a.from < b.to && a.to > b.from) return true;
-      }
-    }
-    return false;
-  };
-
-  if (!hasConflict(desiredLayerDelta)) return desiredLayerDelta;
-
-  const step = desiredLayerDelta > 0 ? -1 : 1;
-  for (let ld = desiredLayerDelta + step; ld !== 0; ld += step) {
-    if (!hasConflict(ld)) return ld;
-  }
-  return 0;
-}
-
-/**
- * グループ移動の frameDelta を衝突解決しながら返す。
- *
- * - 全選択アイテムに同じデルタを適用することで相対位置を保持する。
- * - 各アイテムの障害物から候補デルタを生成し、全アイテムに対して有効な
- *   desiredDelta に最も近い値を返す。
- * - どこにも置けない場合は 0（ドラッグ開始位置）を返す。
- */
-function resolveGroupMoveDelta(
-  allItems: ItemStructure[],
-  movingIds: Set<string>,
-  initItems: Array<{ id: string; from: number; to: number; layer: number }>,
-  layerDelta: number,
-  desiredDelta: number,
-): number {
-  if (initItems.length === 0) return desiredDelta;
-
-  // いずれかのアイテムが frame 0 より前に行かないよう最小デルタを計算
-  const minDelta = -Math.min(...initItems.map((i) => i.from));
-
-  const isValidDelta = (D: number): boolean => {
-    if (D < minDelta) return false;
-    for (const init of initItems) {
-      const targetLayer = Math.max(0, init.layer + layerDelta);
-      const newFrom = init.from + D;
-      const newTo = newFrom + (init.to - init.from);
-      for (const o of allItems) {
-        if (movingIds.has(o.id) || o.layer !== targetLayer) continue;
-        if (newFrom < o.to && newTo > o.from) return false;
-      }
-    }
-    return true;
-  };
-
-  if (isValidDelta(desiredDelta)) return desiredDelta;
-
-  // 各アイテム × 各障害物から候補デルタを収集（障害物の直前・直後に置くデルタ）
-  // minDelta を含めることでフレーム0境界まで移動できるようにする
-  const candidates = new Set<number>([0, minDelta]); // 0 = ドラッグ開始位置、minDelta = frame 0境界
-  for (const init of initItems) {
-    const targetLayer = Math.max(0, init.layer + layerDelta);
-    const duration = init.to - init.from;
-    for (const o of allItems) {
-      if (movingIds.has(o.id) || o.layer !== targetLayer) continue;
-      candidates.add(o.from - duration - init.from); // このアイテムを障害物の直前に
-      candidates.add(o.to - init.from); // このアイテムを障害物の直後に
-    }
-  }
-
-  let best: number | null = null;
-  let bestDist = Infinity;
-  for (const D of candidates) {
-    if (!isValidDelta(D)) continue;
-    const dist = Math.abs(D - desiredDelta);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = D;
-    }
-  }
-
-  return best ?? 0;
-}
 
 const LayerItems = ({
   zoomLevelPxPerFrame,
@@ -170,14 +61,7 @@ const LayerItems = ({
       mode,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      initItems: allItems
-        .filter((item) => movingItemIds.includes(item.id))
-        .map((item) => ({
-          id: item.id,
-          from: item.from,
-          to: item.to,
-          layer: item.layer,
-        })),
+      initItems: allItems.filter((item) => movingItemIds.includes(item.id)),
     };
   };
 

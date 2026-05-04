@@ -197,6 +197,8 @@ const Timeline = () => {
             layer,
             from: currentFrame,
             to: endFrame,
+            min: structure.minFrame,
+            max: structure.maxFrame,
             x: 0,
             y: 0,
             scale: 100.0,
