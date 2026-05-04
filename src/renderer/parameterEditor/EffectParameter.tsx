@@ -13,7 +13,7 @@ import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable";
 import { FaAngleDown, FaAngleUp, FaXmark } from "react-icons/fa6";
 import { FaAngleDoubleDown, FaAngleDoubleUp } from "react-icons/fa";
 import { MdOutlineDragHandle } from "react-icons/md";
-import { hasSameItems } from "@/utils/hasSame";
+import { hasSameItems } from "@shared/utils/hasSame";
 
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   const result = [...arr];

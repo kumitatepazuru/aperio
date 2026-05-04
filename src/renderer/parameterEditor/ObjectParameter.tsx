@@ -4,7 +4,7 @@ import { initValues } from "@/configable/utils";
 import useStore, { getStoreState } from "@shared/store";
 import type { RequestStructureParameter } from "native";
 import { useEffect, useState } from "react";
-import { hasSameItems } from "@/utils/hasSame";
+import { hasSameItems } from "@shared/utils/hasSame";
 
 const ObjectParameter = () => {
   const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
