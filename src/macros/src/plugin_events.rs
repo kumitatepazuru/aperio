@@ -83,7 +83,7 @@ pub fn impl_plugin_event_methods(input: TokenStream) -> TokenStream {
                                 "call_event",
                                 (plugin_name, #event_path, json_to_pyobject(py, &params)?),
                             )?;
-                        Ok(result.extract::<#return_type>()?)
+                        Ok(result.extract()?)
                     })
                     .map_err(|e| {
                         napi::Error::from_reason(format!(

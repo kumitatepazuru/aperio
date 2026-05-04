@@ -148,9 +148,11 @@ pub struct ItemStructure {
 
 #[napi(object)]
 #[pydataclass(stub, module = "aperio.frame_structure")]
-pub struct NewGeneratorReturn {
+pub struct GeneratorInformation {
     pub display_name: String,
     pub duration_frames: Option<i32>,
+    pub max_frame: Option<i32>,
+    pub min_frame: Option<i32>,
     pub structure: Vec<RequestStructureParameter>,
 }
 
@@ -223,7 +225,7 @@ pub fn frame_structure(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<RequestStructureParameter>()?;
     m.add_class::<GenerateStructure>()?;
     m.add_class::<ItemStructure>()?;
-    m.add_class::<NewGeneratorReturn>()?;
+    m.add_class::<GeneratorInformation>()?;
     m.add_class::<GeneratorEvent>()?;
     m.add_class::<PluginNameInfo>()?;
     Ok(())

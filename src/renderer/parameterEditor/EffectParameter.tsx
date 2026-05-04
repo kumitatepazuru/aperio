@@ -57,8 +57,8 @@ const SortableEffectItem = ({
     window.main
       .requestParameterStruct(effect.name, currentParams)
       .then((struct) => {
-        setStructures(struct);
-        setParams(initValues(struct, currentParams));
+        setStructures(struct.structure);
+        setParams(initValues(struct.structure, currentParams));
       })
       .catch(console.error);
     // selectedItemId または effect.name が変わったときだけ初期化する
@@ -74,16 +74,16 @@ const SortableEffectItem = ({
       );
       if (
         hasSameItems(
-          struct.map((p) => p.id),
+          struct.structure.map((p) => p.id),
           structures.map((p) => p.id),
         )
       ) {
         onParamsChange(index, newParams);
       } else {
-        setStructures(struct);
+        setStructures(struct.structure);
         // 追加のパラメータを初期化する
         const newParamsWithInit = {
-          ...initValues(struct, newParams),
+          ...initValues(struct.structure, newParams),
           ...newParams,
         };
         setParams(newParamsWithInit);

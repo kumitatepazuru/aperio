@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from aperio.frame_structure import ItemStructure, NewGeneratorReturn, RequestStructureParameter
+from aperio.frame_structure import ItemStructure
 from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl
 
 from . import SubPluginBase

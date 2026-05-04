@@ -39,8 +39,8 @@ const ObjectParameter = () => {
         selectedItem.object.parameters,
       )
       .then((struct) => {
-        setStructures(struct);
-        setParams(initValues(struct, selectedItem.object.parameters));
+        setStructures(struct.structure);
+        setParams(initValues(struct.structure, selectedItem.object.parameters));
       })
       .catch(console.error);
     // selectedItemId が変わったときだけ初期化する
@@ -58,16 +58,16 @@ const ObjectParameter = () => {
       );
       if (
         hasSameItems(
-          struct.map((p) => p.id),
+          struct.structure.map((p) => p.id),
           structures.map((p) => p.id),
         )
       ) {
         updateTimeline(newParams);
       } else {
-        setStructures(struct);
+        setStructures(struct.structure);
         // 追加のパラメータを初期化する
         const newParamsWithInit = {
-          ...initValues(struct, newParams),
+          ...initValues(struct.structure, newParams),
           ...newParams,
         };
         setParams(newParamsWithInit);

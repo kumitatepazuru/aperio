@@ -214,20 +214,27 @@
 
 ---
 
-## NewGeneratorReturn
+## GeneratorInformation
 
-**定義:** プラグイン新規追加時（`GeneratorEvent.New`）の戻り値型。旧型 `NewObjectGeneratorReturn`・`NewEffectGeneratorReturn` を統合した単一型。
+**定義:** プラグインイベント（`GeneratorEvent.New` および `GeneratorEvent.RequestStructure`）の共通戻り値型。プラグインの表示名・初期デュレーション・フレーム範囲・パラメータ構造をまとめて返す。
 
 **型定義:**
-- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct NewGeneratorReturn`
-- TypeScript: `dist/native/index.d.ts`（napiで定義）→ `interface NewGeneratorReturn`
-- Python: `aperio.frame_structure.NewGeneratorReturn`（PyO3経由）
+- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct GeneratorInformation`
+- TypeScript: `dist/native/index.d.ts`（napiで定義）→ `interface GeneratorInformation`
+- Python: `aperio.frame_structure.GeneratorInformation`（PyO3経由、スタブは `src-python/out/aperio/frame_structure.pyi`）
 
 | フィールド | 型 | 意味 |
 |---|---|---|
 | `display_name` | `string` | UI表示名 |
 | `duration_frames` | `number \| null` | 初期デュレーション（フレーム数）。Effectは `null` |
+| `max_frame` | `number \| null` | 最大フレーム数の上限。制限なしは `null` |
+| `min_frame` | `number \| null` | 最小フレーム数の下限。制限なしは `null` |
 | `structure` | `RequestStructureParameter[]` | パラメータ構造定義 |
+
+**用法:**
+- `@event(type=GeneratorEvent.New)` デコレーターを付けたハンドラーの戻り値として返す
+- `@event(type=GeneratorEvent.RequestStructure)` デコレーターを付けたハンドラーの戻り値としても同型を返す
+- `call_event(plugin_name, GeneratorEvent.New, params)` / `call_event(plugin_name, GeneratorEvent.RequestStructure, params)` の戻り値型として型付けされている
 
 ---
 

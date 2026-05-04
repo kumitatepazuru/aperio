@@ -1,5 +1,5 @@
 from . import SubPluginBase as SubPluginBase
-from aperio.frame_structure import ItemStructure as ItemStructure, NewGeneratorReturn as NewGeneratorReturn, RequestStructureParameter as RequestStructureParameter
+from aperio.frame_structure import ItemStructure as ItemStructure
 from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl
 from dataclasses import dataclass
 

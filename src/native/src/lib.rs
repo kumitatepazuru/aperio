@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
@@ -12,11 +12,11 @@ use gpu_util::texture_to_native::linux::SharedTextureHandle;
 use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
 // Python公開用の型は wrapper クレートから使用する
+use aperio_derive::impl_plugin_event_methods;
 use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::{types::PyAnyMethods, Py, PyAny, PyResult, Python};
-use aperio_derive::impl_plugin_event_methods;
 use wrapper::{
     frame_structure::*,
     gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
@@ -242,10 +242,9 @@ impl AperioManager {
 }
 
 // イベント系メソッドは #[napi] impl の外でマクロ展開する
-// （napi-derive は impl 内のマクロ呼び出しアイテムを未サポートのため）
 impl_plugin_event_methods! {
     AperioManager {
-        request_new(GeneratorEvent::New): serde_json::Value -> NewGeneratorReturn,
-        request_structure(GeneratorEvent::RequestStructure): serde_json::Value -> Vec<RequestStructureParameter>,
+        request_new(GeneratorEvent::New): serde_json::Value -> GeneratorInformation,
+        request_structure(GeneratorEvent::RequestStructure): serde_json::Value -> GeneratorInformation,
     }
 }

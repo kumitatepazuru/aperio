@@ -1,24 +1,15 @@
-from typing import Callable, Literal, overload
+from typing import Any, Callable, Literal, cast, overload
 
-from aperio.frame_structure import GeneratorEvent, NewGeneratorReturn, RequestStructureParameter
+from aperio.frame_structure import GeneratorEvent, GeneratorInformation
 
-
-@overload
-def event(
-    *, type: Literal[GeneratorEvent.New]
-) -> Callable[[Callable[..., NewGeneratorReturn]], Callable[..., NewGeneratorReturn]]: ...
+type EventCallable[T, U] = Callable[[Callable[[Any, T], U]], Callable[[Any, T], U]]
 
 
 @overload
-def event(
-    *, type: Literal[GeneratorEvent.RequestStructure]
-) -> Callable[
-    [Callable[..., list[RequestStructureParameter]]],
-    Callable[..., list[RequestStructureParameter]],
-]: ...
-
-
-def event(*, type: GeneratorEvent):
+def event(*, type: Literal[GeneratorEvent.New]) -> EventCallable[dict, GeneratorInformation]: ...
+@overload
+def event(*, type: Literal[GeneratorEvent.RequestStructure]) -> EventCallable[dict, GeneratorInformation]: ...
+def event(*, type: GeneratorEvent) -> EventCallable:
     """
     プラグインのイベントハンドラーを登録するデコレーター。
 
@@ -27,7 +18,11 @@ def event(*, type: GeneratorEvent):
     """
 
     def decorator(func: Callable) -> Callable:
-        func._event_type = type
+        f = cast(Any, func)
+        if getattr(f, "_event_type", None) is not None:
+            f._event_type.append(type)
+        else:
+            f._event_type = [type]
         return func
 
     return decorator
@@ -46,16 +41,14 @@ class EventManager:
         plugin_name: str,
         type: Literal[GeneratorEvent.New],
         params: dict,
-    ) -> NewGeneratorReturn: ...
-
+    ) -> GeneratorInformation: ...
     @overload
     def call_event(
         self,
         plugin_name: str,
         type: Literal[GeneratorEvent.RequestStructure],
         params: dict,
-    ) -> list[RequestStructureParameter]: ...
-
+    ) -> GeneratorInformation: ...
     def call_event(self, plugin_name: str, type: GeneratorEvent, params: dict):
         """
         指定プラグインの、指定イベント種別に対応するデコレーター付きメソッドを呼び出す。
@@ -66,7 +59,7 @@ class EventManager:
             params: イベントハンドラーに渡すパラメータ辞書
 
         Returns:
-            イベント種別に応じた戻り値（NewGeneratorReturn または list[RequestStructureParameter]）
+            イベント種別に応じた戻り値
         """
         plugin = self.object_plugins.get(plugin_name) or self.effect_plugins.get(plugin_name)  # type: ignore[attr-defined]
         if plugin is None:
@@ -76,7 +69,7 @@ class EventManager:
 
         for attr_name in dir(plugin):
             method = getattr(plugin, attr_name, None)
-            if callable(method) and getattr(method, "_event_type", None) == type:
+            if callable(method) and type in getattr(method, "_event_type", []):
                 return method(params)
 
         raise NotImplementedError(

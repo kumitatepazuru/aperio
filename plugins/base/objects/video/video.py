@@ -2,7 +2,7 @@ import os
 
 import aperio_plugin
 from aperio.avloader import PyVideoLoader
-from aperio.frame_structure import FileFilter, GeneratorEvent, NewGeneratorReturn, RequestStructureParameter
+from aperio.frame_structure import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, ObjectGeneratorBase
@@ -20,34 +20,32 @@ class VideoObject(ObjectGeneratorBase):
         self.display_name = "動画"
         self.description = "動画を再生できます。動画ファイルのパスを指定してください。"
 
-        self.base_structure: list[RequestStructureParameter] = [
-            RequestStructureParameter.File(
-                "video_path",
-                "ファイル",
-                False,
-                "file",
-                [
-                    FileFilter(
-                        "動画ファイル",
-                        ["mp4", "mkv", "webm", "avi", "flv", "mpeg", "mpg", "mov", "wmv", "mts", "m2ts", "m4v"],
-                    )
-                ],
-            ),
-        ]
         self.compiled_funcs: dict[str, PyCompiledTextureFunc] = {}
         self.video_loaders: dict[str, PyVideoLoader] = {}
 
     @event(type=GeneratorEvent.New)
-    def on_new(self, params: dict) -> NewGeneratorReturn:
-        return NewGeneratorReturn(
+    @event(type=GeneratorEvent.RequestStructure)
+    def on_request_structure(self, _: dict) -> GeneratorInformation:
+        return GeneratorInformation(
             display_name=self.display_name,
             duration_frames=300,
-            structure=self.base_structure,
+            max_frame=None,
+            min_frame=None,
+            structure=[
+                RequestStructureParameter.File(
+                    "video_path",
+                    "ファイル",
+                    False,
+                    "file",
+                    [
+                        FileFilter(
+                            "動画ファイル",
+                            ["mp4", "mkv", "webm", "avi", "flv", "mpeg", "mpg", "mov", "wmv", "mts", "m2ts", "m4v"],
+                        )
+                    ],
+                ),
+            ],
         )
-
-    @event(type=GeneratorEvent.RequestStructure)
-    def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
-        return self.base_structure
 
     def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
         paths = params.args.get("video_path", [""])

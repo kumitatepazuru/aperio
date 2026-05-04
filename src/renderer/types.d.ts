@@ -1,9 +1,8 @@
 import {
   type AperioConfig,
-  type RequestStructureParameter,
   type PluginNameInfo,
   type ItemStructure,
-  type NewGeneratorReturn,
+  type GeneratorInformation,
 } from "native";
 
 /** フォントファミリー名 → ウェイト値（100/200/…/900）の配列 */
@@ -60,11 +59,11 @@ declare global {
       requestNewGenerator: (
         pluginName: string,
         args: Record<string, unknown>,
-      ) => Promise<NewGeneratorReturn>;
+      ) => Promise<GeneratorInformation>;
       requestParameterStruct: (
         pluginName: string,
         params: Record<string, unknown>,
-      ) => Promise<RequestStructureParameter[]>;
+      ) => Promise<GeneratorInformation>;
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       openContextMenu: (id: string) => Promise<void>;
