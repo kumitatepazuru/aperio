@@ -1,3 +1,4 @@
+import aperio_plugin
 from aperio_plugin import PluginManager
 from aperio_plugin.plugin_base import MainPluginBase
 
@@ -19,6 +20,6 @@ class AperioBasePlugin(MainPluginBase):
         self.author = "Aperio"
 
         # self.manager.register_sub_plugin(self, TestObject(self.image_generator))
-        self.manager.register_sub_plugin(self, BlurEffect(self.image_generator))
-        self.manager.register_sub_plugin(self, TextObject(self.text_renderer))
-        self.manager.register_sub_plugin(self, VideoObject(self.image_generator))
+        aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
+        aperio_plugin.manager.register_sub_plugin(self, TextObject())
+        aperio_plugin.manager.register_sub_plugin(self, VideoObject())

@@ -6,7 +6,7 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList, PyModuleMethods},
 };
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pyclass_enum};
 
 #[napi(object)]
 #[pydataclass(stub, module = "aperio.frame_structure")]
@@ -148,17 +148,19 @@ pub struct ItemStructure {
 
 #[napi(object)]
 #[pydataclass(stub, module = "aperio.frame_structure")]
-pub struct NewObjectGeneratorReturn {
+pub struct NewGeneratorReturn {
     pub display_name: String,
-    pub duration_frames: i32,
+    pub duration_frames: Option<i32>,
     pub structure: Vec<RequestStructureParameter>,
 }
 
-#[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
-pub struct NewEffectGeneratorReturn {
-    pub display_name: String,
-    pub structure: Vec<RequestStructureParameter>,
+#[napi]
+#[gen_stub_pyclass_enum]
+#[pyclass(eq, module = "aperio.frame_structure")]
+#[derive(PartialEq, Clone, Debug)]
+pub enum GeneratorEvent {
+    New,
+    RequestStructure,
 }
 
 #[napi(object)]
@@ -206,13 +208,8 @@ impl<'py> IntoPyObject<'py> for ItemStructure {
         dict.set_item("scale", self.scale)?;
         dict.set_item("rotation", self.rotation)?;
         dict.set_item("alpha", self.alpha)?;
-        dict.set_item("object", self.object.into_pyobject(py)?)?;
-        let effects = self
-            .effects
-            .into_iter()
-            .map(|e| e.into_pyobject(py))
-            .collect::<Result<Vec<_>, _>>()?;
-        dict.set_item("effects", PyList::new(py, effects)?)?;
+        dict.set_item("object", self.object)?;
+        dict.set_item("effects", PyList::new(py, self.effects)?)?;
         Ok(dict)
     }
 }
@@ -226,8 +223,8 @@ pub fn frame_structure(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<RequestStructureParameter>()?;
     m.add_class::<GenerateStructure>()?;
     m.add_class::<ItemStructure>()?;
-    m.add_class::<NewObjectGeneratorReturn>()?;
-    m.add_class::<NewEffectGeneratorReturn>()?;
+    m.add_class::<NewGeneratorReturn>()?;
+    m.add_class::<GeneratorEvent>()?;
     m.add_class::<PluginNameInfo>()?;
     Ok(())
 }

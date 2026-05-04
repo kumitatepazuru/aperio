@@ -1,10 +1,9 @@
 import {
   type AperioConfig,
   type RequestStructureParameter,
-  type NewEffectGeneratorReturn,
-  type NewObjectGeneratorReturn,
   type PluginNameInfo,
   type ItemStructure,
+  type NewGeneratorReturn,
 } from "native";
 
 /** フォントファミリー名 → ウェイト値（100/200/…/900）の配列 */
@@ -58,13 +57,10 @@ declare global {
     main: {
       getPluginNames: () => Promise<PluginNameInfo>;
       getFontsList: () => Promise<FontsList>;
-      requestNewObjectGenerator: (
+      requestNewGenerator: (
         pluginName: string,
         args: Record<string, unknown>,
-      ) => Promise<NewObjectGeneratorReturn>;
-      requestNewEffectGenerator: (
-        pluginName: string,
-      ) => Promise<NewEffectGeneratorReturn>;
+      ) => Promise<NewGeneratorReturn>;
       requestParameterStruct: (
         pluginName: string,
         params: Record<string, unknown>,
@@ -76,7 +72,9 @@ declare global {
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
       resizeOsr: (width: number, height: number) => Promise<void>;
-      showOpenDialog: (options: OpenDialogOptions) => Promise<string[] | undefined>;
+      showOpenDialog: (
+        options: OpenDialogOptions,
+      ) => Promise<string[] | undefined>;
     };
   }
 }

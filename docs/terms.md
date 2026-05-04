@@ -187,6 +187,48 @@
 
 **参照:** `PluginNameInfo.objectPlugins`, `PluginNameInfo.effectPlugins`
 
+**イベントシステム:**
+- プラグインのイベントハンドラーは `@event(type=GeneratorEvent.New)` 等のデコレーターで登録する。
+- `AperioManager.call_event(plugin_name, type, params)` で統一的に呼び出す。
+- `params` 引数は常に `dict`。Effect の `New` イベントでも空の dict を渡す。
+
+---
+
+## GeneratorEvent
+
+**定義:** プラグインのイベント種別を識別するenum。Rustで定義しPyO3・napi経由でPython・TypeScriptに公開する。両言語間の手動同期は不要。
+
+**型定義:**
+- Rust: `src/wrapper/src/frame_structure.rs` → `pub enum GeneratorEvent`
+- Python: `aperio.frame_structure.GeneratorEvent`（PyO3経由、スタブは `src-python/out/aperio/frame_structure.pyi`）
+
+| バリアント | 意味 |
+|---|---|
+| `GeneratorEvent.New` | プラグインが新規追加されたときのイベント |
+| `GeneratorEvent.RequestStructure` | パラメータ構造の再取得イベント |
+
+**用法:**
+- `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定
+- `call_event(plugin_name, GeneratorEvent.New, params)` — AperioManagerから呼び出す
+- Rust側: `GeneratorEvent::New` として `call_method1` の引数に渡す
+
+---
+
+## NewGeneratorReturn
+
+**定義:** プラグイン新規追加時（`GeneratorEvent.New`）の戻り値型。旧型 `NewObjectGeneratorReturn`・`NewEffectGeneratorReturn` を統合した単一型。
+
+**型定義:**
+- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct NewGeneratorReturn`
+- TypeScript: `dist/native/index.d.ts`（napiで定義）→ `interface NewGeneratorReturn`
+- Python: `aperio.frame_structure.NewGeneratorReturn`（PyO3経由）
+
+| フィールド | 型 | 意味 |
+|---|---|---|
+| `display_name` | `string` | UI表示名 |
+| `duration_frames` | `number \| null` | 初期デュレーション（フレーム数）。Effectは `null` |
+| `structure` | `RequestStructureParameter[]` | パラメータ構造定義 |
+
 ---
 
 ## ID・文字列識別子の命名規則

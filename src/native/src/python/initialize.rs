@@ -32,7 +32,7 @@ pub fn initialize_python(dir: &Dirs) -> Result<Py<PyAny>> {
 
         // plmanagerのPluginManagerを初期化
         let pl_manager = py.import("aperio_plugin")?;
-        let init_func = pl_manager.getattr("PluginManager")?;
+        let init_func = pl_manager.getattr("AperioManager")?;
         let pl_manager = init_func.call1((appdata_dir,))?;
 
         // pluginsにbaseがなければ追加する

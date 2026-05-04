@@ -120,12 +120,10 @@ contextBridge.exposeInMainWorld("main", {
     pluginName: string,
     params: Record<string, unknown>,
   ) => ipcRenderer.invoke("request-parameter-struct", pluginName, params),
-  requestNewObjectGenerator: (
+  requestNewGenerator: (
     pluginName: string,
     args: Record<string, unknown>,
-  ) => ipcRenderer.invoke("request-new-object-generator", pluginName, args),
-  requestNewEffectGenerator: (pluginName: string) =>
-    ipcRenderer.invoke("request-new-effect-generator", pluginName),
+  ) => ipcRenderer.invoke("request-new", pluginName, args),
   showOpenDialog: (options: OpenDialogOptions): Promise<string[] | undefined> =>
     ipcRenderer.invoke("show-open-dialog", options),
 });

@@ -162,10 +162,7 @@ const Timeline = () => {
         async (objName) => {
           console.log("Add object from context menu:", objName);
 
-          const structure = await window.main.requestNewObjectGenerator(
-            objName,
-            {},
-          );
+          const structure = await window.main.requestNewGenerator(objName, {});
           const defaultParams: Record<string, unknown> = {};
           structure.structure.forEach((param) => {
             if (param.type === "Font") {
@@ -180,7 +177,7 @@ const Timeline = () => {
 
           const currentFrame = await getCurrentFrameCount();
 
-          const endFrame = currentFrame + structure.durationFrames;
+          const endFrame = currentFrame + (structure.durationFrames || 0);
           let layer = 0;
           // 追加するアイテムのレイヤーは、現在のアイテムと重ならない最も低いレイヤーにする
           while (

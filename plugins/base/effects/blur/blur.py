@@ -1,13 +1,15 @@
 import os
 import struct
 
-from aperio.frame_structure import RequestStructureParameter
-from aperio_plugin.plugin_base.generator_base import EffectGeneratorBase, GenerateParameters, GeneratorWgslReturn, NewEffectGeneratorReturn
-from aperio.gpu_util import PyCompiledWgsl, PyImageGenerator
+import aperio_plugin
+from aperio.frame_structure import GeneratorEvent, NewGeneratorReturn, RequestStructureParameter
+from aperio.gpu_util import PyCompiledWgsl
+from aperio_plugin.event_manager import event
+from aperio_plugin.plugin_base.generator_base import EffectGeneratorBase, GenerateParameters, GeneratorWgslReturn
 
 
 class BlurEffect(EffectGeneratorBase):
-    def __init__(self, generator: PyImageGenerator) -> None:
+    def __init__(self) -> None:
         super().__init__()
         self.name = "base.blur_effect"
         self.display_name = "ブラー"
@@ -15,35 +17,37 @@ class BlurEffect(EffectGeneratorBase):
 
         current_dir = os.path.dirname(__file__)
         with open(os.path.join(current_dir, "blur.wgsl"), "r") as f:
-            self.shader = PyCompiledWgsl("blur", f.read(), generator, None)
+            self.shader = PyCompiledWgsl("blur", f.read(), aperio_plugin.image_generator, None)
 
-    def on_new(self) -> NewEffectGeneratorReturn:
-        return NewEffectGeneratorReturn(
+    @event(type=GeneratorEvent.New)
+    def on_new(self, params: dict) -> NewGeneratorReturn:
+        return NewGeneratorReturn(
             display_name=self.display_name,
+            duration_frames=None,
             structure=[
                 RequestStructureParameter.Int(
                     id="blur_radius",
                     title="強さ",
                     default_value=5,
-                    suffix="px"
+                    suffix="px",
                 )
-            ]
+            ],
         )
 
+    @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
         return [
-                RequestStructureParameter.Int(
-                    id="blur_radius",
-                    title="強さ",
-                    default_value=5,
-                    suffix="px"
-                )
-            ]
+            RequestStructureParameter.Int(
+                id="blur_radius",
+                title="強さ",
+                default_value=5,
+                suffix="px",
+            )
+        ]
 
     def generate(self, params: GenerateParameters) -> GeneratorWgslReturn:
         args = params.args
         blur_radius = args.get("blur_radius", 5)
-        # ぼかしにより各辺 radius 分ずつ拡張
         if blur_radius < 0:
             blur_radius = 0
             new_width = params.width

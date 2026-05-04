@@ -1,8 +1,3 @@
-from .. import PluginManager
-from aperio.gpu_util import PyImageGenerator as PyImageGenerator
-from aperio.text_rendering import PyTextRenderer as PyTextRenderer
-from dataclasses import dataclass as dataclass
-
 class PluginBase:
     """
     プラグインの基底クラス。 サブクラスでオーバーライドして使用することを想定している。
@@ -29,9 +24,6 @@ class MainPluginBase(PluginBase):
     プラグイン全体の基底クラス。 サブクラスでオーバーライドして使用することを想定している。
     plugin_filesには、GeneratorBaseを継承したクラスを指定する。システムは、このリストに基づいてジェネレーターを認識する。
     """
-    manager: PluginManager
-    image_generator: PyImageGenerator
-    text_renderer: PyTextRenderer
     version: str
     author: str
     def __init__(self) -> None:

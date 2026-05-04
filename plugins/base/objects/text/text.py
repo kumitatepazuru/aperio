@@ -1,8 +1,9 @@
-from aperio.frame_structure import RequestStructureParameter
+import aperio_plugin
+from aperio.frame_structure import GeneratorEvent, NewGeneratorReturn, RequestStructureParameter
+from aperio.gpu_util import PyCompiledTextureFunc
 from aperio.text_rendering import PyTextRenderer, PyTextSpec
-from aperio.gpu_util import PyCompiledTextureFunc, PyImageGenerator
-
-from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, NewObjectGeneratorReturn, ObjectGeneratorBase
+from aperio_plugin.event_manager import event
+from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, ObjectGeneratorBase
 
 
 class TextObject(ObjectGeneratorBase):
@@ -10,7 +11,7 @@ class TextObject(ObjectGeneratorBase):
     テキストをレンダリングするオブジェクトプラグイン。テキストの内容、色、フォント、字間を指定してフレームにテキストを描画することができる。
     """
 
-    def __init__(self, text_renderer: PyTextRenderer):
+    def __init__(self):
         super().__init__()
 
         self.name = "base.text_object"
@@ -23,15 +24,22 @@ class TextObject(ObjectGeneratorBase):
             RequestStructureParameter.Font("font", "フォント"),
             RequestStructureParameter.Int("font_size", "フォントサイズ", 48, suffix="px"),
         ]
+
+        text_renderer: PyTextRenderer = aperio_plugin.text_renderer
         self.compiled_func = PyCompiledTextureFunc("text_render", text_renderer.render_text_for_pipeline)
         self.text_renderer = text_renderer
 
-    def on_new(self, args: dict) -> NewObjectGeneratorReturn:
-        return NewObjectGeneratorReturn(display_name=self.display_name, duration_frames=300, structure=self.base_structure)
-    
+    @event(type=GeneratorEvent.New)
+    def on_new(self, params: dict) -> NewGeneratorReturn:
+        return NewGeneratorReturn(
+            display_name=self.display_name,
+            duration_frames=300,
+            structure=self.base_structure,
+        )
+
+    @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, params: dict) -> list[RequestStructureParameter]:
         return self.base_structure
-        
 
     def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
         args = params.args
@@ -53,7 +61,7 @@ class TextObject(ObjectGeneratorBase):
 
         if prepared is None:
             return None
-        
+
         return GeneratorTextureReturn(
             compiled=self.compiled_func,
             params=prepared,

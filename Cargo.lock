@@ -81,6 +81,7 @@ name = "aperio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aperio_derive",
  "env_logger",
  "gpu_util",
  "libc",

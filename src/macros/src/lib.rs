@@ -3,6 +3,13 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{parse_macro_input, Data, DeriveInput, Fields, Ident, LitStr, Token};
 
+mod plugin_events;
+
+#[proc_macro]
+pub fn impl_plugin_event_methods(input: TokenStream) -> TokenStream {
+    plugin_events::impl_plugin_event_methods(input)
+}
+
 struct MacroArgs {
     stub: bool,
     module: Option<String>,

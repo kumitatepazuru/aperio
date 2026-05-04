@@ -149,23 +149,19 @@ ipcMain.handle("get-fonts-list", () => {
 });
 
 ipcMain.handle(
-  "request-new-object-generator",
+  "request-new",
   (_, pluginName: string, args: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestNewObjectGenerator(
+    return nativeModule.aperioManager.requestNew(
       pluginName,
       args,
     );
   },
 );
 
-ipcMain.handle("request-new-effect-generator", (_, pluginName: string) => {
-  return nativeModule.aperioManager.requestNewEffectGenerator(pluginName);
-});
-
 ipcMain.handle(
   "request-parameter-struct",
   (_, pluginName: string, params: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestParameterStruct(
+    return nativeModule.aperioManager.requestStructure(
       pluginName,
       params,
     );
