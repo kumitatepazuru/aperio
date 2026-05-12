@@ -134,6 +134,7 @@ pub struct GenerateStructure {
 #[napi(object)]
 #[gen_stub_pyclass]
 #[pyclass(module = "aperio.frame_structure", extends = PyDict)]
+#[derive(Clone)]
 pub struct ItemStructure {
     pub id: String,                      // アイテムのUUID
     pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）

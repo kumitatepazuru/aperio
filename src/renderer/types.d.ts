@@ -8,32 +8,14 @@ import {
 /** フォントファミリー名 → ウェイト値（100/200/…/900）の配列 */
 type FontsList = Record<string, number[]>;
 import { sharedTexture, type OpenDialogOptions } from "electron";
-import type { SyncableState } from "../shared/store";
+import type { SyncableState, SyncableStatePartial } from "native";
 
 declare global {
   interface Window {
-    rendezvous: {
-      register: () => Promise<{
-        clientId: number;
-        masterId: number | null;
-        masterWebContentsId: number | null;
-      }>;
-      heartbeat: (clientId: number) => Promise<{ clientId: number }>;
-      getMaster: () => Promise<{
-        masterId: number | null;
-        masterWebContentsId: number | null;
-      }>;
-      requestState: (
-        masterWebContentsId: number,
-      ) => Promise<SyncableState | null>;
-      stateResponse: (
-        requesterId: number,
-        state: SyncableState,
-      ) => Promise<void>;
-      onProvideState: (
-        cb: (requesterWebContentsId: number) => void,
-      ) => () => void;
-      onClientDied: (cb: (deadClientId: number) => void) => () => void;
+    sync: {
+      register: () => Promise<SyncableState>;
+      set: (partial: SyncableStatePartial) => void;
+      onDiff: (cb: (partial: SyncableStatePartial) => void) => () => void;
     };
     frame: {
       sendPort: () => Promise<void>;

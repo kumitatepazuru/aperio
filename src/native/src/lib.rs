@@ -27,6 +27,7 @@ use wrapper::{
 mod app_config;
 mod node_shared_texture;
 mod python;
+mod store;
 mod structs;
 mod util;
 
