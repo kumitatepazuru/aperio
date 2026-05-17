@@ -7,7 +7,7 @@ pub mod frame_structure;
 pub mod gpu_util;
 pub mod logger;
 pub mod text_rendering;
-pub mod utils;
+pub mod json_value;
 
 /// maturin でスタンドアロンビルドする場合のエントリポイント
 #[pymodule]

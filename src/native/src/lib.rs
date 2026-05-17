@@ -20,8 +20,8 @@ use pyo3::{types::PyAnyMethods, Py, PyAny, PyResult, Python};
 use wrapper::{
     frame_structure::*,
     gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
+    json_value::JsonValue,
     text_rendering::FontsList,
-    utils::json_to_pyobject,
 };
 
 mod app_config;
@@ -245,7 +245,7 @@ impl AperioManager {
 // イベント系メソッドは #[napi] impl の外でマクロ展開する
 impl_plugin_event_methods! {
     AperioManager {
-        request_new(GeneratorEvent::New): serde_json::Value -> GeneratorInformation,
-        request_structure(GeneratorEvent::RequestStructure): serde_json::Value -> GeneratorInformation,
+        request_new(GeneratorEvent::New): JsonValue -> GeneratorInformation,
+        request_structure(GeneratorEvent::RequestStructure): JsonValue -> GeneratorInformation,
     }
 }

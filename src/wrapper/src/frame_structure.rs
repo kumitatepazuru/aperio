@@ -4,7 +4,7 @@ use aperio_derive::pydataclass;
 use napi_derive::napi;
 use pyo3::{
     prelude::*,
-    types::{PyDict, PyList, PyModuleMethods},
+    types::{PyDict, PyModuleMethods},
 };
 use pyo3_stub_gen::derive::{
     gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pyclass_enum,
@@ -17,7 +17,7 @@ pub struct FileFilter {
     pub extensions: Vec<String>,
 }
 
-use crate::utils::json_to_pyobject;
+use crate::json_value::JsonValue;
 
 #[napi(object)]
 #[pydataclass(stub, module = "aperio.frame_structure")]
@@ -123,18 +123,18 @@ pub enum RequestStructureParameter {
 #[napi(object)]
 #[gen_stub_pyclass]
 #[pyclass(module = "aperio.frame_structure", extends = PyDict)]
-#[derive(Clone)]
+#[derive(Clone, IntoPyObject)]
 pub struct GenerateStructure {
     pub id: String,   // UUIDが期待される
     pub name: String, // オブジェクトやエフェクトの固有名でIDとは違い種類が同じであれば同じになる
     pub display_name: String,
-    pub parameters: HashMap<String, serde_json::Value>, // パラメータの具体的な型はエフェクトによって異なるため、単にdict(serde_json::Value)型とする
+    pub parameters: HashMap<String, JsonValue>, // パラメータの具体的な型はエフェクトによって異なるため、単にdict(JsonValue)型とする
 }
 
 #[napi(object)]
 #[gen_stub_pyclass]
 #[pyclass(module = "aperio.frame_structure", extends = PyDict)]
-#[derive(Clone)]
+#[derive(Clone, IntoPyObject)]
 pub struct ItemStructure {
     pub id: String,                      // アイテムのUUID
     pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）
@@ -176,49 +176,6 @@ pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
     pub object_plugins: HashMap<String, String>,
     pub effect_plugins: HashMap<String, String>,
-}
-
-// ---- IntoPyObject 実装 ---------------------------------------------------
-
-impl<'py> IntoPyObject<'py> for GenerateStructure {
-    type Target = PyDict;
-    type Output = Bound<'py, PyDict>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let dict = PyDict::new(py);
-        dict.set_item("id", self.id)?;
-        dict.set_item("name", self.name)?;
-        dict.set_item("display_name", self.display_name)?;
-        let params = PyDict::new(py);
-        for (k, v) in self.parameters {
-            params.set_item(k, json_to_pyobject(py, &v)?)?;
-        }
-        dict.set_item("parameters", params)?;
-        Ok(dict)
-    }
-}
-
-impl<'py> IntoPyObject<'py> for ItemStructure {
-    type Target = PyDict;
-    type Output = Bound<'py, PyDict>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let dict = PyDict::new(py);
-        dict.set_item("id", self.id)?;
-        dict.set_item("layer", self.layer)?;
-        dict.set_item("from", self.from)?;
-        dict.set_item("to", self.to)?;
-        dict.set_item("x", self.x)?;
-        dict.set_item("y", self.y)?;
-        dict.set_item("scale", self.scale)?;
-        dict.set_item("rotation", self.rotation)?;
-        dict.set_item("alpha", self.alpha)?;
-        dict.set_item("object", self.object)?;
-        dict.set_item("effects", PyList::new(py, self.effects)?)?;
-        Ok(dict)
-    }
 }
 
 // ---- モジュール登録 -------------------------------------------------------

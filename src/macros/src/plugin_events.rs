@@ -77,11 +77,12 @@ pub fn impl_plugin_event_methods(input: TokenStream) -> TokenStream {
                 ) -> napi::Result<#return_type> {
                     let pl_manager = &self.plmanager;
                     pyo3::Python::attach(|py| -> pyo3::PyResult<#return_type> {
+                        use pyo3::IntoPyObject;
                         let result = pl_manager
                             .bind(py)
                             .call_method1(
                                 "call_event",
-                                (plugin_name, #event_path, json_to_pyobject(py, &params)?),
+                                (plugin_name, #event_path, params.into_pyobject(py)?),
                             )?;
                         Ok(result.extract()?)
                     })
