@@ -1,7 +1,7 @@
 use aperio_derive::ApplyPartial;
 use napi_derive::napi;
 use std::sync::{OnceLock, RwLock};
-use wrapper::frame_structure::ItemStructure;
+use crate::frame_structure::ItemStructure;
 
 #[napi(object)]
 #[derive(Clone)]

@@ -1,0 +1,4 @@
+# aperio wrapper
+napiによるtypescriptバインディングと、pyo3によるpythonバインディングを提供するcrate。
+特にpythonの連携に関して、nativeの実装はrust→pythonなのに対し、このcrateはpython→rustのバインディングを提供する点に注意が必要。
+そのため、コンパイルの動作が異なるためcrateを分けての管理をしている。いつかnativeに統合したい。

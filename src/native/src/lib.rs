@@ -2,8 +2,6 @@ use std::collections::HashMap;
 
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
-    node_shared_texture::NodeOffscreenSharedTextureInfo,
-    structs::Dirs,
     util::get_local_data_dir,
 };
 #[cfg(target_os = "linux")]
@@ -16,19 +14,18 @@ use aperio_derive::impl_plugin_event_methods;
 use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
-use pyo3::{types::PyAnyMethods, Py, PyAny, PyResult, Python};
+use pyo3::prelude::*;
+use pyo3_stub_gen::define_stub_info_gatherer;
 use wrapper::{
     frame_structure::*,
     gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
     json_value::JsonValue,
+    node_shared_texture::NodeOffscreenSharedTextureInfo,
     text_rendering::FontsList,
 };
 
 mod app_config;
-mod node_shared_texture;
 mod python;
-mod store;
-mod structs;
 mod util;
 
 #[cfg(target_os = "linux")]
@@ -47,6 +44,17 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
         Ok(())
     }
 }
+
+#[napi(object)]
+pub struct Dirs {
+    pub data_dir: String,
+    pub local_data_dir: String,
+    pub resource_dir: String,
+    pub plugin_manager_dir: String,
+    pub default_plugins_dir: String,
+    pub dist_dir: String,
+}
+
 
 fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> {
     let default_version = &config.python.default_version;
@@ -249,3 +257,5 @@ impl_plugin_event_methods! {
         request_structure(GeneratorEvent::RequestStructure): JsonValue -> GeneratorInformation,
     }
 }
+
+define_stub_info_gatherer!(stub_info);

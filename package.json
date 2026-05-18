@@ -20,8 +20,8 @@
     "python:stubgen": "rm -rf src-python/out/aperio_plugin && uv run stubgen src-python/src/ -o src-python/out --include-docstrings",
     "python:check": "uv run python -m mypy.stubtest src-python/src/aperio_plugin",
     "uv:update": "uv run scripts/update-uv.py",
-    "wrapper:build": "uvx maturin build -m src/wrapper/pyproject.toml",
-    "wrapper:release": "uvx maturin build -m src/wrapper/pyproject.toml --release",
+    "wrapper:build": "uvx maturin build -m src/wrapper/Cargo.toml",
+    "wrapper:release": "uvx maturin build -m src/wrapper/Cargo.toml --release",
     "wrapper:stub": "cargo run -p wrapper --bin stub_gen",
     "wrapper:stubgen": "run-s wrapper:stub && rm -rf src-python/out/aperio && mv src/wrapper/aperio src-python/out/aperio"
   },
