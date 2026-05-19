@@ -7,7 +7,7 @@ use pyo3::{prelude::*, types::PyDict};
 use crate::utils::json_value::JsonValue;
 
 #[napi(object)]
-#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct FileFilter {
     pub name: String,
@@ -15,7 +15,7 @@ pub struct FileFilter {
 }
 
 #[napi(object)]
-#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct ItemResult {
     pub width: i32,
@@ -117,7 +117,7 @@ pub enum RequestStructureParameter {
 
 #[napi(object)]
 #[pyclass(from_py_object, extends = PyDict)]
-#[derive(Clone, IntoPyObject)]
+#[derive(Clone, IntoPyObject, PartialEq, Debug)]
 pub struct GenerateStructure {
     pub id: String,   // UUIDが期待される
     pub name: String, // オブジェクトやエフェクトの固有名でIDとは違い種類が同じであれば同じになる
@@ -127,7 +127,7 @@ pub struct GenerateStructure {
 
 #[napi(object)]
 #[pyclass(from_py_object, extends = PyDict)]
-#[derive(Clone, IntoPyObject)]
+#[derive(Clone, IntoPyObject, PartialEq, Debug)]
 pub struct ItemStructure {
     pub id: String,                      // アイテムのUUID
     pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）
@@ -145,7 +145,7 @@ pub struct ItemStructure {
 }
 
 #[napi(object)]
-#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct GeneratorInformation {
     pub display_name: String,
@@ -164,7 +164,7 @@ pub enum GeneratorEvent {
 }
 
 #[napi(object)]
-#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
@@ -174,7 +174,7 @@ pub struct PluginNameInfo {
 
 // ---- モジュール登録 -------------------------------------------------------
 
-#[pymodule]
+#[pymodule(module = "aperio.frame_structure")]
 pub mod frame_structure {
     #[pymodule_export]
     use super::FileFilter;

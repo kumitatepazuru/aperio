@@ -1,4 +1,5 @@
-use aperio_derive::ApplyPartial;
+use anyhow::{anyhow, Result};
+use aperio_derive::{ApplyPartial, PyDataclass};
 use napi_derive::napi;
 use pyo3::prelude::*;
 use std::sync::{OnceLock, RwLock};
@@ -6,8 +7,8 @@ use std::sync::{OnceLock, RwLock};
 use crate::structs::frame_structure::ItemStructure;
 
 #[napi(object)]
-#[pyclass(from_py_object)]
-#[derive(Clone)]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, PyDataclass, Debug)]
 pub struct ViewerState {
     #[napi(ts_type = "'playing' | 'paused'")]
     pub state: String,
@@ -16,8 +17,8 @@ pub struct ViewerState {
 }
 
 #[napi(object)]
-#[pyclass(from_py_object)]
-#[derive(Clone)]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, PyDataclass, Debug)]
 pub struct FrameState {
     pub width: i32,
     pub height: i32,
@@ -25,8 +26,8 @@ pub struct FrameState {
 }
 
 #[napi(object)]
-#[pyclass(from_py_object)]
-#[derive(Clone)]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, PyDataclass, Debug)]
 pub struct ColorPickerState {
     #[napi(ts_type = "'HSV' | 'LCH' | 'okLCH' | 'LAB' | 'okLAB'")]
     pub color_space: String,
@@ -40,8 +41,8 @@ pub struct ColorPickerState {
 /// renderer 間で同期する直列化可能なアプリケーション状態。
 /// main_selected_item_id は None のとき JS 側では null になる（ts_type 注記参照）。
 #[napi(object)]
-#[pyclass(from_py_object)]
-#[derive(Clone)]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, PyDataclass)]
 pub struct SyncableState {
     pub viewer_state: ViewerState,
     pub timeline_items: Vec<ItemStructure>,
@@ -97,19 +98,19 @@ fn state() -> &'static RwLock<SyncableState> {
     STORE_STATE.get_or_init(|| RwLock::new(default_state()))
 }
 
+#[pyfunction]
 #[napi]
-pub fn store_get_state() -> napi::Result<SyncableState> {
+pub fn store_get_state() -> Result<SyncableState> {
     state()
         .read()
         .map(|s| s.clone())
-        .map_err(|e| napi::Error::from_reason(e.to_string()))
+        .map_err(|e| anyhow!(e.to_string()))
 }
 
+#[pyfunction]
 #[napi]
-pub fn store_set_partial(mut partial: SyncableStatePartial) -> napi::Result<()> {
-    let mut s = state()
-        .write()
-        .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+pub fn store_set_partial(mut partial: SyncableStatePartial) -> Result<()> {
+    let mut s = state().write().map_err(|e| anyhow!(e.to_string()))?;
 
     partial.apply_to(&mut s);
 
@@ -129,6 +130,10 @@ pub fn store_set_partial(mut partial: SyncableStatePartial) -> napi::Result<()> 
 #[pymodule]
 pub mod store {
     #[pymodule_export]
+    use super::store_get_state;
+    #[pymodule_export]
+    use super::store_set_partial;
+    #[pymodule_export]
     use super::ColorPickerState;
     #[pymodule_export]
     use super::FrameState;
@@ -138,8 +143,4 @@ pub mod store {
     use super::SyncableStatePartial;
     #[pymodule_export]
     use super::ViewerState;
-    // #[pymodule_export]
-    // use super::store_get_state;
-    // #[pymodule_export]
-    // use super::store_set_partial;
 }

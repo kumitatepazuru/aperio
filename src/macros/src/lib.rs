@@ -6,6 +6,7 @@ use syn::punctuated::Punctuated;
 use syn::{bracketed, parse_macro_input, Data, DeriveInput, Fields, Ident, Token};
 
 mod plugin_events;
+mod register_submodules;
 
 struct ApplyPartialArgs {
     target: Ident,
@@ -93,6 +94,22 @@ pub fn impl_plugin_event_methods(input: TokenStream) -> TokenStream {
     plugin_events::impl_plugin_event_methods(input)
 }
 
+
+/// `#[pymodule] mod` に適用すると、サブモジュールをすべて `sys.modules` に
+/// 自動登録する `#[pymodule_init]` を生成する。
+///
+/// ```rust,ignore
+/// #[register_submodules]
+/// #[pymodule]
+/// mod aperio {
+///     #[pymodule_export]
+///     use super::avloader::avloader_register;
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn register_submodules(attr: TokenStream, item: TokenStream) -> TokenStream {
+    register_submodules::register_submodules(attr, item)
+}
 
 #[proc_macro_derive(PyDataclass)]
 pub fn pydataclass(item: TokenStream) -> TokenStream {

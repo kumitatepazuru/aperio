@@ -1,12 +1,13 @@
-use pyo3::{prelude::*, types::PyDict, wrap_pymodule};
 use crate::structs::*;
+use aperio_derive::register_submodules;
+use pyo3::{prelude::*, types::PyDict};
 
 pub mod avloader;
 pub mod gpu_util;
 pub mod logger;
 pub mod text_rendering;
 
-
+#[register_submodules]
 #[pymodule]
 mod aperio {
     #[pymodule_export]
@@ -27,9 +28,7 @@ mod aperio {
 /// aperio / aperio.gpu_util / aperio.logger / aperio.frame_structure をすべて
 /// sys.modules に登録する。
 pub fn register_all(py: Python<'_>, sys_modules: &Bound<'_, PyDict>) -> PyResult<()> {
-    let aperio_mod = PyModule::new(py, "aperio")?;
-    aperio_mod.add_wrapped(wrap_pymodule!(aperio))?;
-
-    sys_modules.set_item("aperio", aperio_mod)?;
+    // macroによって生成された隠しモジュールを使用して、サブモジュールも含めてすべて登録する
+    sys_modules.set_item("aperio", aperio::_PYO3_DEF.make_module(py)?)?;
     Ok(())
 }

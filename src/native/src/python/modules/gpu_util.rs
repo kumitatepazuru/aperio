@@ -380,6 +380,8 @@ pub mod gpu_util_register {
     #[pymodule_export]
     use super::PyCompiledTextureFunc;
     #[pymodule_export]
+    use super::PyCompiledWgsl;
+    #[pymodule_export]
     use super::PyImageGenerateBuilder;
     #[pymodule_export]
     use super::PyImageGenerator;

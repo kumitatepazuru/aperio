@@ -17,12 +17,12 @@
     "artifacts": "napi artifacts",
     "napi:build": "bun run scripts/pmkdir.ts dist/native && napi build --package aperio --platform --release --output-dir dist/ --js native/index.js --esm --dts native/index.d.ts",
     "napi:debug": "bun run scripts/pmkdir.ts dist/native && napi build --package aperio --platform --output-dir dist/ --js native/index.js --esm --dts native/index.d.ts",
-    "python:stubgen": "rm -rf src-python/out/aperio_plugin && uv run stubgen src-python/src/ -o src-python/out --include-docstrings",
-    "python:check": "uv run python -m mypy.stubtest src-python/src/aperio_plugin",
+    "plugin:stubgen": "rm -rf src-python/out/aperio_plugin && uv run stubgen src-python/src/ -o src-python/out --include-docstrings",
+    "plugin:check": "uv run python -m mypy.stubtest src-python/src/aperio_plugin",
     "uv:update": "uv run scripts/update-uv.py",
-    "wrapper:build": "uvx maturin build -m src/wrapper/Cargo.toml",
-    "wrapper:release": "uvx maturin build -m src/wrapper/Cargo.toml --release",
-    "wrapper:stubgen": "uvx maturin generate-stubs --out src-python/out/ -m src/wrapper/Cargo.toml"
+    "python:build": "uvx maturin build -m src/native/Cargo.toml",
+    "python:release": "uvx maturin build -m src/native/Cargo.toml --release",
+    "python:stubgen": "uvx maturin generate-stubs --out src-python/out/ -m src/native/Cargo.toml"
   },
   "dependencies": {
     "@dnd-kit/react": "^0.3.2",
