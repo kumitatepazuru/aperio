@@ -1,9 +1,12 @@
 use aperio_derive::ApplyPartial;
 use napi_derive::napi;
+use pyo3::prelude::*;
 use std::sync::{OnceLock, RwLock};
-use crate::frame_structure::ItemStructure;
+
+use crate::structs::frame_structure::ItemStructure;
 
 #[napi(object)]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ViewerState {
     #[napi(ts_type = "'playing' | 'paused'")]
@@ -13,6 +16,7 @@ pub struct ViewerState {
 }
 
 #[napi(object)]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct FrameState {
     pub width: i32,
@@ -21,6 +25,7 @@ pub struct FrameState {
 }
 
 #[napi(object)]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ColorPickerState {
     #[napi(ts_type = "'HSV' | 'LCH' | 'okLCH' | 'LAB' | 'okLAB'")]
@@ -35,6 +40,7 @@ pub struct ColorPickerState {
 /// renderer 間で同期する直列化可能なアプリケーション状態。
 /// main_selected_item_id は None のとき JS 側では null になる（ts_type 注記参照）。
 #[napi(object)]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct SyncableState {
     pub viewer_state: ViewerState,
@@ -50,7 +56,8 @@ pub struct SyncableState {
 /// main_selected_item_id を null にしたい場合は selected_item_ids を空配列にすること
 /// （apply_to が自動的に None にクリアする）。
 #[napi(object)]
-#[derive(ApplyPartial)]
+#[derive(ApplyPartial, Clone)]
+#[pyclass(from_py_object)]
 #[apply_partial(target = SyncableState, skip = [selected_item_ids, main_selected_item_id])]
 pub struct SyncableStatePartial {
     pub viewer_state: Option<ViewerState>,
@@ -117,4 +124,22 @@ pub fn store_set_partial(mut partial: SyncableStatePartial) -> napi::Result<()> 
     }
 
     Ok(())
+}
+
+#[pymodule]
+pub mod store {
+    #[pymodule_export]
+    use super::ColorPickerState;
+    #[pymodule_export]
+    use super::FrameState;
+    #[pymodule_export]
+    use super::SyncableState;
+    #[pymodule_export]
+    use super::SyncableStatePartial;
+    #[pymodule_export]
+    use super::ViewerState;
+    // #[pymodule_export]
+    // use super::store_get_state;
+    // #[pymodule_export]
+    // use super::store_set_partial;
 }

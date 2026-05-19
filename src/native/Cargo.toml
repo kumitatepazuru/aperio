@@ -18,13 +18,15 @@ tokio-tungstenite = "0.28.0"
 toml_edit = "0.23.7"
 thiserror = "2.0.17"
 gpu_util = { path = "../gpu_util" }
-wrapper = { path = "../wrapper" }
 text_rendering = { path = "../text_rendering" }
+avloader = { path = "../avloader" }
+numpy = "0.28.0"
 tokio = { workspace = true, features = ["macros", "sync"] }
-pyo3 = { workspace = true }
+pyo3 = { workspace = true, features = ["experimental-inspect", "anyhow"]}
 anyhow = { workspace = true }
 env_logger = "0.11.8"
 log = { workspace = true }
+wgpu = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.178"

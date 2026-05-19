@@ -1,4 +1,5 @@
-use crate::util::get_data_dir;
+use crate::python::modules;
+use crate::utils::get_data_dir;
 use crate::Dirs;
 use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;
@@ -20,7 +21,7 @@ pub fn initialize_python(dir: &Dirs) -> Result<Py<PyAny>> {
         // aperio / aperio.gpu_util / aperio.logger / aperio.frame_structure をまとめて注入
         let modules = sys.getattr("modules")?;
         let modules = modules.cast::<PyDict>()?;
-        wrapper::register_all(py, modules)?;
+        modules::register_all(py, modules)?;
 
         // プラグインマネージャーのパスをsys.pathに追加
         let sys_path = sys.getattr("path")?;

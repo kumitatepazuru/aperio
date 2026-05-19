@@ -3,6 +3,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+pub mod json_value;
+
 pub fn get_data_dir(dirs: &Dirs) -> Result<PathBuf> {
     let appdata_dir = PathBuf::from_str(&dirs.data_dir)?;
     if !appdata_dir.exists() {

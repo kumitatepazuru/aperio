@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
-    util::get_local_data_dir,
+    structs::{frame_structure::*, node_shared_texture::NodeOffscreenSharedTextureInfo},
+    utils::{get_local_data_dir, json_value::JsonValue},
 };
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
@@ -10,23 +11,21 @@ use gpu_util::texture_to_native::linux::SharedTextureHandle;
 use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
 // Python公開用の型は wrapper クレートから使用する
+use crate::python::modules::{
+    gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
+    text_rendering::FontsList,
+};
 use aperio_derive::impl_plugin_event_methods;
 use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
 use pyo3::prelude::*;
-use pyo3_stub_gen::define_stub_info_gatherer;
-use wrapper::{
-    frame_structure::*,
-    gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
-    json_value::JsonValue,
-    node_shared_texture::NodeOffscreenSharedTextureInfo,
-    text_rendering::FontsList,
-};
 
 mod app_config;
 mod python;
-mod util;
+mod store;
+mod structs;
+mod utils;
 
 #[cfg(target_os = "linux")]
 fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
@@ -54,7 +53,6 @@ pub struct Dirs {
     pub default_plugins_dir: String,
     pub dist_dir: String,
 }
-
 
 fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> {
     let default_version = &config.python.default_version;
@@ -257,5 +255,3 @@ impl_plugin_event_methods! {
         request_structure(GeneratorEvent::RequestStructure): JsonValue -> GeneratorInformation,
     }
 }
-
-define_stub_info_gatherer!(stub_info);

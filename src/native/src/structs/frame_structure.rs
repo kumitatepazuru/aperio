@@ -1,34 +1,29 @@
 use std::collections::HashMap;
 
-use aperio_derive::pydataclass;
+use aperio_derive::PyDataclass;
 use napi_derive::napi;
-use pyo3::{
-    prelude::*,
-    types::{PyDict, PyModuleMethods},
-};
-use pyo3_stub_gen::derive::{
-    gen_stub_pyclass, gen_stub_pyclass_complex_enum, gen_stub_pyclass_enum,
-};
+use pyo3::{prelude::*, types::PyDict};
+
+use crate::utils::json_value::JsonValue;
 
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
+#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct FileFilter {
     pub name: String,
     pub extensions: Vec<String>,
 }
 
-use crate::json_value::JsonValue;
-
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
+#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct ItemResult {
     pub width: i32,
     pub height: i32,
 }
 
 #[napi]
-#[gen_stub_pyclass_complex_enum]
-#[pyclass(module = "aperio.frame_structure")]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestStructureParameter {
     Float {
@@ -121,8 +116,7 @@ pub enum RequestStructureParameter {
 }
 
 #[napi(object)]
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.frame_structure", extends = PyDict)]
+#[pyclass(from_py_object, extends = PyDict)]
 #[derive(Clone, IntoPyObject)]
 pub struct GenerateStructure {
     pub id: String,   // UUIDが期待される
@@ -132,8 +126,7 @@ pub struct GenerateStructure {
 }
 
 #[napi(object)]
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.frame_structure", extends = PyDict)]
+#[pyclass(from_py_object, extends = PyDict)]
 #[derive(Clone, IntoPyObject)]
 pub struct ItemStructure {
     pub id: String,                      // アイテムのUUID
@@ -152,7 +145,8 @@ pub struct ItemStructure {
 }
 
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
+#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct GeneratorInformation {
     pub display_name: String,
     pub duration_frames: Option<i32>,
@@ -162,8 +156,7 @@ pub struct GeneratorInformation {
 }
 
 #[napi]
-#[gen_stub_pyclass_enum]
-#[pyclass(eq, module = "aperio.frame_structure")]
+#[pyclass(eq, from_py_object)]
 #[derive(PartialEq, Clone, Debug)]
 pub enum GeneratorEvent {
     New,
@@ -171,7 +164,8 @@ pub enum GeneratorEvent {
 }
 
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
+#[pyo3::pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
     pub object_plugins: HashMap<String, String>,
@@ -181,14 +175,21 @@ pub struct PluginNameInfo {
 // ---- モジュール登録 -------------------------------------------------------
 
 #[pymodule]
-pub fn frame_structure(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_class::<FileFilter>()?;
-    m.add_class::<ItemResult>()?;
-    m.add_class::<RequestStructureParameter>()?;
-    m.add_class::<GenerateStructure>()?;
-    m.add_class::<ItemStructure>()?;
-    m.add_class::<GeneratorInformation>()?;
-    m.add_class::<GeneratorEvent>()?;
-    m.add_class::<PluginNameInfo>()?;
-    Ok(())
+pub mod frame_structure {
+    #[pymodule_export]
+    use super::FileFilter;
+    #[pymodule_export]
+    use super::GenerateStructure;
+    #[pymodule_export]
+    use super::GeneratorEvent;
+    #[pymodule_export]
+    use super::GeneratorInformation;
+    #[pymodule_export]
+    use super::ItemResult;
+    #[pymodule_export]
+    use super::ItemStructure;
+    #[pymodule_export]
+    use super::PluginNameInfo;
+    #[pymodule_export]
+    use super::RequestStructureParameter;
 }

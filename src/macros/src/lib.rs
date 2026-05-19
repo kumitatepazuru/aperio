@@ -3,7 +3,7 @@ use quote::quote;
 use std::collections::HashSet;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{bracketed, parse_macro_input, Data, DeriveInput, Fields, Ident, LitStr, Token};
+use syn::{bracketed, parse_macro_input, Data, DeriveInput, Fields, Ident, Token};
 
 mod plugin_events;
 
@@ -93,53 +93,18 @@ pub fn impl_plugin_event_methods(input: TokenStream) -> TokenStream {
     plugin_events::impl_plugin_event_methods(input)
 }
 
-struct MacroArgs {
-    stub: bool,
-    module: Option<String>,
-}
 
-impl Parse for MacroArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut stub = false;
-        let mut module = None;
-
-        while !input.is_empty() {
-            let ident: Ident = input.parse()?;
-            if ident == "stub" {
-                stub = true;
-            } else if ident == "module" {
-                input.parse::<Token![=]>()?;
-                let lit: LitStr = input.parse()?;
-                module = Some(lit.value());
-            } else {
-                return Err(syn::Error::new(
-                    ident.span(),
-                    format!("unknown argument: {}", ident),
-                ));
-            }
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
-        }
-
-        Ok(MacroArgs { stub, module })
-    }
-}
-
-#[proc_macro_attribute]
-pub fn pydataclass(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(attr as MacroArgs);
+#[proc_macro_derive(PyDataclass)]
+pub fn pydataclass(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
-    let vis = &input.vis;
-    let attrs = &input.attrs;
 
     let fields = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Named(f) => &f.named,
-            _ => panic!("pydataclass requires named fields"),
+            _ => panic!("PyDataclass requires named fields"),
         },
-        _ => panic!("pydataclass only supports structs"),
+        _ => panic!("PyDataclass only supports structs"),
     };
 
     let field_names: Vec<_> = fields.iter().map(|f| f.ident.as_ref().unwrap()).collect();
@@ -159,34 +124,7 @@ pub fn pydataclass(attr: TokenStream, item: TokenStream) -> TokenStream {
     let repr_format_str = format!("{}({})", name, repr_fmt);
     let repr_args = field_names.iter().map(|n| quote! { self.#n });
 
-    let pyclass_attr = if let Some(ref module_str) = args.module {
-        quote! { #[pyo3::pyclass(get_all, eq, module = #module_str)] }
-    } else {
-        quote! { #[pyo3::pyclass(get_all, eq)] }
-    };
-
-    let stub_struct_attr = if args.stub {
-        quote! { #[pyo3_stub_gen::derive::gen_stub_pyclass] }
-    } else {
-        quote! {}
-    };
-
-    let stub_impl_attr = if args.stub {
-        quote! { #[pyo3_stub_gen::derive::gen_stub_pymethods] }
-    } else {
-        quote! {}
-    };
-
-    let expanded = quote! {
-        #(#attrs)*
-        #stub_struct_attr
-        #pyclass_attr
-        #[derive(Clone, PartialEq, Debug)]
-        #vis struct #name {
-            #( pub #field_names: #field_types, )*
-        }
-
-        #stub_impl_attr
+    quote! {
         #[pyo3::pymethods]
         impl #name {
             #[new]
@@ -198,7 +136,6 @@ pub fn pydataclass(attr: TokenStream, item: TokenStream) -> TokenStream {
                 format!(#repr_format_str, #(#repr_args),*)
             }
         }
-    };
-
-    expanded.into()
+    }
+    .into()
 }

@@ -1,50 +1,40 @@
 use std::collections::HashMap;
 
 use napi_derive::napi;
-use pyo3::{
-    pyclass, pymethods, pymodule,
-    types::{PyModule, PyModuleMethods},
-    Bound, Py, PyResult,
-};
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use pyo3::prelude::*;
 use text_rendering::{text_renderer::TextRenderer, CharGlyphData, PreparedText, TextSpec};
 
-use crate::gpu_util::PyTexture;
+use crate::python::modules::gpu_util::*;
 
 #[napi]
 pub type FontsList = HashMap<String, Vec<u16>>;
 
-#[gen_stub_pyclass]
 #[pyclass(module = "aperio.text_rendering")]
 pub struct PyTextRenderer {
     pub inner: TextRenderer,
 }
 
-#[gen_stub_pyclass]
 #[pyclass(module = "aperio.text_rendering")]
 pub struct PyTextSpec {
     pub inner: TextSpec,
 }
 
 /// `prepare_render_text` の戻り値。グリフデータを保持し、`run_render_text` / `run_render_chars` に渡す。
-#[gen_stub_pyclass]
 #[pyclass(module = "aperio.text_rendering")]
 pub struct PyPreparedText {
     pub inner: PreparedText,
 }
 
 /// 1 文字分のグリフ位置情報。`run_render_chars` の戻り値要素。
-#[gen_stub_pyclass]
 #[pyclass(module = "aperio.text_rendering")]
 pub struct PyCharGlyphData {
     pub inner: CharGlyphData,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyTextRenderer {
     #[new]
-    pub fn new(device: &crate::gpu_util::PyImageGenerator) -> Self {
+    pub fn new(device: &PyImageGenerator) -> Self {
         Self {
             inner: TextRenderer::new(&device.inner),
         }
@@ -110,7 +100,6 @@ impl PyTextRenderer {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyPreparedText {
     /// 出力テクスチャの幅（px）
@@ -126,7 +115,6 @@ impl PyPreparedText {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyCharGlyphData {
     /// 文字
@@ -160,7 +148,6 @@ impl PyCharGlyphData {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyTextSpec {
     #[new]
@@ -189,11 +176,14 @@ impl PyTextSpec {
     }
 }
 
-#[pymodule]
-pub fn text_rendering_register(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_class::<PyTextRenderer>()?;
-    m.add_class::<PyTextSpec>()?;
-    m.add_class::<PyPreparedText>()?;
-    m.add_class::<PyCharGlyphData>()?;
-    Ok(())
+#[pymodule(name = "text_rendering")]
+pub mod text_rendering_register {
+    #[pymodule_export]
+    use super::PyCharGlyphData;
+    #[pymodule_export]
+    use super::PyPreparedText;
+    #[pymodule_export]
+    use super::PyTextRenderer;
+    #[pymodule_export]
+    use super::PyTextSpec;
 }

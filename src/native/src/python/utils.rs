@@ -1,4 +1,4 @@
-use crate::util::get_local_data_dir;
+use crate::utils::get_local_data_dir;
 use crate::Dirs;
 use anyhow::{bail, Context, Result};
 use pyo3::ffi::*;

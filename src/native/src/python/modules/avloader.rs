@@ -1,16 +1,14 @@
 use avloader::{ColorFormat, VideoLoader};
 use numpy::{ndarray::Array3, IntoPyArray, PyArray3};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyModule};
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
+use pyo3::{exceptions::PyValueError, prelude::*};
 
-use crate::gpu_util::{PyImageGenerator, PyTexture};
+use crate::python::modules::gpu_util::*;
 
 // ─────────────────────────────────────────────────────────────
 //  ColorFormat ラッパー
 // ─────────────────────────────────────────────────────────────
 
-#[gen_stub_pyclass_enum]
-#[pyclass(module = "aperio.avloader", name = "ColorFormat", eq)]
+#[pyclass(from_py_object, name = "ColorFormat", eq)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PyColorFormat {
     RgbUnorm,
@@ -45,13 +43,12 @@ impl From<ColorFormat> for PyColorFormat {
 /// # GPU テクスチャ (Rgba8Unorm)
 /// tex = loader.get_texture_frame(1)
 /// ```
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.avloader")]
+
+#[pyclass]
 pub struct PyVideoLoader {
     inner: VideoLoader,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyVideoLoader {
     /// 動画ファイルを開く。
@@ -141,9 +138,10 @@ impl PyVideoLoader {
 //  モジュール登録
 // ─────────────────────────────────────────────────────────────
 
-#[pymodule]
-pub fn avloader_register(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_class::<PyColorFormat>()?;
-    m.add_class::<PyVideoLoader>()?;
-    Ok(())
+#[pymodule(name = "avloader")]
+pub mod avloader_register {
+    #[pymodule_export]
+    use super::PyColorFormat;
+    #[pymodule_export]
+    use super::PyVideoLoader;
 }

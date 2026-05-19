@@ -22,8 +22,7 @@
     "uv:update": "uv run scripts/update-uv.py",
     "wrapper:build": "uvx maturin build -m src/wrapper/Cargo.toml",
     "wrapper:release": "uvx maturin build -m src/wrapper/Cargo.toml --release",
-    "wrapper:stub": "cargo run -p wrapper --bin stub_gen",
-    "wrapper:stubgen": "run-s wrapper:stub && rm -rf src-python/out/aperio && mv src/wrapper/aperio src-python/out/aperio"
+    "wrapper:stubgen": "uvx maturin generate-stubs --out src-python/out/ -m src/wrapper/Cargo.toml"
   },
   "dependencies": {
     "@dnd-kit/react": "^0.3.2",

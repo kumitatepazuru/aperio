@@ -1,0 +1,16 @@
+from typing import final
+
+@final
+class ColorPickerState: ...
+
+@final
+class FrameState: ...
+
+@final
+class SyncableState: ...
+
+@final
+class SyncableStatePartial: ...
+
+@final
+class ViewerState: ...
