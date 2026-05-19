@@ -1,5 +1,6 @@
 import os
 
+from aperio import logger, store
 import aperio_plugin
 from aperio.avloader import PyVideoLoader
 from aperio.frame_structure import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
@@ -25,11 +26,21 @@ class VideoObject(ObjectGeneratorBase):
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
-    def on_request_structure(self, _: dict) -> GeneratorInformation:
+    def on_request_structure(self, params: dict) -> GeneratorInformation:
+        paths = params.get("video_path", [])
+        path = paths[0] if paths else ""
+        if path not in self.video_loaders:
+            # TODO: 開けなかったときにUIで通知する
+            if os.path.exists(path):
+                loader = PyVideoLoader(path=path, image_generator=aperio_plugin.image_generator)
+                self.video_loaders[path] = loader
+                self.compiled_funcs[path] = PyCompiledTextureFunc("video_frame", loader.get_frame_for_pipeline)
+
+        fps = store.store_get_state().frame_state.fps
         return GeneratorInformation(
             display_name=self.display_name,
             duration_frames=300,
-            max_frame=None,
+            max_frame=int(loader.duration/fps) if (loader := self.video_loaders.get(path)) else None,
             min_frame=None,
             structure=[
                 RequestStructureParameter.File(
@@ -51,15 +62,7 @@ class VideoObject(ObjectGeneratorBase):
         paths = params.args.get("video_path", [""])
         if not paths:
             return None
-
         path = paths[0]
-        if path not in self.video_loaders:
-            # TODO: 開けなかったときにUIで通知する
-            if os.path.exists(path):
-                loader = PyVideoLoader(path=path, target_fps=params.fps, image_generator=aperio_plugin.image_generator)
-                self.video_loaders[path] = loader
-                self.compiled_funcs[path] = PyCompiledTextureFunc("video_frame", loader.get_frame_for_pipeline)
-
         video_loader = self.video_loaders.get(path)
         compiled_func = self.compiled_funcs.get(path)
         if video_loader is None or compiled_func is None:
@@ -69,7 +72,7 @@ class VideoObject(ObjectGeneratorBase):
 
         return GeneratorTextureReturn(
             compiled=compiled_func,
-            params=video_frame_number,
+            params=(video_frame_number, params.fps),
             output_width=video_loader.width,
             output_height=video_loader.height,
         )

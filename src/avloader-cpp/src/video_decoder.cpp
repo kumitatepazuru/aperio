@@ -48,7 +48,7 @@ struct AvLoader {
     // AVCOL_RANGE_MPEG(1)=limited, AVCOL_RANGE_JPEG(2)=full, AVCOL_RANGE_UNSPECIFIED(0)=unknown
     AVColorRange  color_range = AVCOL_RANGE_UNSPECIFIED;
     double        native_fps  = 0.0;
-    double        target_fps  = 0.0;
+    double        duration    = 0.0;  // total duration in seconds
     double        start_time  = 0.0;  // stream start in seconds (absolute timestamp base)
 
     // Hardware decoding
@@ -57,10 +57,11 @@ struct AvLoader {
     AVFrame*      hw_frame      = nullptr;  // temp buffer for HW→CPU transfer
 
     // Decoder working state (protected by decode_mutex)
-    AVFrame*  frame  = nullptr;
-    AVPacket* packet = nullptr;
+    AVFrame*  frame      = nullptr;
+    AVPacket* packet     = nullptr;
     double    last_decoded_time = -1.0;
     double    last_target_time  = -1.0;
+    double    last_target_fps   = 0.0;
 
     // sws contexts for RGB conversion (protected by decode_mutex)
     SwsContext* sws_rgb  = nullptr;
@@ -178,14 +179,14 @@ static void probe_hw_pixel_format(AvLoader* ldr) {
 
 // ─── core decode (must be called with decode_mutex held) ─────────────────────
 
-static bool decode_to_time(AvLoader* ldr, double target_time) {
+static bool decode_to_time(AvLoader* ldr, double target_time, double target_fps) {
     AVStream* stream = ldr->fmt_ctx->streams[ldr->video_stream_idx];
-    const double tol = 0.5 / ldr->target_fps;
+    const double tol = (target_fps > 0.0) ? 0.5 / target_fps : 0.02;
 
     // Seek when: first call, going backward, or jumping further ahead than the
     // prefetch-reset window (keeps the threshold consistent with the Rust cache).
-    const double seek_fwd_limit = (ldr->target_fps > 0.0)
-                                    ? PREFETCH_RESET_THRESH / ldr->target_fps : 2.0;
+    const double seek_fwd_limit = (target_fps > 0.0)
+                                    ? PREFETCH_RESET_THRESH / target_fps : 2.0;
 
     bool going_backward = (ldr->last_target_time >= 0.0) && (target_time < ldr->last_target_time - 0.001);
     const bool need_seek = ldr->last_decoded_time < 0.0
@@ -297,11 +298,9 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
 
 // ─── public API ─────────────────────────────────────────────────────────────
 
-AvLoaderHandle avloader_open(const char* path, double target_fps) {
+AvLoaderHandle avloader_open(const char* path) {
     auto* ldr = new (std::nothrow) AvLoader();
     if (!ldr) return nullptr;
-
-    ldr->target_fps = target_fps;
 
     if (avformat_open_input(&ldr->fmt_ctx, path, nullptr, nullptr) < 0) {
         delete ldr; return nullptr;
@@ -324,6 +323,12 @@ AvLoaderHandle avloader_open(const char* path, double target_fps) {
         ldr->start_time = stream->start_time * av_q2d(stream->time_base);
     else if (ldr->fmt_ctx->start_time != AV_NOPTS_VALUE)
         ldr->start_time = ldr->fmt_ctx->start_time / static_cast<double>(AV_TIME_BASE);
+
+    // Duration: prefer container-level value (most accurate), fall back to stream
+    if (ldr->fmt_ctx->duration != AV_NOPTS_VALUE && ldr->fmt_ctx->duration > 0)
+        ldr->duration = ldr->fmt_ctx->duration / static_cast<double>(AV_TIME_BASE);
+    else if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
+        ldr->duration = stream->duration * av_q2d(stream->time_base);
 
     // ── Try hardware decoders in priority order ───────────────────────────
     bool hw_opened = false;
@@ -404,6 +409,7 @@ int    avloader_height(AvLoaderHandle h)       { return static_cast<AvLoader*>(h
 int    avloader_pixel_format(AvLoaderHandle h) { return static_cast<int>(static_cast<AvLoader*>(h)->pix_fmt); }
 int    avloader_color_range(AvLoaderHandle h)  { return static_cast<int>(static_cast<AvLoader*>(h)->color_range); }
 double avloader_native_fps(AvLoaderHandle h)   { return static_cast<AvLoader*>(h)->native_fps; }
+double avloader_duration(AvLoaderHandle h)     { return static_cast<AvLoader*>(h)->duration; }
 
 int avloader_yuv_plane_count(AvLoaderHandle h) {
     return plane_count_for(static_cast<AvLoader*>(h));
@@ -415,7 +421,7 @@ void avloader_yuv_plane_info(AvLoaderHandle h, int plane_idx,
                        tex_width, tex_height, bytes_per_texel);
 }
 
-int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num,
+int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num, double target_fps,
                           int num_planes, uint8_t** plane_bufs,
                           const int* bytes_per_row) {
     auto* ldr = static_cast<AvLoader*>(h);
@@ -424,9 +430,9 @@ int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num,
     // target_time is absolute (includes stream start_time), matching the actual
     // pts values in the stream. Without start_time, every frame would appear to
     // go backward relative to last_decoded_time and trigger a seek.
-    double target_time = ldr->start_time + (frame_num - 1.0) / ldr->target_fps;
+    double target_time = ldr->start_time + (frame_num - 1.0) / target_fps;
 
-    if (!decode_to_time(ldr, target_time)) return -1;
+    if (!decode_to_time(ldr, target_time, target_fps)) return -1;
 
     int np = std::min(plane_count_for(ldr), num_planes);
     for (int p = 0; p < np; p++) {
@@ -448,13 +454,13 @@ int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num,
     return 0;
 }
 
-int avloader_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num,
+int avloader_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double target_fps,
                                uint8_t* out_buf, size_t /*buf_size*/, int channels) {
     auto* ldr = static_cast<AvLoader*>(h);
     std::lock_guard<std::mutex> lock(ldr->decode_mutex);
 
-    double target_time = ldr->start_time + (frame_num - 1.0) / ldr->target_fps;
-    if (!decode_to_time(ldr, target_time)) return -1;
+    double target_time = ldr->start_time + (frame_num - 1.0) / target_fps;
+    if (!decode_to_time(ldr, target_time, target_fps)) return -1;
 
     AVPixelFormat src_fmt = static_cast<AVPixelFormat>(ldr->frame->format);
     AVPixelFormat dst_fmt = (channels == 4) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24;

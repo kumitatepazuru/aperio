@@ -55,11 +55,10 @@ impl PyVideoLoader {
     ///
     /// # Arguments
     /// - `path`            : 動画ファイルパス（UTF-8）
-    /// - `target_fps`      : 出力フレームレート（videorate で変換）
     /// - `image_generator` : GPU リソース管理（`PyImageGenerator`）
     #[new]
-    pub fn new(path: &str, target_fps: f64, image_generator: &PyImageGenerator) -> PyResult<Self> {
-        let inner = VideoLoader::new(path, target_fps, image_generator.inner.clone())
+    pub fn new(path: &str, image_generator: &PyImageGenerator) -> PyResult<Self> {
+        let inner = VideoLoader::new(path, image_generator.inner.clone())
             .map_err(|e| PyValueError::new_err(format!("VideoLoader::new: {e}")))?;
         Ok(Self { inner })
     }
@@ -82,6 +81,12 @@ impl PyVideoLoader {
         self.inner.get_color_format().into()
     }
 
+    /// 動画の長さ（秒）。
+    #[getter]
+    pub fn duration(&self) -> f64 {
+        self.inner.get_duration()
+    }
+
     /// 指定フレーム（1 始まり）を numpy 配列で返す。
     ///
     /// **shape**: `(height, width, channels)` — channels は 3 (RGB) または 4 (RGBA)
@@ -93,10 +98,11 @@ impl PyVideoLoader {
         &self,
         py: Python<'py>,
         frame_number: u64,
+        target_fps: f64,
     ) -> PyResult<Bound<'py, PyArray3<u8>>> {
         let data = self
             .inner
-            .get_frame(frame_number)
+            .get_frame(frame_number, target_fps)
             .map_err(|e| PyValueError::new_err(format!("get_frame: {e}")))?;
 
         let h = self.inner.get_height() as usize;
@@ -113,8 +119,8 @@ impl PyVideoLoader {
     ///
     /// ネイティブ YUV フォーマット（I420/NV12/I422/I444 など）のまま GPU に転送するため
     /// CPU→GPU のデータ量を削減し、chroma subsampling の品質劣化が起きない。
-    pub fn get_texture_frame(&self, frame_number: u64) -> PyResult<PyTexture> {
-        let tex = self.inner.get_texture_frame(frame_number)?;
+    pub fn get_texture_frame(&self, frame_number: u64, target_fps: f64) -> PyResult<PyTexture> {
+        let tex = self.inner.get_texture_frame(frame_number, target_fps)?;
         let width = tex.width();
         let height = tex.height();
         Ok(PyTexture {
@@ -125,12 +131,14 @@ impl PyVideoLoader {
     }
 
     /// パイプライン経由で指定フレームを GPU テクスチャで返す利便メソッド。
+    /// params は `(frame_number, target_fps)` のタプル。
     pub fn get_frame_for_pipeline(
         &mut self,
         _inputs: Vec<Py<PyTexture>>,
-        frame_number: u64,
+        params: (u64, f64),
     ) -> PyResult<Option<PyTexture>> {
-        self.get_texture_frame(frame_number).map(Some)
+        let (frame_number, target_fps) = params;
+        self.get_texture_frame(frame_number, target_fps).map(Some)
     }
 }
 

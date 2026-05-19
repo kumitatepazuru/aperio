@@ -54,6 +54,7 @@ struct CacheState {
 
     current_frame: u64,
     fps: f64,
+    target_fps: f64,
 
     /// Frame the main thread urgently needs (set on cache miss).
     priority_frame: Option<u64>,
@@ -113,6 +114,7 @@ impl FrameCache {
             failed:          BTreeSet::new(),
             current_frame:   0,
             fps,
+            target_fps:      fps,
             priority_frame:  None,
             priority_failed: false,
             stop:            false,
@@ -138,9 +140,18 @@ impl FrameCache {
     /// * **LRU hit** – returned from the random-access cache.
     /// * **Miss** – background thread is asked to decode it first (blocks until done).
     ///   The decoded frame is also inserted into the LRU for future seeks.
-    pub fn get(&self, frame_num: u64) -> Option<Arc<CachedYuvFrame>> {
+    pub fn get(&self, frame_num: u64, target_fps: f64) -> Option<Arc<CachedYuvFrame>> {
         let inner = &self.inner;
         let mut state = inner.state.lock().unwrap();
+
+        // Flush all cached frames when target_fps changes: frame_num → timestamp
+        // mapping differs, so cached frames would correspond to wrong positions.
+        if (state.target_fps - target_fps).abs() > f64::EPSILON {
+            state.prefetch.clear();
+            state.lru = LruCache::new(LRU_CAPACITY);
+            state.failed.clear();
+            state.target_fps = target_fps;
+        }
 
         let sequential = state.prefetch.contains_key(&frame_num);
 
@@ -209,7 +220,7 @@ impl Drop for FrameCache {
 fn bg_worker(inner: Arc<FrameCacheInner>) {
     loop {
         // Wait until there is something to do
-        let (frame_to_decode, is_priority) = {
+        let (frame_to_decode, is_priority, target_fps) = {
             let mut state = inner
                 .bg_cond
                 .wait_while(inner.state.lock().unwrap(), |s| {
@@ -218,6 +229,8 @@ fn bg_worker(inner: Arc<FrameCacheInner>) {
                 .unwrap();
 
             if state.stop { break; }
+
+            let target_fps = state.target_fps;
 
             if let Some(pf) = state.priority_frame {
                 // If the frame is already in prefetch (race with sequential decode),
@@ -228,16 +241,16 @@ fn bg_worker(inner: Arc<FrameCacheInner>) {
                     continue;
                 }
                 state.priority_frame = None;
-                (pf, true)
+                (pf, true, target_fps)
             } else if let Some(next) = state.next_prefetch_target() {
-                (next, false)
+                (next, false, target_fps)
             } else {
                 continue;
             }
         };
 
         // Decode outside the lock (C++ decoder has its own mutex)
-        match decode_one(&inner.decoder, frame_to_decode, &inner.descs) {
+        match decode_one(&inner.decoder, frame_to_decode, &inner.descs, target_fps) {
             Some(frame) => {
                 let mut state = inner.state.lock().unwrap();
                 state.prefetch.insert(frame_to_decode, Arc::new(frame));
@@ -263,6 +276,7 @@ fn decode_one(
     decoder: &DecoderRef,
     frame_num: u64,
     descs: &[PlaneDesc],
+    target_fps: f64,
 ) -> Option<CachedYuvFrame> {
     let mut planes: Vec<Vec<u8>> = descs.iter().map(|d| vec![0u8; d.total_bytes()]).collect();
     let mut ptrs: Vec<*mut u8>   = planes.iter_mut().map(|v| v.as_mut_ptr()).collect();
@@ -272,6 +286,7 @@ fn decode_one(
         avloader_decode_frame(
             decoder.0,
             frame_num,
+            target_fps,
             descs.len() as i32,
             ptrs.as_mut_ptr(),
             strides.as_ptr(),
