@@ -61,7 +61,6 @@ const ObjectParameter = () => {
         timeline.map((item): ItemStructure => {
           if (item.id !== selectedItemId) return item;
           const bounded = applyBounds(item, struct, timeline);
-          console.log(bounded);
           return {
             ...bounded,
             object: { ...bounded.object, parameters: params },

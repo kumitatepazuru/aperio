@@ -8,6 +8,9 @@ import type {
 } from "native";
 import { create } from "zustand";
 
+export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
+export type DisplayMode = "0-1" | "0-255";
+
 // ─── Store 型 ─────────────────────────────────────────────────────────────────
 
 type Store = SyncableState & {

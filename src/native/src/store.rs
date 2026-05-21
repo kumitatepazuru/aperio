@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use std::sync::{OnceLock, RwLock};
 
 use crate::structs::frame_structure::ItemStructure;
+use crate::utils::NullOr;
 
 #[napi(object)]
 #[pyclass(from_py_object, get_all, eq)]
@@ -39,7 +40,6 @@ pub struct ColorPickerState {
 }
 
 /// renderer 間で同期する直列化可能なアプリケーション状態。
-/// main_selected_item_id は None のとき JS 側では null になる（ts_type 注記参照）。
 #[napi(object)]
 #[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, PyDataclass)]
@@ -49,23 +49,23 @@ pub struct SyncableState {
     pub frame_state: FrameState,
     pub selected_item_ids: Vec<String>,
     #[napi(ts_type = "string | null")]
-    pub main_selected_item_id: Option<String>,
+    pub main_selected_item_id: NullOr<String>,
     pub color_picker: ColorPickerState,
 }
 
 /// SyncableState の部分更新用。各フィールドが None の場合はその項目を更新しない。
-/// main_selected_item_id を null にしたい場合は selected_item_ids を空配列にすること
-/// （apply_to が自動的に None にクリアする）。
+/// main_selected_item_id を null にクリアしたい場合は Some(NullOr::Null) を渡す。
 #[napi(object)]
 #[derive(ApplyPartial, Clone)]
 #[pyclass(from_py_object)]
-#[apply_partial(target = SyncableState, skip = [selected_item_ids, main_selected_item_id])]
+#[apply_partial(target = SyncableState)]
 pub struct SyncableStatePartial {
     pub viewer_state: Option<ViewerState>,
     pub timeline_items: Option<Vec<ItemStructure>>,
     pub frame_state: Option<FrameState>,
     pub selected_item_ids: Option<Vec<String>>,
-    pub main_selected_item_id: Option<String>,
+    #[napi(ts_type = "string | null | undefined")]
+    pub main_selected_item_id: Option<NullOr<String>>,
     pub color_picker: Option<ColorPickerState>,
 }
 
@@ -83,7 +83,7 @@ fn default_state() -> SyncableState {
         },
         timeline_items: vec![],
         selected_item_ids: vec![],
-        main_selected_item_id: None,
+        main_selected_item_id: NullOr::Null,
         color_picker: ColorPickerState {
             color_space: "HSV".to_string(),
             display_mode: "0-255".to_string(),
@@ -113,17 +113,6 @@ pub fn store_set_partial(mut partial: SyncableStatePartial) -> Result<()> {
     let mut s = state().write().map_err(|e| anyhow!(e.to_string()))?;
 
     partial.apply_to(&mut s);
-
-    if let Some(ids) = partial.selected_item_ids {
-        if ids.is_empty() {
-            s.main_selected_item_id = None;
-        }
-        s.selected_item_ids = ids;
-    }
-    if let Some(main_id) = partial.main_selected_item_id {
-        s.main_selected_item_id = Some(main_id);
-    }
-
     Ok(())
 }
 
