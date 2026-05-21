@@ -1,7 +1,11 @@
 import useStore from "@shared/store";
 import { useShallow } from "zustand/shallow";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { snapFrame, clampLayerDelta, resolveGroupMoveDelta } from "@shared/utils/layerUtils";
+import {
+  snapFrame,
+  clampLayerDelta,
+  resolveGroupMoveDelta,
+} from "@shared/utils/layerUtils";
 import type { ItemStructure } from "native";
 
 type DragMode = "move" | "resize-start" | "resize-end";
@@ -152,7 +156,14 @@ const LayerItems = ({
               )
               .reduce((acc, o) => Math.max(acc, o.to), 0);
 
-            return { ...item, from: Math.max(desiredFrom, minFrom) };
+            return {
+              ...item,
+              from: Math.max(
+                desiredFrom,
+                minFrom,
+                item.min ? item.to - item.min : 0,
+              ),
+            };
           }
 
           // resize-end
@@ -173,7 +184,14 @@ const LayerItems = ({
             )
             .reduce((acc, o) => Math.min(acc, o.from), Infinity);
 
-          return { ...item, to: Math.min(desiredTo, maxTo) };
+          return {
+            ...item,
+            to: Math.min(
+              desiredTo,
+              maxTo,
+              item.max ? item.max + item.from : Infinity,
+            ),
+          };
         }),
       );
     };

@@ -55,21 +55,20 @@ const ObjectParameter = () => {
     return { ...item, min: newMin, max: newMax, from: newFrom, to: newTo };
   };
 
-  const applyStructBounds = async (
-    struct: GeneratorInformation,
-    itemId: string,
-  ) => {
+  const updateTimeline = async (struct: GeneratorInformation, params: Record<string, ConfigableValue>) => {
     const timeline = (await getStoreState()).timelineItems;
-    const item = timeline.find((i) => i.id === itemId);
-    if (!item) return;
-
-    const updated = applyBounds(item, struct, timeline);
-    if (updated === item) return;
-
-    setTimelineItems(
-      timeline.map((i): ItemStructure => (i.id === itemId ? updated : i)),
-    );
-  };
+      setTimelineItems(
+        timeline.map((item): ItemStructure => {
+          if (item.id !== selectedItemId) return item;
+          const bounded = applyBounds(item, struct, timeline);
+          console.log(bounded);
+          return {
+            ...bounded,
+            object: { ...bounded.object, parameters: params },
+          };
+        }),
+      );
+  }
 
   useEffect(() => {
     if (!selectedItem) {
@@ -77,16 +76,18 @@ const ObjectParameter = () => {
       setParams({});
       return;
     }
-    const itemId = selectedItem.id;
     window.main
       .requestParameterStruct(
         selectedItem.object.name,
         selectedItem.object.parameters,
       )
-      .then((struct) => {
+      .then(async (struct) => {
+        // TODO: 外部ファイルを参照している場合、保存→ファイル変更→読み込みをすると内部データの更新をする必要があるためupdateTimelineをここでも走らせている
+        // TODO: ただ、プロジェクト読み込み時にすべてのupdateをして将来的にこれは削除するべき
         setStructures(struct.structure);
-        setParams(initValues(struct.structure, selectedItem.object.parameters));
-        void applyStructBounds(struct, itemId);
+        const newParams = initValues(struct.structure, selectedItem.object.parameters);
+        setParams(newParams);
+        void updateTimeline(struct, newParams);
       })
       .catch(console.error);
     // selectedItemId が変わったときだけ初期化する
@@ -115,17 +116,8 @@ const ObjectParameter = () => {
         setParams(paramsToSave);
       }
 
-      const timeline = (await getStoreState()).timelineItems;
-      setTimelineItems(
-        timeline.map((item): ItemStructure => {
-          if (item.id !== selectedItemId) return item;
-          const bounded = applyBounds(item, struct, timeline);
-          return {
-            ...bounded,
-            object: { ...bounded.object, parameters: paramsToSave },
-          };
-        }),
-      );
+      // timelineのパラメータ情報を更新
+      await updateTimeline(struct, paramsToSave);
     } catch (error) {
       console.error("Error fetching parameter structure:", error);
     }
