@@ -1,3 +1,4 @@
+import math
 import os
 
 from aperio import logger, store
@@ -40,7 +41,7 @@ class VideoObject(ObjectGeneratorBase):
         return GeneratorInformation(
             display_name=self.display_name,
             duration_frames=300,
-            max_frame=int(loader.duration/fps) if (loader := self.video_loaders.get(path)) else None,
+            max_frame=math.ceil(loader.frame_count * fps / loader.fps) if (loader := self.video_loaders.get(path)) else None,
             min_frame=None,
             structure=[
                 RequestStructureParameter.File(

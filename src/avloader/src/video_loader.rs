@@ -84,7 +84,6 @@ pub struct VideoLoader {
     height: u32,
     color_format: ColorFormat,
     fps: f64,
-    duration: f64,
 
     plane_descs: Vec<PlaneDesc>,
     image_generator: ImageGenerator,
@@ -109,7 +108,6 @@ impl VideoLoader {
         let height = unsafe { avloader_height(handle) } as u32;
         let pix_fmt = unsafe { avloader_pixel_format(handle) };
         let fps = unsafe { avloader_native_fps(handle) };
-        let duration = unsafe { avloader_duration(handle) };
 
         let color_format = color_format_from_pix_fmt(pix_fmt);
         let layout = yuv_layout_from_pix_fmt(pix_fmt);
@@ -160,7 +158,6 @@ impl VideoLoader {
             height,
             color_format,
             fps,
-            duration,
             plane_descs,
             image_generator,
             yuv_pipeline,
@@ -179,8 +176,8 @@ impl VideoLoader {
     pub fn get_fps(&self) -> f64 {
         self.fps
     }
-    pub fn get_duration(&self) -> f64 {
-        self.duration
+    pub fn get_frame_count(&self) -> i64 {
+        unsafe { crate::ffi::avloader_frame_count(self.decoder.0) }
     }
 
     // ── get_frame ──────────────────────────────────────────────────────────

@@ -19,8 +19,8 @@ int    avloader_height(AvLoaderHandle h);
 int    avloader_pixel_format(AvLoaderHandle h);   // AVPixelFormat value (SW format)
 // AVColorRange: 1=MPEG/limited (16-235), 2=JPEG/full (0-255), 0=unspecified (treat as limited)
 int    avloader_color_range(AvLoaderHandle h);
-double avloader_native_fps(AvLoaderHandle h);
-double avloader_duration(AvLoaderHandle h);    // total duration in seconds
+double  avloader_native_fps(AvLoaderHandle h);
+int64_t avloader_frame_count(AvLoaderHandle h); // exact frame count (always > 0 for seekable files)
 
 // YUV plane info
 int  avloader_yuv_plane_count(AvLoaderHandle h);

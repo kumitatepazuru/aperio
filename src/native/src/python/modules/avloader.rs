@@ -81,10 +81,16 @@ impl PyVideoLoader {
         self.inner.get_color_format().into()
     }
 
-    /// 動画の長さ（秒）。
+    /// 動画のネイティブフレームレート（fps）。
     #[getter]
-    pub fn duration(&self) -> f64 {
-        self.inner.get_duration()
+    pub fn fps(&self) -> f64 {
+        self.inner.get_fps()
+    }
+
+    /// 動画の正確なフレーム数。
+    #[getter]
+    pub fn frame_count(&self) -> i64 {
+        self.inner.get_frame_count()
     }
 
     /// 指定フレーム（1 始まり）を numpy 配列で返す。
