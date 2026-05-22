@@ -16,9 +16,12 @@
           "platform": "linux | (!osx & !uwp & !(arm64 & windows))",
           "name": "nvcodec"
         },
-        "qsv",
         {
-          "platform": "linux",
+          "platform": "((x86 | x64) & (android | linux)) | (windows & !uwp)",
+          "name": "qsv"
+        },
+        {
+          "platform": "linux & !arm64",
           "name": "vaapi"
         },
         "vorbis",
