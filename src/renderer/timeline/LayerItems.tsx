@@ -158,10 +158,13 @@ const LayerItems = ({
 
             return {
               ...item,
-              from: Math.max(
-                desiredFrom,
-                minFrom,
-                item.min ? item.to - item.min : 0,
+              from: Math.min(
+                item.min ? item.to - item.min : Infinity, // minが設定されたときに自動的に引き延ばされるので、その実相を信用して当たり判定はここでは確認しない
+                Math.max(
+                  desiredFrom,
+                  minFrom,
+                  item.max ? item.to - item.max : 0,
+                ),
               ),
             };
           }
@@ -186,10 +189,14 @@ const LayerItems = ({
 
           return {
             ...item,
-            to: Math.min(
-              desiredTo,
-              maxTo,
-              item.max ? item.max + item.from : Infinity,
+            to: Math.max(
+              // minが設定されたときに自動的に引き延ばされるので、その実相を信用して当たり判定はここでは確認しない
+              item.min ? item.from + item.min : 0,
+              Math.min(
+                desiredTo,
+                maxTo,
+                item.max ? item.max + item.from : Infinity,
+              ),
             ),
           };
         }),

@@ -55,14 +55,11 @@ const fromNative = (state: SyncableState): SyncableState => ({
 });
 
 // zustand 内部の Partial<Store> を native の SyncableStatePartial に変換する。
-// mainSelectedItemId が null の場合は送信しない（selected_item_ids=[] による auto-clear に委ねる）。
-const toNativePartial = (partial: Partial<SyncableState>): SyncableStatePartial => {
-  const { mainSelectedItemId, ...rest } = partial;
-  const result: SyncableStatePartial = { ...rest };
-  if (mainSelectedItemId != null) {
-    result.mainSelectedItemId = mainSelectedItemId;
-  }
-  return result;
+// mainSelectedItemId: null は Some(NullOr::Null) として送信し、native 側で明示的にクリアさせる。
+const toNativePartial = (
+  partial: Partial<SyncableState>,
+): SyncableStatePartial => {
+  return { ...partial };
 };
 
 // ─── Internal Store ──────────────────────────────────────────────────────────
@@ -70,11 +67,6 @@ const toNativePartial = (partial: Partial<SyncableState>): SyncableStatePartial 
 const _useStore = create<Store>()((set, get) => {
   window.sync.onDiff((partial) => {
     const normalized: Partial<Store> = { ...partial };
-    // Rust が selected_item_ids=[] で auto-clear するのと対称に、
-    // diff を受け取った側も selectedItemIds=[] なら mainSelectedItemId を null にする。
-    if (partial.selectedItemIds?.length === 0) {
-      normalized.mainSelectedItemId = null;
-    }
     if (syncing) {
       diffQueue.push(normalized);
     } else {
@@ -127,7 +119,7 @@ const _useStore = create<Store>()((set, get) => {
     setSelectedItemId: (id: string | null) =>
       id !== null
         ? syncSet({ selectedItemIds: [id], mainSelectedItemId: id })
-        : syncSet({ selectedItemIds: [] }),
+        : syncSet({ selectedItemIds: [], mainSelectedItemId: null }),
     addSelectedItemId: (id: string) => {
       const current = get();
       syncSet({
@@ -138,7 +130,7 @@ const _useStore = create<Store>()((set, get) => {
     setSelectedItems: (ids: string[], mainId: string | null) =>
       mainId !== null
         ? syncSet({ selectedItemIds: ids, mainSelectedItemId: mainId })
-        : syncSet({ selectedItemIds: ids }),
+        : syncSet({ selectedItemIds: ids, mainSelectedItemId: null }),
     setColorPicker: (colorPicker: ColorPickerState) => syncSet({ colorPicker }),
   };
 });
@@ -202,16 +194,21 @@ export const getCurrentFrameStruct = async () => {
 // ─── 初回同期 ─────────────────────────────────────────────────────────────────
 
 async function initSync(): Promise<void> {
-  const nativeState = await window.sync.register();
-  _useStore.setState(fromNative(nativeState));
-  for (const diff of diffQueue.splice(0)) {
-    _useStore.setState(diff);
+  try {
+    const nativeState = await window.sync.register();
+    _useStore.setState(fromNative(nativeState));
+    for (const diff of diffQueue.splice(0)) {
+      _useStore.setState(diff);
+    }
+  } catch (err) {
+    console.error("[store] initSync failed:", err);
+  } finally {
+    syncing = false;
+    const resolve = syncReadyResolve;
+    syncReadyPromise = null;
+    syncReadyResolve = null;
+    resolve?.();
   }
-  syncing = false;
-  const resolve = syncReadyResolve;
-  syncReadyPromise = null;
-  syncReadyResolve = null;
-  resolve?.();
 }
 
 void initSync();

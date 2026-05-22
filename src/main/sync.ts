@@ -18,6 +18,7 @@ export class SyncServer {
     senderWebContentsId: number,
     partial: SyncableStatePartial,
   ): void {
+    storeSetPartial(partial);
     for (const id of this.renderers) {
       if (id === senderWebContentsId) continue;
       const wc = webContents.fromId(id);
@@ -27,6 +28,5 @@ export class SyncServer {
         this.renderers.delete(id);
       }
     }
-    storeSetPartial(partial);
   }
 }
