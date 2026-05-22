@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import frameToDate from "@/utils/frameToDate";
+import frameToDate from "@shared/utils/frameToDate";
 import useStore, { getCurrentFrameCount } from "@shared/store";
 import { useShallow } from "zustand/shallow";
 

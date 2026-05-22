@@ -1,15 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-from aperio.gpu_util import PyImageGenerator
-from aperio.text_rendering import PyTextRenderer
-
-if TYPE_CHECKING:
-    from .. import PluginManager
-
-
 class PluginBase:
     """
     プラグインの基底クラス。 サブクラスでオーバーライドして使用することを想定している。
@@ -45,9 +35,6 @@ class MainPluginBase(PluginBase):
     plugin_filesには、GeneratorBaseを継承したクラスを指定する。システムは、このリストに基づいてジェネレーターを認識する。
     """
 
-    manager: PluginManager
-    image_generator: PyImageGenerator
-    text_renderer: PyTextRenderer
     def __init__(self) -> None:
         """
         プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。

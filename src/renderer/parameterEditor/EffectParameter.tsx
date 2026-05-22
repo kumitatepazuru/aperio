@@ -13,7 +13,7 @@ import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable";
 import { FaAngleDown, FaAngleUp, FaXmark } from "react-icons/fa6";
 import { FaAngleDoubleDown, FaAngleDoubleUp } from "react-icons/fa";
 import { MdOutlineDragHandle } from "react-icons/md";
-import { hasSameItems } from "@/utils/hasSame";
+import { hasSameItems } from "@shared/utils/hasSame";
 
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   const result = [...arr];
@@ -57,8 +57,8 @@ const SortableEffectItem = ({
     window.main
       .requestParameterStruct(effect.name, currentParams)
       .then((struct) => {
-        setStructures(struct);
-        setParams(initValues(struct, currentParams));
+        setStructures(struct.structure);
+        setParams(initValues(struct.structure, currentParams));
       })
       .catch(console.error);
     // selectedItemId または effect.name が変わったときだけ初期化する
@@ -74,16 +74,16 @@ const SortableEffectItem = ({
       );
       if (
         hasSameItems(
-          struct.map((p) => p.id),
+          struct.structure.map((p) => p.id),
           structures.map((p) => p.id),
         )
       ) {
         onParamsChange(index, newParams);
       } else {
-        setStructures(struct);
+        setStructures(struct.structure);
         // 追加のパラメータを初期化する
         const newParamsWithInit = {
-          ...initValues(struct, newParams),
+          ...initValues(struct.structure, newParams),
           ...newParams,
         };
         setParams(newParamsWithInit);

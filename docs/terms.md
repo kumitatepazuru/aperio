@@ -9,7 +9,7 @@
 
 **定義:** タイムライン上に配置された編集要素の単位。動画・画像・テキストなどのオブジェクトと、それに付随するエフェクトをまとめたもの。
 
-**型:** `ItemStructure`（`src/shared/store.ts`）
+**型:** `ItemStructure`
 
 | フィールド | 型 | 意味 |
 |---|---|---|
@@ -17,6 +17,8 @@
 | `layer` | `number` | レイヤー番号（z-index）。0が最下層 |
 | `from` | `number` | 開始フレーム |
 | `to` | `number` | 終了フレーム |
+| `min` | `number` (optional) | 最小デュレーション（フレーム数）。プラグインの `minFrame` から自動設定 |
+| `max` | `number` (optional) | 最大デュレーション（フレーム数）。プラグインの `maxFrame` から自動設定 |
 | `x`, `y` | `number` | キャンバス上の位置（px） |
 | `scale` | `number` | 拡大率（%、100が等倍） |
 | `rotation` | `number` | 回転角（度） |
@@ -33,18 +35,19 @@
 - 旧称は `timelineLayers` / `TimelineLayerStructure`。Layer はz-index概念に限定するためリネーム済み。
 - `selectedItemIds` は複数形。かつての `selectedItemId: string[]`（単数形・複数値）から改名。
 - ループ変数は `item` を使う（`layer` は使わない）。
+- `min` / `max` は `GeneratorInformation.minFrame` / `maxFrame` の値をプラグイン呼び出し時に自動設定する。
 
 ### ItemStructure（ネイティブブリッジ型）
 
 **定義:** napi-rs が生成する native の構造体。Rust → Python・TypeScript 間のアイテムデータ転送フォーマット。
 
 **型定義:**
-- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct ItemStructure`
-- TypeScript: `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface ItemStructure`
-- Python: `src/wrapper/src/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemStructure`
+- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct ItemStructure`
+- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemStructure`
+- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemStructure(dict)`
 
 **フィールド（Python側）:**
-- `id`, `layer`, `from`, `to`, `x`, `y`, `scale`, `rotation`, `alpha` — アイテムの基本プロパティ
+- `id`, `layer`, `from`, `to`, `min`, `max`, `x`, `y`, `scale`, `rotation`, `alpha` — アイテムの基本プロパティ
 - `object: GenerateStructure` — オブジェクトプラグインのインスタンス情報
 - `effects: list[GenerateStructure]` — エフェクトプラグインのインスタンスリスト
 
@@ -72,20 +75,20 @@
 
 **定義:** アイテムの描画コンテンツ本体。Pythonプラグインで定義された種別（映像・画像・テキストなど）に対応する。
 
-**型:** `GenerateStructure`（`dist/native/index.d.ts`）
+**型:** `GenerateStructure`
 
 | フィールド | 型 | 意味 |
 |---|---|---|
 | `id` | `string` | UUID。インスタンス固有の識別子 |
 | `name` | `string` | プラグイン種別名。同種なら同じ値（例: `"image"`, `"text"`） |
 | `displayName` | `string` | UIに表示する名前 |
-| `parameters` | `Record<string, any>` | プラグインへ渡すパラメータ値の辞書 |
+| `parameters` | `Record<string, JsonValue>` | プラグインへ渡すパラメータ値の辞書 |
 
 **アクセス方法:** `item.object`（`ItemStructure` のフィールド）
 
 **注意:**
 - 旧称は `obj`。`object` に統一済み。
-- Rust構造体での定義: `pub object: GenerateStructure`（`src/wrapper/src/frame_structure.rs`）
+- Rust構造体での定義: `pub object: GenerateStructure`（`src/native/src/structs/frame_structure.rs`）
 - Pythonプラグインへ渡る際もフィールド名は `object` になる。
 
 ---
@@ -122,7 +125,7 @@
 | 名称 | 型 | 意味 |
 |---|---|---|
 | `params` | `Record<string, ConfigableValue>` | UI上で編集中のパラメータ値の辞書 |
-| `parameters` | `Record<string, any>` | `GenerateStructure` のフィールド名（native型の一部）。直接操作しない |
+| `parameters` | `Record<string, JsonValue>` | `GenerateStructure` のフィールド名（native型の一部）。直接操作しない |
 | `structures` | `RequestStructureParameter[]` | パラメータの定義（型・タイトル・デフォルト値など） |
 
 **注意:**
@@ -135,7 +138,10 @@
 
 **定義:** Object・Effect 両方が共有する実行時のプラグインインスタンス構造。napi-rs により native から生成される。
 
-**型定義:** `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface GenerateStructure`
+**型定義:**
+- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct GenerateStructure`
+- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface GenerateStructure`
+- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class GenerateStructure(dict)`
 
 **用法:**
 - `item.object` — オブジェクト本体としての GenerateStructure
@@ -148,15 +154,15 @@
 **定義:** フレームレンダリング後、各アイテムの出力サイズ情報を格納する型。
 
 **型定義:**
-- Rust: `src/wrapper/src/frame_structure.rs` → `pub struct ItemResult`
-- TypeScript: `src/wrapper/src/frame_structure.rs` → `dist/native/index.d.ts`(napiで定義) → `interface ItemResult`
-- Python: `src/wrapper/src/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemResult`
+- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct ItemResult`
+- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemResult`
+- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemResult`
 
 **フィールド:** `width: number`, `height: number`
 
 **用法:**
-- `frameState.frameResults: Record<string, ItemResult>` — アイテムIDをキーとした描画結果辞書
-- Overlay.tsx でアイテムの表示サイズ計算に使用
+- `frameResults: Record<string, ItemResult>` — ストアのトップレベルフィールド。アイテムIDをキーとした描画結果辞書
+- `Overlay.tsx` でアイテムの表示サイズ計算に使用
 
 ---
 
@@ -166,8 +172,9 @@
 
 **用法:**
 - `from`, `to` — アイテムの開始・終了フレーム番号（整数）
-- `frameCount` — 現在のフレーム番号
-- `frameState` — キャンバスの解像度と各アイテムのレンダリング結果 (`frameResults`)
+- `viewerState.beginFrame` — 現在（一時停止時）または再生開始時のフレーム番号
+- `frameState` — キャンバスの解像度とFPS（`FrameState: { width, height, fps }`）
+- `frameResults` — ストアのトップレベルフィールド。各アイテムのレンダリング結果（`Record<string, ItemResult>`）
 
 **注意:**
 - `Frame` クラス（`src/renderer/bridge.ts`）はフレームバッファの送受信を担うネットワーク層のクラス。映像フレームの概念とは別物。
@@ -185,7 +192,56 @@
 | Object Plugin | アイテムの映像コンテンツを生成するプラグイン |
 | Effect Plugin | アイテムに映像効果を適用するプラグイン |
 
-**参照:** `PluginNameInfo.objectPlugins`, `PluginNameInfo.effectPlugins`
+**参照:** `PluginNameInfo.basePlugin`, `PluginNameInfo.objectPlugins`, `PluginNameInfo.effectPlugins`
+
+**イベントシステム:**
+- プラグインのイベントハンドラーは `@event(type=GeneratorEvent.New)` 等のデコレーターで登録する。
+- `EventManager.call_event(plugin_name, type, params)` で統一的に呼び出す。
+- `params` 引数は常に `dict`。Effect の `New` イベントでも空の dict を渡す。
+
+---
+
+## GeneratorEvent
+
+**定義:** プラグインのイベント種別を識別するenum。Rustで定義しPyO3・napi経由でPython・TypeScriptに公開する。両言語間の手動同期は不要。
+
+**型定義:**
+- Rust: `src/native/src/structs/frame_structure.rs` → `pub enum GeneratorEvent`
+- Python: `aperio.frame_structure.GeneratorEvent`（PyO3経由、スタブは `src-python/out/aperio/frame_structure.pyi`）
+
+| バリアント | 意味 |
+|---|---|
+| `GeneratorEvent.New` | プラグインが新規追加されたときのイベント |
+| `GeneratorEvent.RequestStructure` | パラメータ構造の再取得イベント |
+
+**用法:**
+- `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定
+- `call_event(plugin_name, GeneratorEvent.New, params)` — EventManagerから呼び出す
+- Rust側: `GeneratorEvent::New` として `call_method1` の引数に渡す
+
+---
+
+## GeneratorInformation
+
+**定義:** プラグインイベント（`GeneratorEvent.New` および `GeneratorEvent.RequestStructure`）の共通戻り値型。プラグインの表示名・初期デュレーション・フレーム範囲・パラメータ構造をまとめて返す。
+
+**型定義:**
+- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct GeneratorInformation`
+- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface GeneratorInformation`
+- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class GeneratorInformation`
+
+| TypeScript フィールド | Python フィールド | TypeScript 型 | Python 型 | 意味 |
+|---|---|---|---|---|
+| `displayName` | `display_name` | `string` | `str` | UI表示名 |
+| `durationFrames` | `duration_frames` | `number \| undefined` | `int \| None` | 初期デュレーション（フレーム数）。Effectは `undefined` / `None` |
+| `maxFrame` | `max_frame` | `number \| undefined` | `int \| None` | 最大フレーム数の上限。制限なしは `undefined` / `None` |
+| `minFrame` | `min_frame` | `number \| undefined` | `int \| None` | 最小フレーム数の下限。制限なしは `undefined` / `None` |
+| `structure` | `structure` | `RequestStructureParameter[]` | `list[RequestStructureParameter]` | パラメータ構造定義 |
+
+**用法:**
+- `@event(type=GeneratorEvent.New)` デコレーターを付けたハンドラーの戻り値として返す
+- `@event(type=GeneratorEvent.RequestStructure)` デコレーターを付けたハンドラーの戻り値としても同型を返す
+- `call_event(plugin_name, GeneratorEvent.New, params)` / `call_event(plugin_name, GeneratorEvent.RequestStructure, params)` の戻り値型として型付けされている
 
 ---
 
@@ -224,7 +280,7 @@
 **用途:**
 - `item.object.name` — プラグインレジストリの検索キー（`object_plugins[name]` で引く）
 - `effect.name` — エフェクトプラグインの検索キー（`effect_plugins[name]` で引く）
-- TS側では `getPluginNames()` の戻り値 `objectPlugins`・`effectPlugins` のキーとして使われる
+- TS側では `getPluginNames()` の戻り値 `basePlugin`・`objectPlugins`・`effectPlugins` のキーとして使われる
 - エフェクトメニューでは `effectId.startsWith(baseId + ".")` でフィルタリングしている
 
 **注意:**

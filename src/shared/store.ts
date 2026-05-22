@@ -1,34 +1,20 @@
-import type { ItemResult, ItemStructure } from "native";
+import type {
+  ItemResult,
+  ItemStructure,
+  SyncableState,
+  SyncableStatePartial,
+  FrameState,
+  ColorPickerState,
+} from "native";
 import { create } from "zustand";
-import type { ColorValue } from "@/configable/utils";
-
-type ViewerState = {
-  state: "playing" | "paused";
-  changeTime: number; // 状態変更時刻のタイムスタンプ Date.now()基準（クロスrenderer同期のため）
-  beginFrame: number; // 再生開始フレーム
-};
-
-type FrameState = {
-  width: number;
-  height: number;
-  fps: number;
-};
 
 export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
 export type DisplayMode = "0-1" | "0-255";
 
-type Store = {
-  frameState: FrameState;
+// ─── Store 型 ─────────────────────────────────────────────────────────────────
+
+type Store = SyncableState & {
   frameResults: Record<string, ItemResult>;
-  viewerState: ViewerState;
-  timelineItems: ItemStructure[];
-  selectedItemIds: string[];
-  mainSelectedItemId: string | null;
-  colorPicker: {
-    colorSpace: ColorSpace;
-    displayMode: DisplayMode;
-    history: ColorValue[];
-  };
   play: (beginFrame: number) => void;
   pause: (beginFrame?: number) => void;
   setFrameState: (frameState: FrameState) => void;
@@ -38,146 +24,71 @@ type Store = {
   setSelectedItemId: (id: string | null) => void;
   addSelectedItemId: (id: string) => void;
   setSelectedItems: (ids: string[], mainId: string | null) => void;
-  setColorPicker: (colorPicker: Store["colorPicker"]) => void;
+  setColorPicker: (colorPicker: ColorPickerState) => void;
 };
 
-// 同期対象の直列化可能なstateのみ
-export type SyncableState = Pick<
-  Store,
-  | "viewerState"
-  | "timelineItems"
-  | "frameState"
-  | "selectedItemIds"
-  | "mainSelectedItemId"
-  | "colorPicker"
->;
-
-// ─── BroadcastChannel ────────────────────────────────────────────────────────
-
-type ChannelMessage =
-  | { type: "state"; data: Partial<SyncableState> }
-  /** 新クライアントが初回同期を開始。全クライアントのget/setをブロック */
-  | { type: "sync-lock" }
-  /** 初回同期完了。全クライアントのキューを drain してブロック解除 */
-  | { type: "sync-unlock" };
-
-const channel = new BroadcastChannel("aperio-store-sync");
-
-// ─── グローバルロック ─────────────────────────────────────────────────────────
-// 初回同期中は全クライアントの get/set をブロックする。
+// ─── 初回同期フラグ ───────────────────────────────────────────────────────────
 //
-// get のブロック方法:
-//   - useStore (React hook):       syncReadyPromise を throw → React Suspense が待機
-//   - useStore.getState() / getStoreState(): 同上。呼び出し元は catch して await するか
-//                                   Suspense に委譲する。
-//   - getCurrentFrameCount / getFrameStruct: async で syncReadyPromise を await してから
-//                                   _useStore.getState() を直接参照する。
-//
-// set のブロック方法:
-//   - setQueue に積み、drain 時に順番に適用する。
-//
-// drainQueue → Promise resolve の順を守ることで、resolve 後の再レンダリング・
-// await 再開時には最新 state が揃っている。
+// syncing=true の間:
+//   - useStore() は syncReadyPromise を throw → React Suspense が待機
+//   - getStoreState() は syncReadyPromise を await
+//   - 受信した diff は diffQueue に積む
+// syncing=false になったら:
+//   - diffQueue を drain してから syncReadyPromise を resolve
+//   - 以降の diff は即時適用
 
-let globalLockCount = 0;
-/** ロック中のみ存在。解除時に resolve される。 */
-let syncReadyPromise: Promise<void> | null = null;
+let syncing = true;
 let syncReadyResolve: (() => void) | null = null;
-const setQueue: Array<() => void> = [];
+let syncReadyPromise: Promise<void> | null = new Promise<void>((resolve) => {
+  syncReadyResolve = resolve;
+});
 
-function incrementLock() {
-  if (globalLockCount === 0) {
-    syncReadyPromise = new Promise<void>((resolve) => {
-      syncReadyResolve = resolve;
-    });
-  }
-  globalLockCount++;
-}
+const diffQueue: Array<Partial<Store>> = [];
 
-function decrementLock() {
-  globalLockCount--;
-  if (globalLockCount === 0) {
-    drainQueue();
-    const resolve = syncReadyResolve;
-    syncReadyPromise = null;
-    syncReadyResolve = null;
-    resolve?.();
-  }
-}
+// ─── 変換ユーティリティ ───────────────────────────────────────────────────────
 
-function drainQueue() {
-  const items = setQueue.splice(0);
-  for (const fn of items) fn();
-}
+// NAPI は Option<String> フィールドを None のとき undefined として返す。
+// mainSelectedItemId は ts_type="string | null" だが runtime は undefined になり得るため null に正規化する。
+const fromNative = (state: SyncableState): SyncableState => ({
+  ...state,
+  mainSelectedItemId: state.mainSelectedItemId ?? null,
+});
 
-/** 自分がロックを取得し、他クライアントにもロックを通知する */
-function acquireSyncLock() {
-  incrementLock();
-  channel.postMessage({ type: "sync-lock" } satisfies ChannelMessage);
-}
-
-/** ロックを解放し、他クライアントにも解放を通知。キューをdrainしてPromiseを解決する */
-function releaseSyncLock() {
-  channel.postMessage({ type: "sync-unlock" } satisfies ChannelMessage);
-  decrementLock();
-}
+// zustand 内部の Partial<Store> を native の SyncableStatePartial に変換する。
+// mainSelectedItemId: null は Some(NullOr::Null) として送信し、native 側で明示的にクリアさせる。
+const toNativePartial = (
+  partial: Partial<SyncableState>,
+): SyncableStatePartial => {
+  return { ...partial };
+};
 
 // ─── Internal Store ──────────────────────────────────────────────────────────
 
 const _useStore = create<Store>()((set, get) => {
-  channel.onmessage = (e: MessageEvent<ChannelMessage>) => {
-    const msg = e.data;
-    if (msg.type === "state") {
-      const apply = () => set(msg.data);
-      if (globalLockCount > 0) {
-        setQueue.push(apply);
-      } else {
-        apply();
-      }
-    } else if (msg.type === "sync-lock") {
-      incrementLock();
-    } else if (msg.type === "sync-unlock") {
-      decrementLock();
-    }
-  };
-
-  // setしつつ他のrendererへ伝播する。ロック中はキューイング。
-  const syncSet = (partial: Partial<SyncableState>) => {
-    const apply = () => {
-      set(partial);
-      channel.postMessage({
-        type: "state",
-        data: partial,
-      } satisfies ChannelMessage);
-    };
-    if (globalLockCount > 0) {
-      setQueue.push(apply);
+  window.sync.onDiff((partial) => {
+    const normalized: Partial<Store> = { ...partial };
+    if (syncing) {
+      diffQueue.push(normalized);
     } else {
-      apply();
+      set(normalized);
     }
+  });
+
+  const syncSet = (partial: Partial<SyncableState>) => {
+    set(partial);
+    window.sync.set(toNativePartial(partial));
   };
 
+  // デフォルト値は Rust 側で定義済み。
+  // ここは Suspense がブロックするため never rendered な placeholder。
   return {
-    frameState: {
-      width: 1920,
-      height: 1080,
-      fps: 60,
-    },
-    frameResults: {},
-    viewerState: {
-      state: "paused",
-      changeTime: Date.now(),
-      beginFrame: 0,
-    },
+    viewerState: { state: "paused", changeTime: 0, beginFrame: 0 },
     timelineItems: [],
-    pluginNames: undefined,
+    frameState: { width: 1920, height: 1080, fps: 60 },
     selectedItemIds: [],
     mainSelectedItemId: null,
-    colorPicker: {
-      colorSpace: "HSV",
-      displayMode: "0-255",
-      history: [],
-    },
+    colorPicker: { colorSpace: "HSV", displayMode: "0-255", history: [] },
+    frameResults: {},
     play: (beginFrame: number) =>
       syncSet({
         viewerState: {
@@ -206,7 +117,9 @@ const _useStore = create<Store>()((set, get) => {
       }),
     setTimelineItems: (items) => syncSet({ timelineItems: items }),
     setSelectedItemId: (id: string | null) =>
-      syncSet({ selectedItemIds: id ? [id] : [], mainSelectedItemId: id }),
+      id !== null
+        ? syncSet({ selectedItemIds: [id], mainSelectedItemId: id })
+        : syncSet({ selectedItemIds: [], mainSelectedItemId: null }),
     addSelectedItemId: (id: string) => {
       const current = get();
       syncSet({
@@ -215,9 +128,10 @@ const _useStore = create<Store>()((set, get) => {
       });
     },
     setSelectedItems: (ids: string[], mainId: string | null) =>
-      syncSet({ selectedItemIds: ids, mainSelectedItemId: mainId }),
-    setColorPicker: (colorPicker: Store["colorPicker"]) =>
-      syncSet({ colorPicker }),
+      mainId !== null
+        ? syncSet({ selectedItemIds: ids, mainSelectedItemId: mainId })
+        : syncSet({ selectedItemIds: ids, mainSelectedItemId: null }),
+    setColorPicker: (colorPicker: ColorPickerState) => syncSet({ colorPicker }),
   };
 });
 
@@ -225,8 +139,8 @@ const _useStore = create<Store>()((set, get) => {
 
 /**
  * Suspense-aware な zustand hook（default export）。
- * - useStore() / useStore(selector): ロック中は syncReadyPromise を throw → Suspense 待機
- * - useStore.getState(): バグリスクが高いため無効化。必要なら waitForStoreState() を使うこと。
+ * - useStore() / useStore(selector): 初回同期中は syncReadyPromise を throw → Suspense 待機
+ * - useStore.getState(): 同期ずれが発生する可能性があるため無効化。必要なら getStoreState() を使うこと。
  * - useStore.setState() / .subscribe(): _useStore に直接委譲
  */
 const useStore = Object.assign(
@@ -239,15 +153,14 @@ const useStore = Object.assign(
     subscribe: _useStore.subscribe.bind(_useStore),
   },
 ) as {
-  // 直接呼び出すとバグのもとになるため、型レベルで無効化。
+  // 直接呼び出すと同期ずれのもとになるため、型レベルで無効化。
   // vscodeのtsプラグインだとこれでエラーになるがtsに定義された動作ではないためかなりハック的。
   // TODO: 解決方法がわかり次第より安定した無効化実装に書き換え
   getState: () => void;
 } & typeof _useStore;
 
 /**
- * ロック中は syncReadyPromise を await してから state を取得する async ユーティリティ。
- * React 外で「ロックが解けるまで待ってから処理したい」ケースに使う。
+ * 初回同期中は syncReadyPromise を await してから state を取得する async ユーティリティ。
  */
 export async function getStoreState(): Promise<Store> {
   if (syncReadyPromise) await syncReadyPromise;
@@ -278,119 +191,27 @@ export const getCurrentFrameStruct = async () => {
     .sort((a, b) => a.layer - b.layer);
 };
 
-// ─── Rendezvous 初回同期 ─────────────────────────────────────────────────────
+// ─── 初回同期 ─────────────────────────────────────────────────────────────────
 
-let myClientId: number | null = null;
-/** 現在同期中の master clientId。死亡通知の照合に使う */
-let syncTargetClientId: number | null = null;
-/** master 死亡時に requestState の待機を即時中断するためのシグナル */
-let masterDeathSignal: (() => void) | null = null;
-
-function getSyncableState(): SyncableState {
-  // 内部呼び出し（provideState ハンドラ）なのでロックを bypass して直接取得する
-  const s = _useStore.getState();
-  return {
-    viewerState: s.viewerState,
-    timelineItems: s.timelineItems,
-    frameState: s.frameState,
-    selectedItemIds: s.selectedItemIds,
-    mainSelectedItemId: s.mainSelectedItemId,
-    colorPicker: s.colorPicker,
-  };
-}
-
-/**
- * ランデブーサーバーに master を問い合わせて state を1回取得試行する。
- * - 成功（state 取得）→ true
- * - master なし or 自分が master → true（同期不要）
- * - master 死亡通知 → false（呼び出し元がリトライ）
- */
-async function trySyncOnce(): Promise<boolean> {
-  const master = await window.rendezvous.getMaster();
-  if (!master.masterId || !master.masterWebContentsId) {
-    console.log("No master found. This client will be the master.");
-    return true;
-  }
-  if (master.masterId === myClientId) {
-    console.log("This client is the master. No need to sync.");
-    return true;
-  }
-
-  syncTargetClientId = master.masterId;
-
-  // master 死亡通知で即時 resolve できるよう Promise を用意
-  const deathPromise = new Promise<null>((resolve) => {
-    masterDeathSignal = () => resolve(null);
-  });
-
-  const state = await Promise.race([
-    window.rendezvous.requestState(master.masterWebContentsId),
-    deathPromise,
-  ]);
-
-  masterDeathSignal = null;
-  syncTargetClientId = null;
-
-  if (state) {
-    // ロックを保持したまま直接 set（syncSet を経由しない＝再キューイングしない）
-    console.log("State received from master. Sync complete.");
-    _useStore.setState(state);
-    return true;
-  }
-  console.log("Failed to get state from master. Will retry.");
-  return false; // 死亡 or タイムアウト → リトライ
-}
-
-async function initRendezvousSync(): Promise<void> {
-  // state 要求が来たら現在の state を返す（自分が master 候補のとき）
-  window.rendezvous.onProvideState((requesterId) => {
-    console.log(
-      `State requested by client ${requesterId}. Providing current state.`,
-    );
-    void window.rendezvous.stateResponse(requesterId, getSyncableState());
-  });
-
-  // master 死亡通知: 同期待機中なら即時中断して再試行させる
-  window.rendezvous.onClientDied((deadClientId) => {
-    console.log(
-      `Client ${deadClientId} died. Checking if it was the sync target.`,
-    );
-    if (syncTargetClientId === deadClientId && masterDeathSignal) {
-      masterDeathSignal();
-    }
-  });
-
-  // ロックをすぐに取得: register 完了前の get/set も含めてすべてブロック
-  acquireSyncLock();
-
+async function initSync(): Promise<void> {
   try {
-    const { clientId, masterId } = await window.rendezvous.register();
-    myClientId = clientId;
-
-    // ハートビート送信（2秒ごと）
-    setInterval(() => {
-      if (myClientId === null) return;
-      void window.rendezvous.heartbeat(myClientId).then((result) => {
-        if (result.clientId !== myClientId) {
-          myClientId = result.clientId;
-        }
-      });
-    }, 1000);
-
-    if (masterId !== null) {
-      // master がいる間はリトライし続ける
-      let done = false;
-      while (!done) {
-        done = await trySyncOnce();
-      }
+    const nativeState = await window.sync.register();
+    _useStore.setState(fromNative(nativeState));
+    for (const diff of diffQueue.splice(0)) {
+      _useStore.setState(diff);
     }
+  } catch (err) {
+    console.error("[store] initSync failed:", err);
   } finally {
-    // 成功・失敗どちらでも必ずロック解放 → drain → Promise resolve → get/set 再開
-    releaseSyncLock();
+    syncing = false;
+    const resolve = syncReadyResolve;
+    syncReadyPromise = null;
+    syncReadyResolve = null;
+    resolve?.();
   }
 }
 
-void initRendezvousSync();
+void initSync();
 
 // ─────────────────────────────────────────────────────────────────────────────
 

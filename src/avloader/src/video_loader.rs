@@ -96,10 +96,10 @@ unsafe impl Send for VideoLoader {}
 unsafe impl Sync for VideoLoader {}
 
 impl VideoLoader {
-    pub fn new(path: &str, target_fps: f64, image_generator: ImageGenerator) -> Result<Self> {
+    pub fn new(path: &str, image_generator: ImageGenerator) -> Result<Self> {
         let c_path = std::ffi::CString::new(path).context("Video path contains null byte")?;
 
-        let handle = unsafe { avloader_open(c_path.as_ptr(), target_fps) };
+        let handle = unsafe { avloader_open(c_path.as_ptr()) };
         if handle.is_null() {
             bail!("avloader_open failed: could not open \"{}\"", path);
         }
@@ -143,9 +143,9 @@ impl VideoLoader {
         let y_bpt = plane_descs.first().map_or(1, |d| d.bytes_per_texel);
         let yuv_params = match (y_bpt, is_full_range) {
             (1, false) => YuvConvParams::limited_8bit(),
-            (1, true)  => YuvConvParams::full_range_8bit(),
+            (1, true) => YuvConvParams::full_range_8bit(),
             (_, false) => YuvConvParams::limited_10bit_in_16(),
-            (_, true)  => YuvConvParams::full_range_10bit_in_16(),
+            (_, true) => YuvConvParams::full_range_10bit_in_16(),
         };
         let yuv_pipeline = YuvPipeline::new(&image_generator.device, layout, yuv_params);
         let decoder = Arc::new(DecoderRef(handle));
@@ -176,11 +176,14 @@ impl VideoLoader {
     pub fn get_fps(&self) -> f64 {
         self.fps
     }
+    pub fn get_frame_count(&self) -> i64 {
+        unsafe { crate::ffi::avloader_frame_count(self.decoder.0) }
+    }
 
     // ── get_frame ──────────────────────────────────────────────────────────
     /// Decode frame `frame_number` (1-based) and return RGB/RGBA bytes.
     /// Uses the C++ sws_scale path; does not go through the prefetch cache.
-    pub fn get_frame(&self, frame_number: u64) -> Result<Vec<u8>> {
+    pub fn get_frame(&self, frame_number: u64, target_fps: f64) -> Result<Vec<u8>> {
         let channels = self.color_format.channels();
         let size = self.width as usize * self.height as usize * self.color_format.bytes_per_pixel();
 
@@ -189,6 +192,7 @@ impl VideoLoader {
             avloader_decode_frame_rgb(
                 self.decoder.0,
                 frame_number,
+                target_fps,
                 buf.as_mut_ptr(),
                 buf.len(),
                 channels,
@@ -210,10 +214,14 @@ impl VideoLoader {
     /// Frame data is served from the prefetch cache when available (sequential
     /// playback), from the LRU cache on repeated random seeks, or decoded on
     /// demand on first access. The YUV→RGBA conversion runs on the GPU.
-    pub fn get_texture_frame(&self, frame_number: u64) -> Result<Arc<wgpu::Texture>> {
+    pub fn get_texture_frame(
+        &self,
+        frame_number: u64,
+        target_fps: f64,
+    ) -> Result<Arc<wgpu::Texture>> {
         let cached = self
             .frame_cache
-            .get(frame_number)
+            .get(frame_number, target_fps)
             .ok_or_else(|| anyhow::anyhow!("Failed to decode frame {}", frame_number))?;
 
         let plane_slices: Vec<&[u8]> = cached.planes.iter().map(|v| v.as_slice()).collect();

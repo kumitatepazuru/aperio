@@ -17,7 +17,7 @@ const ParameterEditor = () => {
   const onAddEffect = async (name: string) => {
     console.log("Add effect:", name);
 
-    const structure = await window.main.requestNewEffectGenerator(name);
+    const structure = await window.main.requestNewGenerator(name, {});
     const defaultParams: Record<string, unknown> = {};
     structure.structure.forEach((param) => {
       if (param.type === "Font") {

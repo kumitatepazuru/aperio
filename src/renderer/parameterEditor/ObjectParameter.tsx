@@ -2,12 +2,13 @@ import type { ConfigableValue } from "@/configable/utils";
 import Configable from "@/configable/Configable";
 import { initValues } from "@/configable/utils";
 import useStore, { getStoreState } from "@shared/store";
-import type { RequestStructureParameter } from "native";
+import type { GeneratorInformation, ItemStructure } from "native";
 import { useEffect, useState } from "react";
-import { hasSameItems } from "@/utils/hasSame";
+import { hasSameItems } from "@shared/utils/hasSame";
+import { resolveGroupMoveDelta } from "@shared/utils/layerUtils";
 
 const ObjectParameter = () => {
-  const [structures, setStructures] = useState<RequestStructureParameter[]>([]);
+  const [structures, setStructures] = useState<GeneratorInformation["structure"]>([]);
   const [params, setParams] = useState<Record<string, ConfigableValue>>({});
 
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
@@ -16,16 +17,57 @@ const ObjectParameter = () => {
     state.timelineItems.find((item) => item.id === state.mainSelectedItemId),
   );
 
-  const updateTimeline = async (newParams: Record<string, ConfigableValue>) => {
-    const timeline = (await getStoreState()).timelineItems;
-    setTimelineItems(
-      timeline.map((item) =>
-        item.id === selectedItemId
-          ? { ...item, object: { ...item.object, parameters: newParams } }
-          : item,
-      ),
-    );
+  /**
+   * struct の minFrame / maxFrame を item に適用し、必要に応じて from / to を調整した
+   * 新しい ItemStructure を返す。変更がなければ同一オブジェクトを返す。
+   *
+   * maxFrame 超過 → to を切り詰める。
+   * minFrame 未満 → resolveGroupMoveDelta で衝突を避けながら from / to を移動させて伸ばす。
+   * maxFrame < minFrame の矛盾がある場合は max 優先で min の調整をスキップする。
+   */
+  const applyBounds = (
+    item: ItemStructure,
+    struct: GeneratorInformation,
+    timeline: ItemStructure[],
+  ): ItemStructure => {
+    const newMin = struct.minFrame;
+    const newMax = struct.maxFrame;
+    if (newMin === item.min && newMax === item.max) return item;
+
+    let newFrom = item.from;
+    let newTo = item.to;
+
+    if (newMax !== undefined && newTo - newFrom > newMax) {
+      newTo = newFrom + newMax;
+    }
+
+    const maxConstraint = newMax ?? Infinity;
+    if (newMin !== undefined && newMin <= maxConstraint && newTo - newFrom < newMin) {
+      // minFrame に合わせた仮アイテムで resolveGroupMoveDelta を呼び、
+      // 衝突しない最近傍の位置（delta）を求める。
+      const initForMin = { id: item.id, from: newFrom, to: newFrom + newMin, layer: item.layer };
+      const movingIds = new Set([item.id]);
+      const delta = resolveGroupMoveDelta(timeline, movingIds, [initForMin], 0, 0);
+      newFrom = Math.max(0, newFrom + delta);
+      newTo = newFrom + newMin;
+    }
+
+    return { ...item, min: newMin, max: newMax, from: newFrom, to: newTo };
   };
+
+  const updateTimeline = async (struct: GeneratorInformation, params: Record<string, ConfigableValue>) => {
+    const timeline = (await getStoreState()).timelineItems;
+      setTimelineItems(
+        timeline.map((item): ItemStructure => {
+          if (item.id !== selectedItemId) return item;
+          const bounded = applyBounds(item, struct, timeline);
+          return {
+            ...bounded,
+            object: { ...bounded.object, parameters: params },
+          };
+        }),
+      );
+  }
 
   useEffect(() => {
     if (!selectedItem) {
@@ -38,9 +80,13 @@ const ObjectParameter = () => {
         selectedItem.object.name,
         selectedItem.object.parameters,
       )
-      .then((struct) => {
-        setStructures(struct);
-        setParams(initValues(struct, selectedItem.object.parameters));
+      .then(async (struct) => {
+        // TODO: 外部ファイルを参照している場合、保存→ファイル変更→読み込みをすると内部データの更新をする必要があるためupdateTimelineをここでも走らせている
+        // TODO: ただ、プロジェクト読み込み時にすべてのupdateをして将来的にこれは削除するべき
+        setStructures(struct.structure);
+        const newParams = initValues(struct.structure, selectedItem.object.parameters);
+        setParams(newParams);
+        void updateTimeline(struct, newParams);
       })
       .catch(console.error);
     // selectedItemId が変わったときだけ初期化する
@@ -56,23 +102,21 @@ const ObjectParameter = () => {
         selectedItem.object.name,
         newParams,
       );
+
+      let paramsToSave = newParams;
       if (
-        hasSameItems(
-          struct.map((p) => p.id),
+        !hasSameItems(
+          struct.structure.map((p) => p.id),
           structures.map((p) => p.id),
         )
       ) {
-        updateTimeline(newParams);
-      } else {
-        setStructures(struct);
-        // 追加のパラメータを初期化する
-        const newParamsWithInit = {
-          ...initValues(struct, newParams),
-          ...newParams,
-        };
-        setParams(newParamsWithInit);
-        await updateTimeline(newParamsWithInit);
+        setStructures(struct.structure);
+        paramsToSave = { ...initValues(struct.structure, newParams), ...newParams };
+        setParams(paramsToSave);
       }
+
+      // timelineのパラメータ情報を更新
+      await updateTimeline(struct, paramsToSave);
     } catch (error) {
       console.error("Error fetching parameter structure:", error);
     }

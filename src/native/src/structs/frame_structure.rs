@@ -1,32 +1,29 @@
 use std::collections::HashMap;
 
-use aperio_derive::pydataclass;
+use aperio_derive::PyDataclass;
 use napi_derive::napi;
-use pyo3::{
-    prelude::*,
-    types::{PyDict, PyList, PyModuleMethods},
-};
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_complex_enum};
+use pyo3::{prelude::*, types::PyDict};
+
+use crate::utils::json_value::JsonValue;
 
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct FileFilter {
     pub name: String,
     pub extensions: Vec<String>,
 }
 
-use crate::utils::json_to_pyobject;
-
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct ItemResult {
     pub width: i32,
     pub height: i32,
 }
 
 #[napi]
-#[gen_stub_pyclass_complex_enum]
-#[pyclass(module = "aperio.frame_structure")]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestStructureParameter {
     Float {
@@ -119,24 +116,25 @@ pub enum RequestStructureParameter {
 }
 
 #[napi(object)]
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.frame_structure", extends = PyDict)]
-#[derive(Clone)]
+#[pyclass(from_py_object, extends = PyDict)]
+#[derive(Clone, IntoPyObject, PartialEq, Debug)]
 pub struct GenerateStructure {
     pub id: String,   // UUIDが期待される
     pub name: String, // オブジェクトやエフェクトの固有名でIDとは違い種類が同じであれば同じになる
     pub display_name: String,
-    pub parameters: HashMap<String, serde_json::Value>, // パラメータの具体的な型はエフェクトによって異なるため、単にdict(serde_json::Value)型とする
+    pub parameters: HashMap<String, JsonValue>, // パラメータの具体的な型はエフェクトによって異なるため、単にdict(JsonValue)型とする
 }
 
 #[napi(object)]
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.frame_structure", extends = PyDict)]
+#[pyclass(from_py_object, extends = PyDict)]
+#[derive(Clone, IntoPyObject, PartialEq, Debug)]
 pub struct ItemStructure {
     pub id: String,                      // アイテムのUUID
     pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）
     pub from: i32,                       // アイテムの開始フレーム
     pub to: i32,                         // アイテムの終了フレーム
+    pub min: Option<i32>,                // アイテムの有効な最小フレーム（省略可能）
+    pub max: Option<i32>,                // アイテムの有効な最大フレーム（省略可能）
     pub x: i32,                          // アイテムのX座標
     pub y: i32,                          // アイテムのY座標
     pub scale: f64,                      // アイテムのスケール
@@ -147,87 +145,51 @@ pub struct ItemStructure {
 }
 
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
-pub struct NewObjectGeneratorReturn {
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
+pub struct GeneratorInformation {
     pub display_name: String,
-    pub duration_frames: i32,
+    pub duration_frames: Option<i32>,
+    pub max_frame: Option<i32>,
+    pub min_frame: Option<i32>,
     pub structure: Vec<RequestStructureParameter>,
 }
 
-#[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
-pub struct NewEffectGeneratorReturn {
-    pub display_name: String,
-    pub structure: Vec<RequestStructureParameter>,
+#[napi]
+#[pyclass(eq, from_py_object)]
+#[derive(PartialEq, Clone, Debug)]
+pub enum GeneratorEvent {
+    New,
+    RequestStructure,
 }
 
 #[napi(object)]
-#[pydataclass(stub, module = "aperio.frame_structure")]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
     pub object_plugins: HashMap<String, String>,
     pub effect_plugins: HashMap<String, String>,
 }
 
-// ---- IntoPyObject 実装 ---------------------------------------------------
-
-impl<'py> IntoPyObject<'py> for GenerateStructure {
-    type Target = PyDict;
-    type Output = Bound<'py, PyDict>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let dict = PyDict::new(py);
-        dict.set_item("id", self.id)?;
-        dict.set_item("name", self.name)?;
-        dict.set_item("display_name", self.display_name)?;
-        let params = PyDict::new(py);
-        for (k, v) in self.parameters {
-            params.set_item(k, json_to_pyobject(py, &v)?)?;
-        }
-        dict.set_item("parameters", params)?;
-        Ok(dict)
-    }
-}
-
-impl<'py> IntoPyObject<'py> for ItemStructure {
-    type Target = PyDict;
-    type Output = Bound<'py, PyDict>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let dict = PyDict::new(py);
-        dict.set_item("id", self.id)?;
-        dict.set_item("layer", self.layer)?;
-        dict.set_item("from", self.from)?;
-        dict.set_item("to", self.to)?;
-        dict.set_item("x", self.x)?;
-        dict.set_item("y", self.y)?;
-        dict.set_item("scale", self.scale)?;
-        dict.set_item("rotation", self.rotation)?;
-        dict.set_item("alpha", self.alpha)?;
-        dict.set_item("object", self.object.into_pyobject(py)?)?;
-        let effects = self
-            .effects
-            .into_iter()
-            .map(|e| e.into_pyobject(py))
-            .collect::<Result<Vec<_>, _>>()?;
-        dict.set_item("effects", PyList::new(py, effects)?)?;
-        Ok(dict)
-    }
-}
-
 // ---- モジュール登録 -------------------------------------------------------
 
-#[pymodule]
-pub fn frame_structure(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_class::<FileFilter>()?;
-    m.add_class::<ItemResult>()?;
-    m.add_class::<RequestStructureParameter>()?;
-    m.add_class::<GenerateStructure>()?;
-    m.add_class::<ItemStructure>()?;
-    m.add_class::<NewObjectGeneratorReturn>()?;
-    m.add_class::<NewEffectGeneratorReturn>()?;
-    m.add_class::<PluginNameInfo>()?;
-    Ok(())
+#[pymodule(module = "aperio.frame_structure")]
+pub mod frame_structure {
+    #[pymodule_export]
+    use super::FileFilter;
+    #[pymodule_export]
+    use super::GenerateStructure;
+    #[pymodule_export]
+    use super::GeneratorEvent;
+    #[pymodule_export]
+    use super::GeneratorInformation;
+    #[pymodule_export]
+    use super::ItemResult;
+    #[pymodule_export]
+    use super::ItemStructure;
+    #[pymodule_export]
+    use super::PluginNameInfo;
+    #[pymodule_export]
+    use super::RequestStructureParameter;
 }

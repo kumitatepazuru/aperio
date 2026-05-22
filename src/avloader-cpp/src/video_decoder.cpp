@@ -1,6 +1,7 @@
 #include "avloader.h"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -47,9 +48,10 @@ struct AvLoader {
     AVPixelFormat pix_fmt     = AV_PIX_FMT_NONE;
     // AVCOL_RANGE_MPEG(1)=limited, AVCOL_RANGE_JPEG(2)=full, AVCOL_RANGE_UNSPECIFIED(0)=unknown
     AVColorRange  color_range = AVCOL_RANGE_UNSPECIFIED;
-    double        native_fps  = 0.0;
-    double        target_fps  = 0.0;
-    double        start_time  = 0.0;  // stream start in seconds (absolute timestamp base)
+    double        native_fps       = 0.0;
+    double        duration         = 0.0;  // total duration in seconds
+    double        start_time       = 0.0;  // stream start in seconds (absolute timestamp base)
+    int64_t       probed_nb_frames = 0;    // frame count from end-of-file scan (0 = not probed)
 
     // Hardware decoding
     AVBufferRef*  hw_device_ctx = nullptr;
@@ -57,10 +59,11 @@ struct AvLoader {
     AVFrame*      hw_frame      = nullptr;  // temp buffer for HW→CPU transfer
 
     // Decoder working state (protected by decode_mutex)
-    AVFrame*  frame  = nullptr;
-    AVPacket* packet = nullptr;
+    AVFrame*  frame      = nullptr;
+    AVPacket* packet     = nullptr;
     double    last_decoded_time = -1.0;
     double    last_target_time  = -1.0;
+    double    last_target_fps   = 0.0;
 
     // sws contexts for RGB conversion (protected by decode_mutex)
     SwsContext* sws_rgb  = nullptr;
@@ -135,6 +138,58 @@ static AVPixelFormat codec_hw_pix_fmt(const AVCodec* codec, AVHWDeviceType type)
     }
 }
 
+// Seek to the last keyframe, scan remaining video packets for the maximum PTS,
+// and derive the exact frame count.  Resets the demuxer to the stream start
+// afterwards so subsequent decode calls begin from a clean state.
+// Called only for containers that do not store nb_frames (e.g. MKV/WebM).
+static void probe_end_pts(AvLoader* ldr) {
+    AVStream* stream = ldr->fmt_ctx->streams[ldr->video_stream_idx];
+
+    // Seek to the last keyframe.  Use the container duration as the target so
+    // the seek lands as close to the end as possible before reading forward.
+    int64_t seek_ts = (ldr->fmt_ctx->duration != AV_NOPTS_VALUE && ldr->fmt_ctx->duration > 0)
+                      ? av_rescale_q(ldr->fmt_ctx->duration, AV_TIME_BASE_Q, stream->time_base)
+                      : INT64_MAX;
+    if (av_seek_frame(ldr->fmt_ctx, ldr->video_stream_idx,
+                      seek_ts, AVSEEK_FLAG_BACKWARD) < 0) {
+        // Non-seekable stream – skip probe entirely.
+        return;
+    }
+
+    // Scan every remaining packet to find the maximum video PTS (display order).
+    // For B-frame content the packets near EOF are not in display order, so we
+    // must take the max rather than stopping at the first video packet.
+    AVPacket* pkt = av_packet_alloc();
+    if (!pkt) return;
+
+    int64_t max_pts = AV_NOPTS_VALUE;
+    while (av_read_frame(ldr->fmt_ctx, pkt) >= 0) {
+        if (pkt->stream_index == ldr->video_stream_idx) {
+            int64_t pts = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : pkt->dts;
+            if (pts != AV_NOPTS_VALUE && (max_pts == AV_NOPTS_VALUE || pts > max_pts))
+                max_pts = pts;
+        }
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+
+    if (max_pts != AV_NOPTS_VALUE && ldr->native_fps > 0.0) {
+        double last_frame_time = max_pts * av_q2d(stream->time_base);
+        double content_duration = last_frame_time - ldr->start_time;
+        // +1: the frame at last_frame_time itself is included in the count.
+        ldr->probed_nb_frames =
+            static_cast<int64_t>(std::round(content_duration * ldr->native_fps)) + 1;
+        // Also refine duration so the duration-based fallback in Python is accurate.
+        ldr->duration = content_duration + 1.0 / ldr->native_fps;
+    }
+
+    // Reset demuxer to stream start for subsequent decode calls.
+    int64_t seek_to = (stream->start_time != AV_NOPTS_VALUE) ? stream->start_time : 0;
+    av_seek_frame(ldr->fmt_ctx, ldr->video_stream_idx, seek_to, AVSEEK_FLAG_BACKWARD);
+    avcodec_flush_buffers(ldr->codec_ctx);
+    av_frame_unref(ldr->frame);
+}
+
 // Decode one frame to discover the actual SW pixel format produced by the HW
 // decoder, then reset state so callers start from a clean position.
 // Called only from avloader_open before the handle is shared.
@@ -178,14 +233,14 @@ static void probe_hw_pixel_format(AvLoader* ldr) {
 
 // ─── core decode (must be called with decode_mutex held) ─────────────────────
 
-static bool decode_to_time(AvLoader* ldr, double target_time) {
+static bool decode_to_time(AvLoader* ldr, double target_time, double target_fps) {
     AVStream* stream = ldr->fmt_ctx->streams[ldr->video_stream_idx];
-    const double tol = 0.5 / ldr->target_fps;
+    const double tol = (target_fps > 0.0) ? 0.5 / target_fps : 0.02;
 
     // Seek when: first call, going backward, or jumping further ahead than the
     // prefetch-reset window (keeps the threshold consistent with the Rust cache).
-    const double seek_fwd_limit = (ldr->target_fps > 0.0)
-                                    ? PREFETCH_RESET_THRESH / ldr->target_fps : 2.0;
+    const double seek_fwd_limit = (target_fps > 0.0)
+                                    ? PREFETCH_RESET_THRESH / target_fps : 2.0;
 
     bool going_backward = (ldr->last_target_time >= 0.0) && (target_time < ldr->last_target_time - 0.001);
     const bool need_seek = ldr->last_decoded_time < 0.0
@@ -218,6 +273,36 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
     av_frame_unref(ldr->frame);
     bool found = false;
 
+    // Lenient tolerance for EOF: accept the last native frame even when
+    // target_time falls up to one native-frame duration past its PTS.
+    // This occurs whenever target_fps > native_fps and the final project frame
+    // maps to a timestamp slightly beyond the last encoded frame.
+    const double eof_tol = (ldr->native_fps > 0.0)
+                           ? std::max(tol, 1.0 / ldr->native_fps)
+                           : tol;
+
+    // EOF fallback: the most recent frame within eof_tol (but outside tol).
+    // Kept alive across multiple recv_frames() calls so it is still available
+    // even if it was discarded (unref'd) before we reached the flush step.
+    AVFrame* candidate    = av_frame_alloc();
+    double   candidate_ft = -1.0;
+
+    // Helper: HW→SW transfer into ldr->frame. Returns false and unref's on error.
+    auto hw_transfer = [&]() -> bool {
+        if (ldr->hw_pix_fmt == AV_PIX_FMT_NONE
+            || ldr->frame->format != (int)ldr->hw_pix_fmt)
+            return true;
+        av_frame_unref(ldr->hw_frame);
+        if (av_hwframe_transfer_data(ldr->hw_frame, ldr->frame, 0) < 0) {
+            av_frame_unref(ldr->frame);
+            return false;
+        }
+        av_frame_unref(ldr->frame);
+        av_frame_move_ref(ldr->frame, ldr->hw_frame);
+        ldr->pix_fmt = static_cast<AVPixelFormat>(ldr->frame->format);
+        return true;
+    };
+
     // Receive frames from the decoder pipeline, transferring HW frames to CPU
     // and checking whether we have reached the desired timestamp.
     auto recv_frames = [&]() -> bool {
@@ -231,24 +316,23 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
                             : ldr->start_time;
 
             if (ft >= target_time - tol) {
-                // 目標時間に到達したフレームでのみHW→CPU転送を行う
-                if (ldr->hw_pix_fmt != AV_PIX_FMT_NONE
-                    && ldr->frame->format == ldr->hw_pix_fmt) {
-                    av_frame_unref(ldr->hw_frame);
-                    if (av_hwframe_transfer_data(ldr->hw_frame, ldr->frame, 0) < 0) {
-                        av_frame_unref(ldr->frame);
-                        continue;
-                    }
-                    av_frame_unref(ldr->frame);
-                    av_frame_move_ref(ldr->frame, ldr->hw_frame);
-                    ldr->pix_fmt = static_cast<AVPixelFormat>(ldr->frame->format);
-                }
-                
+                // Exact match: HW transfer and return.
+                if (!hw_transfer()) continue;
+                if (candidate) av_frame_unref(candidate);
                 ldr->last_decoded_time = ft;
                 ldr->last_target_time  = target_time;
                 return true;
             }
-            av_frame_unref(ldr->frame);
+
+            if (candidate && ft >= target_time - eof_tol && ft > candidate_ft) {
+                // Within eof_tol: save as EOF fallback (with HW transfer so
+                // the SW frame survives the av_frame_move_ref below).
+                if (!hw_transfer()) continue;
+                av_frame_move_ref(candidate, ldr->frame);  // unref old candidate
+                candidate_ft = ft;
+            } else {
+                av_frame_unref(ldr->frame);
+            }
         }
         return false;
     };
@@ -283,25 +367,42 @@ static bool decode_to_time(AvLoader* ldr, double target_time) {
         }
     }
 
-    // Flush decoder pipeline
+    // Flush decoder pipeline (drains B-frames still buffered in the decoder).
     if (!found) {
         avcodec_send_packet(ldr->codec_ctx, nullptr);
         if (recv_frames()) found = true;
     }
 
-    if (!found)
+    // Use EOF candidate if no exact match was found.
+    if (!found && candidate && candidate->data[0] != nullptr) {
+        av_frame_unref(ldr->frame);
+        av_frame_move_ref(ldr->frame, candidate);
+        ldr->last_decoded_time = candidate_ft;
+        ldr->last_target_time  = target_time;
+        found = true;
+    }
+
+    if (candidate) {
+        av_frame_unref(candidate);
+        av_frame_free(&candidate);
+    }
+
+    if (!found) {
         printf("[avloader] DECODE failed  target=%.3fs\n", target_time);
+        // Reset so the next sequential frame triggers a fresh seek+flush instead
+        // of reusing the now-exhausted (EOF) decoder state, which would cause a
+        // cascade of silent failures for every subsequent frame.
+        ldr->last_decoded_time = -1.0;
+    }
 
     return found && ldr->frame->data[0] != nullptr;
 }
 
 // ─── public API ─────────────────────────────────────────────────────────────
 
-AvLoaderHandle avloader_open(const char* path, double target_fps) {
+AvLoaderHandle avloader_open(const char* path) {
     auto* ldr = new (std::nothrow) AvLoader();
     if (!ldr) return nullptr;
-
-    ldr->target_fps = target_fps;
 
     if (avformat_open_input(&ldr->fmt_ctx, path, nullptr, nullptr) < 0) {
         delete ldr; return nullptr;
@@ -324,6 +425,15 @@ AvLoaderHandle avloader_open(const char* path, double target_fps) {
         ldr->start_time = stream->start_time * av_q2d(stream->time_base);
     else if (ldr->fmt_ctx->start_time != AV_NOPTS_VALUE)
         ldr->start_time = ldr->fmt_ctx->start_time / static_cast<double>(AV_TIME_BASE);
+
+    // Duration: prefer video-stream duration over container duration.
+    // fmt_ctx->duration covers all tracks and can be inflated by a longer audio
+    // track, which causes max_frame to be over-counted.
+    // stream->duration is specific to the video track and avoids this problem.
+    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
+        ldr->duration = stream->duration * av_q2d(stream->time_base);
+    else if (ldr->fmt_ctx->duration != AV_NOPTS_VALUE && ldr->fmt_ctx->duration > 0)
+        ldr->duration = ldr->fmt_ctx->duration / static_cast<double>(AV_TIME_BASE);
 
     // ── Try hardware decoders in priority order ───────────────────────────
     bool hw_opened = false;
@@ -392,6 +502,12 @@ AvLoaderHandle avloader_open(const char* path, double target_fps) {
             ldr->fmt_ctx->streams[ldr->video_stream_idx]->codecpar->color_range;
     }
 
+    // For containers that don't store nb_frames (MKV, WebM, MPEG-TS, …),
+    // scan to the end of the file to find the exact last-frame PTS.
+    // This is skipped when the container already provides a reliable count.
+    if (ldr->fmt_ctx->streams[ldr->video_stream_idx]->nb_frames == 0)
+        probe_end_pts(ldr);
+
     return static_cast<AvLoaderHandle>(ldr);
 }
 
@@ -403,7 +519,12 @@ int    avloader_width(AvLoaderHandle h)        { return static_cast<AvLoader*>(h
 int    avloader_height(AvLoaderHandle h)       { return static_cast<AvLoader*>(h)->height; }
 int    avloader_pixel_format(AvLoaderHandle h) { return static_cast<int>(static_cast<AvLoader*>(h)->pix_fmt); }
 int    avloader_color_range(AvLoaderHandle h)  { return static_cast<int>(static_cast<AvLoader*>(h)->color_range); }
-double avloader_native_fps(AvLoaderHandle h)   { return static_cast<AvLoader*>(h)->native_fps; }
+double  avloader_native_fps(AvLoaderHandle h)  { return static_cast<AvLoader*>(h)->native_fps; }
+int64_t avloader_frame_count(AvLoaderHandle h) {
+    auto* ldr = static_cast<AvLoader*>(h);
+    int64_t n = ldr->fmt_ctx->streams[ldr->video_stream_idx]->nb_frames;
+    return (n > 0) ? n : ldr->probed_nb_frames;
+}
 
 int avloader_yuv_plane_count(AvLoaderHandle h) {
     return plane_count_for(static_cast<AvLoader*>(h));
@@ -415,7 +536,7 @@ void avloader_yuv_plane_info(AvLoaderHandle h, int plane_idx,
                        tex_width, tex_height, bytes_per_texel);
 }
 
-int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num,
+int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num, double target_fps,
                           int num_planes, uint8_t** plane_bufs,
                           const int* bytes_per_row) {
     auto* ldr = static_cast<AvLoader*>(h);
@@ -424,9 +545,9 @@ int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num,
     // target_time is absolute (includes stream start_time), matching the actual
     // pts values in the stream. Without start_time, every frame would appear to
     // go backward relative to last_decoded_time and trigger a seek.
-    double target_time = ldr->start_time + (frame_num - 1.0) / ldr->target_fps;
+    double target_time = ldr->start_time + (frame_num - 1.0) / target_fps;
 
-    if (!decode_to_time(ldr, target_time)) return -1;
+    if (!decode_to_time(ldr, target_time, target_fps)) return -1;
 
     int np = std::min(plane_count_for(ldr), num_planes);
     for (int p = 0; p < np; p++) {
@@ -448,13 +569,13 @@ int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num,
     return 0;
 }
 
-int avloader_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num,
+int avloader_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double target_fps,
                                uint8_t* out_buf, size_t /*buf_size*/, int channels) {
     auto* ldr = static_cast<AvLoader*>(h);
     std::lock_guard<std::mutex> lock(ldr->decode_mutex);
 
-    double target_time = ldr->start_time + (frame_num - 1.0) / ldr->target_fps;
-    if (!decode_to_time(ldr, target_time)) return -1;
+    double target_time = ldr->start_time + (frame_num - 1.0) / target_fps;
+    if (!decode_to_time(ldr, target_time, target_fps)) return -1;
 
     AVPixelFormat src_fmt = static_cast<AVPixelFormat>(ldr->frame->format);
     AVPixelFormat dst_fmt = (channels == 4) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24;

@@ -1,10 +1,9 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
     app_config::{AperioConfig, AperioConfigManager},
-    node_shared_texture::NodeOffscreenSharedTextureInfo,
-    structs::Dirs,
-    util::get_local_data_dir,
+    structs::{frame_structure::*, node_shared_texture::NodeOffscreenSharedTextureInfo},
+    utils::{get_local_data_dir, json_value::JsonValue},
 };
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
@@ -12,23 +11,21 @@ use gpu_util::texture_to_native::linux::SharedTextureHandle;
 use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
 // Python公開用の型は wrapper クレートから使用する
+use crate::python::modules::{
+    gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
+    text_rendering::FontsList,
+};
+use aperio_derive::impl_plugin_event_methods;
 use log::debug;
 use napi::bindgen_prelude::Uint8ArraySlice;
 use napi_derive::napi;
-use pyo3::IntoPyObject;
-use pyo3::{types::PyAnyMethods, Py, PyAny, PyResult, Python};
-use wrapper::{
-    frame_structure::*,
-    gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
-    text_rendering::FontsList,
-    utils::json_to_pyobject,
-};
+use pyo3::prelude::*;
 
 mod app_config;
-mod node_shared_texture;
 mod python;
+mod store;
 mod structs;
-mod util;
+mod utils;
 
 #[cfg(target_os = "linux")]
 fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
@@ -45,6 +42,16 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
 
         Ok(())
     }
+}
+
+#[napi(object)]
+pub struct Dirs {
+    pub data_dir: String,
+    pub local_data_dir: String,
+    pub resource_dir: String,
+    pub plugin_manager_dir: String,
+    pub default_plugins_dir: String,
+    pub dist_dir: String,
 }
 
 fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> {
@@ -108,8 +115,8 @@ pub struct AperioManager {
     plmanager: Py<PyAny>,
 }
 
-// 一部IDEでanalyserが誤ってエラーを出すため注意
-// 対処方法は(RustRoverの場合)現状ない模様
+// 一部IDEでanalyserが誤ってエラーを出すため挿入
+//noinspection RsCompileErrorMacro
 #[napi]
 impl AperioManager {
     #[napi(constructor)]
@@ -144,72 +151,6 @@ impl AperioManager {
     }
 
     #[napi]
-    pub fn request_new_object_generator(
-        &self,
-        plugin_name: String,
-        args: serde_json::Value,
-    ) -> napi::Result<NewObjectGeneratorReturn> {
-        let pl_manager = &self.plmanager;
-
-        let result = Python::attach(|py| -> PyResult<NewObjectGeneratorReturn> {
-            let pl_manager = pl_manager.bind(py);
-            let gen_info = pl_manager.call_method1(
-                "request_new_object_generator",
-                (plugin_name, json_to_pyobject(py, &args)?),
-            )?;
-            Ok(gen_info.extract()?)
-        })
-        .map_err(|e| {
-            napi::Error::from_reason(format!("Failed to request new object generator: {:?}", e))
-        })?;
-
-        Ok(result)
-    }
-
-    #[napi]
-    pub fn request_new_effect_generator(
-        &self,
-        plugin_name: String,
-    ) -> napi::Result<NewEffectGeneratorReturn> {
-        let pl_manager = &self.plmanager;
-
-        let result = Python::attach(|py| -> PyResult<NewEffectGeneratorReturn> {
-            let pl_manager = pl_manager.bind(py);
-            let gen_info =
-                pl_manager.call_method1("request_new_effect_generator", (plugin_name,))?;
-            Ok(gen_info.extract()?)
-        })
-        .map_err(|e| {
-            napi::Error::from_reason(format!("Failed to request new effect generator: {:?}", e))
-        })?;
-
-        Ok(result)
-    }
-
-    #[napi]
-    pub fn request_parameter_struct(
-        &self,
-        plugin_name: String,
-        params: serde_json::Value,
-    ) -> napi::Result<Vec<RequestStructureParameter>> {
-        let pl_manager = &self.plmanager;
-
-        let result = Python::attach(|py| -> PyResult<Vec<RequestStructureParameter>> {
-            let pl_manager = pl_manager.bind(py);
-            let struct_info = pl_manager.call_method1(
-                "request_parameter_struct",
-                (plugin_name, json_to_pyobject(py, &params)?),
-            )?;
-            Ok(struct_info.extract()?)
-        })
-        .map_err(|e| {
-            napi::Error::from_reason(format!("Failed to get parameter struct: {:?}", e))
-        })?;
-
-        Ok(result)
-    }
-
-    #[napi]
     pub fn get_frame_buf(
         &self,
         #[napi(ts_arg_type = "Uint8Array")] mut buffer: Uint8ArraySlice,
@@ -223,7 +164,6 @@ impl AperioManager {
 
         let output = Python::attach(|py| -> PyResult<HashMap<String, ItemResult>> {
             let pl_manager = pl_manager.bind(py);
-            let frame_struct = frame_struct.into_pyobject(py)?;
 
             let buffer_ptr = unsafe {
                 let buffer_slice = buffer.as_mut();
@@ -268,7 +208,6 @@ impl AperioManager {
 
         let output = Python::attach(|py| -> PyResult<HashMap<String, ItemResult>> {
             let pl_manager = pl_manager.bind(py);
-            let frame_struct = frame_struct.into_pyobject(py)?;
 
             let base_texture: SharedTextureHandle = base_texture.handle.into();
             let base_texture = PySharedTextureHandle::new(base_texture);
@@ -306,5 +245,13 @@ impl AperioManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get fonts list: {:?}", e)))?;
 
         Ok(result)
+    }
+}
+
+// イベント系メソッドは #[napi] impl の外でマクロ展開する
+impl_plugin_event_methods! {
+    AperioManager {
+        request_new(GeneratorEvent::New): JsonValue -> GeneratorInformation,
+        request_structure(GeneratorEvent::RequestStructure): JsonValue -> GeneratorInformation,
     }
 }

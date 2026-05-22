@@ -2,7 +2,6 @@ use anyhow::Result;
 use napi_derive::napi;
 use numpy::{PyReadonlyArray1, ToPyArray};
 use pyo3::{exceptions::PyValueError, prelude::*, types::*};
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
@@ -21,8 +20,7 @@ use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
 // texture formatをenumで定義
 #[napi]
-#[gen_stub_pyclass_enum]
-#[pyclass(module = "aperio.gpu_util", name = "SharedTextureFormat", eq)]
+#[pyclass(from_py_object, eq)]
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum WrappedSharedTextureFormat {
     Rgba16Float,
@@ -30,20 +28,17 @@ pub enum WrappedSharedTextureFormat {
 }
 
 // Pythonで動かすためのライブラリのラッパーを作る
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass]
 pub struct PySamplerOptions {
     pub inner: compiled_wgsl::SamplerOptions,
 }
 
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass]
 pub struct PyCompiledWgsl {
     pub inner: compiled_wgsl::CompiledWgsl,
 }
 
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass]
 pub struct PyCompiledFunc {
     _id: String,
     py_callback: Py<PyAny>,
@@ -51,36 +46,31 @@ pub struct PyCompiledFunc {
 
 /// wgpu::Texture のPythonラッパー。
 /// Pythonから直接生成することはできず、TextureFunc の引数・戻り値として使用する。
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass]
 pub struct PyTexture {
     pub inner: std::sync::Arc<wgpu::Texture>,
     pub width: u32,
     pub height: u32,
 }
 
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass]
 pub struct PyCompiledTextureFunc {
     _id: String,
     py_callback: Py<PyAny>,
 }
 
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass]
 pub struct PySharedTextureHandle {
     pub inner: SharedTextureHandle,
 }
 
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PyImageGenerateBuilder {
     pub inner: image_generate_builder::ImageGenerateBuilder,
 }
 
-#[gen_stub_pyclass]
-#[pyclass(module = "aperio.gpu_util")]
+#[pyclass]
 pub struct PyImageGenerator {
     pub inner: image_generator::ImageGenerator,
     rt: Runtime,
@@ -162,7 +152,6 @@ fn make_texture_func(
     compiled_func::CompiledTextureFunc::new(func)
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PySamplerOptions {
     #[new]
@@ -198,7 +187,6 @@ impl PySamplerOptions {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyCompiledWgsl {
     #[new]
@@ -219,7 +207,6 @@ impl PyCompiledWgsl {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyCompiledFunc {
     #[new]
@@ -231,7 +218,6 @@ impl PyCompiledFunc {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyTexture {
     #[getter]
@@ -245,7 +231,6 @@ impl PyTexture {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyCompiledTextureFunc {
     #[new]
@@ -263,7 +248,6 @@ impl PySharedTextureHandle {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyImageGenerateBuilder {
     #[new]
@@ -333,15 +317,14 @@ impl PyImageGenerateBuilder {
         output_height: u32,
     ) -> PyResult<Self> {
         let compiled = make_texture_func(func.py_callback.clone_ref(py), params);
-        let new_inner = self
-            .inner
-            .clone()
-            .add_texture_func(compiled, None, output_width, output_height);
+        let new_inner =
+            self.inner
+                .clone()
+                .add_texture_func(compiled, None, output_width, output_height);
         Ok(Self { inner: new_inner })
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 // TODO: experimental-asyncを使った非同期処理
 impl PyImageGenerator {
@@ -390,16 +373,24 @@ impl PyImageGenerator {
     }
 }
 
-#[pymodule]
-pub fn gpu_util_register(m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_class::<PySamplerOptions>()?;
-    m.add_class::<PyCompiledWgsl>()?;
-    m.add_class::<PyCompiledFunc>()?;
-    m.add_class::<PyTexture>()?;
-    m.add_class::<PyCompiledTextureFunc>()?;
-    m.add_class::<PyImageGenerateBuilder>()?;
-    m.add_class::<PyImageGenerator>()?;
-    m.add_class::<PySharedTextureHandle>()?;
-    m.add_class::<WrappedSharedTextureFormat>()?;
-    Ok(())
+#[pymodule(name = "gpu_util")]
+pub mod gpu_util_register {
+    #[pymodule_export]
+    use super::PyCompiledFunc;
+    #[pymodule_export]
+    use super::PyCompiledTextureFunc;
+    #[pymodule_export]
+    use super::PyCompiledWgsl;
+    #[pymodule_export]
+    use super::PyImageGenerateBuilder;
+    #[pymodule_export]
+    use super::PyImageGenerator;
+    #[pymodule_export]
+    use super::PySamplerOptions;
+    #[pymodule_export]
+    use super::PySharedTextureHandle;
+    #[pymodule_export]
+    use super::PyTexture;
+    #[pymodule_export]
+    use super::WrappedSharedTextureFormat;
 }

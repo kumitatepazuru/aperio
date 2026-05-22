@@ -4,11 +4,10 @@ import {
   IpcMainInvokeEvent,
   ipcMain,
   screen,
-  webContents,
   dialog,
   type OpenDialogOptions,
 } from "electron";
-import { RendezvousServer } from "./rendezvousServer";
+import { SyncServer } from "./sync";
 import * as path from "path";
 import { fileURLToPath } from "node:url";
 import { getArch, getOs } from "./getPlatform";
@@ -17,6 +16,7 @@ import {
   AperioConfig,
   ItemStructure,
   WrappedSharedTextureFormat,
+  type SyncableStatePartial,
 } from "native";
 import setMenu from "./menu";
 import { registerContextMenuIpc } from "./contextMenu";
@@ -149,90 +149,36 @@ ipcMain.handle("get-fonts-list", () => {
 });
 
 ipcMain.handle(
-  "request-new-object-generator",
+  "request-new",
   (_, pluginName: string, args: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestNewObjectGenerator(
+    return nativeModule.aperioManager.requestNew(
       pluginName,
       args,
     );
   },
 );
 
-ipcMain.handle("request-new-effect-generator", (_, pluginName: string) => {
-  return nativeModule.aperioManager.requestNewEffectGenerator(pluginName);
-});
-
 ipcMain.handle(
   "request-parameter-struct",
   (_, pluginName: string, params: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestParameterStruct(
+    return nativeModule.aperioManager.requestStructure(
       pluginName,
       params,
     );
   },
 );
 
-// ─── Rendezvous Server ───────────────────────────────────────────────────────
+// ─── Sync Server ─────────────────────────────────────────────────────────────
 
-const rendezvousServer = new RendezvousServer();
-rendezvousServer.start();
+const syncServer = new SyncServer();
 
-// requesterWebContentsId -> resolve: state relay の待機テーブル
-const pendingStateRequests = new Map<number, (state: unknown) => void>();
-
-ipcMain.handle("rendezvous:register", (event) => {
-  return rendezvousServer.register(event.sender.id);
+ipcMain.handle("sync:register", (event) => {
+  return syncServer.register(event.sender.id);
 });
 
-ipcMain.handle("rendezvous:heartbeat", (event, clientId: number) => {
-  return rendezvousServer.heartbeat(clientId, event.sender.id);
+ipcMain.handle("sync:set", (event, partial: SyncableStatePartial) => {
+  syncServer.setAndBroadcast(event.sender.id, partial);
 });
-
-ipcMain.handle("rendezvous:get-master", () => {
-  const master = rendezvousServer.getMasterExcluding();
-  return {
-    masterId: master?.clientId ?? null,
-    masterWebContentsId: master?.webContentsId ?? null,
-  };
-});
-
-/** 新クライアントが master に state を要求する。main が中継する */
-ipcMain.handle(
-  "rendezvous:request-state",
-  async (event, masterWebContentsId: number) => {
-    const masterWC = webContents.fromId(masterWebContentsId);
-    if (!masterWC || masterWC.isDestroyed()) return null;
-
-    return new Promise<unknown>((resolve) => {
-      const timeout = setTimeout(() => {
-        pendingStateRequests.delete(event.sender.id);
-        resolve(null);
-      }, 5000);
-
-      pendingStateRequests.set(event.sender.id, (state) => {
-        clearTimeout(timeout);
-        resolve(state);
-      });
-
-      // master renderer に「この requester に state を渡せ」と通知
-      masterWC.send("rendezvous:provide-state", event.sender.id);
-    });
-  },
-);
-
-/** master renderer が state を返してくる */
-ipcMain.handle(
-  "rendezvous:state-response",
-  (_event, requesterId: number, state: unknown) => {
-    const resolve = pendingStateRequests.get(requesterId);
-    if (resolve) {
-      pendingStateRequests.delete(requesterId);
-      resolve(state);
-    }
-  },
-);
-
-app.on("will-quit", () => rendezvousServer.stop());
 
 async function createWindow() {
   const config = nativeModule.configManager.config;

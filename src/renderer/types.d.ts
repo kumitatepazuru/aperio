@@ -1,41 +1,21 @@
 import {
   type AperioConfig,
-  type RequestStructureParameter,
-  type NewEffectGeneratorReturn,
-  type NewObjectGeneratorReturn,
   type PluginNameInfo,
   type ItemStructure,
+  type GeneratorInformation,
 } from "native";
 
 /** フォントファミリー名 → ウェイト値（100/200/…/900）の配列 */
 type FontsList = Record<string, number[]>;
 import { sharedTexture, type OpenDialogOptions } from "electron";
-import type { SyncableState } from "../shared/store";
+import type { SyncableState, SyncableStatePartial } from "native";
 
 declare global {
   interface Window {
-    rendezvous: {
-      register: () => Promise<{
-        clientId: number;
-        masterId: number | null;
-        masterWebContentsId: number | null;
-      }>;
-      heartbeat: (clientId: number) => Promise<{ clientId: number }>;
-      getMaster: () => Promise<{
-        masterId: number | null;
-        masterWebContentsId: number | null;
-      }>;
-      requestState: (
-        masterWebContentsId: number,
-      ) => Promise<SyncableState | null>;
-      stateResponse: (
-        requesterId: number,
-        state: SyncableState,
-      ) => Promise<void>;
-      onProvideState: (
-        cb: (requesterWebContentsId: number) => void,
-      ) => () => void;
-      onClientDied: (cb: (deadClientId: number) => void) => () => void;
+    sync: {
+      register: () => Promise<SyncableState>;
+      set: (partial: SyncableStatePartial) => void;
+      onDiff: (cb: (partial: SyncableStatePartial) => void) => () => void;
     };
     frame: {
       sendPort: () => Promise<void>;
@@ -58,17 +38,14 @@ declare global {
     main: {
       getPluginNames: () => Promise<PluginNameInfo>;
       getFontsList: () => Promise<FontsList>;
-      requestNewObjectGenerator: (
+      requestNewGenerator: (
         pluginName: string,
         args: Record<string, unknown>,
-      ) => Promise<NewObjectGeneratorReturn>;
-      requestNewEffectGenerator: (
-        pluginName: string,
-      ) => Promise<NewEffectGeneratorReturn>;
+      ) => Promise<GeneratorInformation>;
       requestParameterStruct: (
         pluginName: string,
         params: Record<string, unknown>,
-      ) => Promise<RequestStructureParameter[]>;
+      ) => Promise<GeneratorInformation>;
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       openContextMenu: (id: string) => Promise<void>;
@@ -76,7 +53,9 @@ declare global {
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
       resizeOsr: (width: number, height: number) => Promise<void>;
-      showOpenDialog: (options: OpenDialogOptions) => Promise<string[] | undefined>;
+      showOpenDialog: (
+        options: OpenDialogOptions,
+      ) => Promise<string[] | undefined>;
     };
   }
 }

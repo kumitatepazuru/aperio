@@ -7,15 +7,6 @@ import {
 } from "electron";
 import { AperioConfig, type ItemStructure } from "native";
 
-export type SyncedStoreState = {
-  fps: number;
-  viewerState: {
-    state: "playing" | "paused";
-    changeTime: number;
-    beginFrame: number;
-  };
-};
-
 // メインプロセスからMessagePortを受け取り、レンダラープロセスのwindowに転送する
 ipcRenderer.on("frame-port-main", (event) => {
   const port: MessagePort = event.ports[0];
@@ -60,26 +51,16 @@ contextBridge.exposeInMainWorld("frame", {
   },
 });
 
-// Rendezvous API
-contextBridge.exposeInMainWorld("rendezvous", {
-  register: () => ipcRenderer.invoke("rendezvous:register"),
-  heartbeat: (clientId: number) =>
-    ipcRenderer.invoke("rendezvous:heartbeat", clientId),
-  getMaster: () => ipcRenderer.invoke("rendezvous:get-master"),
-  requestState: (masterWebContentsId: number) =>
-    ipcRenderer.invoke("rendezvous:request-state", masterWebContentsId),
-  stateResponse: (requesterId: number, state: unknown) =>
-    ipcRenderer.invoke("rendezvous:state-response", requesterId, state),
-  onProvideState: (cb: (requesterWebContentsId: number) => void) => {
-    const listener = (_: IpcRendererEvent, id: number) => cb(id);
-    ipcRenderer.on("rendezvous:provide-state", listener);
-    return () =>
-      ipcRenderer.removeListener("rendezvous:provide-state", listener);
+// Sync API
+contextBridge.exposeInMainWorld("sync", {
+  register: () => ipcRenderer.invoke("sync:register"),
+  set: (partial: object): void => {
+    void ipcRenderer.invoke("sync:set", partial);
   },
-  onClientDied: (cb: (deadClientId: number) => void) => {
-    const listener = (_: IpcRendererEvent, id: number) => cb(id);
-    ipcRenderer.on("rendezvous:client-died", listener);
-    return () => ipcRenderer.removeListener("rendezvous:client-died", listener);
+  onDiff: (cb: (partial: object) => void) => {
+    const listener = (_: IpcRendererEvent, partial: object) => cb(partial);
+    ipcRenderer.on("sync:diff", listener);
+    return () => ipcRenderer.removeListener("sync:diff", listener);
   },
 });
 
@@ -120,12 +101,10 @@ contextBridge.exposeInMainWorld("main", {
     pluginName: string,
     params: Record<string, unknown>,
   ) => ipcRenderer.invoke("request-parameter-struct", pluginName, params),
-  requestNewObjectGenerator: (
+  requestNewGenerator: (
     pluginName: string,
     args: Record<string, unknown>,
-  ) => ipcRenderer.invoke("request-new-object-generator", pluginName, args),
-  requestNewEffectGenerator: (pluginName: string) =>
-    ipcRenderer.invoke("request-new-effect-generator", pluginName),
+  ) => ipcRenderer.invoke("request-new", pluginName, args),
   showOpenDialog: (options: OpenDialogOptions): Promise<string[] | undefined> =>
     ipcRenderer.invoke("show-open-dialog", options),
 });

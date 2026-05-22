@@ -1,12 +1,13 @@
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use wrapper::gpu_util::WrappedSharedTextureFormat;
 use std::fs;
 use std::path::PathBuf;
 use std::{fs::File, io::Write};
 
-use crate::util::get_data_dir;
+use crate::python::modules::gpu_util::WrappedSharedTextureFormat;
+use crate::utils::get_data_dir;
+use crate::utils::json_value::JsonValue;
 use crate::Dirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -20,7 +21,7 @@ pub struct AperioConfig {
     pub python: PythonConfig,
     pub fast_preview: bool,
     pub tex_pixel_format: WrappedSharedTextureFormat,
-    pub dock_layout: Option<Value>,
+    pub dock_layout: Option<JsonValue>,
 }
 
 const DEFAULT_CONFIG: &str = include_str!("data/default-config.json");
