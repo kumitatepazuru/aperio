@@ -76,7 +76,7 @@ fn yuv_layout_from_pix_fmt(pix_fmt: i32) -> YuvLayout {
 
 pub struct VideoLoader {
     // frame_cache must be declared before decoder so it drops first,
-    // joining the background thread before avloader_close is called.
+    // joining the background thread before avloader_video_close is called.
     frame_cache: FrameCache,
     decoder: Arc<DecoderRef>, // shared with FrameCache's bg thread
 
@@ -99,24 +99,26 @@ impl VideoLoader {
     pub fn new(path: &str, image_generator: ImageGenerator) -> Result<Self> {
         let c_path = std::ffi::CString::new(path).context("Video path contains null byte")?;
 
-        let handle = unsafe { avloader_open(c_path.as_ptr()) };
+        let handle = unsafe { avloader_video_open(c_path.as_ptr()) };
         if handle.is_null() {
-            bail!("avloader_open failed: could not open \"{}\"", path);
+            bail!("avloader_video_open failed: could not open \"{}\"", path);
         }
 
-        let width = unsafe { avloader_width(handle) } as u32;
-        let height = unsafe { avloader_height(handle) } as u32;
-        let pix_fmt = unsafe { avloader_pixel_format(handle) };
-        let fps = unsafe { avloader_native_fps(handle) };
+        let width = unsafe { avloader_video_width(handle) } as u32;
+        let height = unsafe { avloader_video_height(handle) } as u32;
+        let pix_fmt = unsafe { avloader_video_pixel_format(handle) };
+        let fps = unsafe { avloader_video_native_fps(handle) };
 
         let color_format = color_format_from_pix_fmt(pix_fmt);
         let layout = yuv_layout_from_pix_fmt(pix_fmt);
 
-        let plane_count = unsafe { avloader_yuv_plane_count(handle) } as usize;
+        let plane_count = unsafe { avloader_video_yuv_plane_count(handle) } as usize;
         let plane_descs: Vec<PlaneDesc> = (0..plane_count)
             .map(|i| {
                 let (mut tw, mut th, mut bpt) = (0i32, 0i32, 0i32);
-                unsafe { avloader_yuv_plane_info(handle, i as i32, &mut tw, &mut th, &mut bpt) };
+                unsafe {
+                    avloader_video_yuv_plane_info(handle, i as i32, &mut tw, &mut th, &mut bpt)
+                };
                 let bpt = bpt.max(1) as u32;
                 // Plane 1 of a semi-planar format holds interleaved UV pairs:
                 //   NV12 → bpt=2 (Rg8Unorm), P010 → bpt=4 (Rg16Unorm).
@@ -139,7 +141,7 @@ impl VideoLoader {
             .collect();
 
         // AVCOL_RANGE_JPEG = 2; anything else (including unspecified) is treated as limited.
-        let is_full_range = unsafe { avloader_color_range(handle) } == 2;
+        let is_full_range = unsafe { avloader_video_color_range(handle) } == 2;
         let y_bpt = plane_descs.first().map_or(1, |d| d.bytes_per_texel);
         let yuv_params = match (y_bpt, is_full_range) {
             (1, false) => YuvConvParams::limited_8bit(),
@@ -177,7 +179,7 @@ impl VideoLoader {
         self.fps
     }
     pub fn get_frame_count(&self) -> i64 {
-        unsafe { crate::ffi::avloader_frame_count(self.decoder.0) }
+        unsafe { crate::ffi::avloader_video_frame_count(self.decoder.0) }
     }
 
     // ── get_frame ──────────────────────────────────────────────────────────
@@ -189,7 +191,7 @@ impl VideoLoader {
 
         let mut buf = vec![0u8; size];
         let ret = unsafe {
-            avloader_decode_frame_rgb(
+            avloader_video_decode_frame_rgb(
                 self.decoder.0,
                 frame_number,
                 target_fps,
@@ -201,7 +203,7 @@ impl VideoLoader {
 
         if ret < 0 {
             bail!(
-                "avloader_decode_frame_rgb failed for frame {}",
+                "avloader_video_decode_frame_rgb failed for frame {}",
                 frame_number
             );
         }
@@ -236,4 +238,4 @@ impl VideoLoader {
     }
 }
 // VideoLoader::drop is implicit: frame_cache drops first (joins bg thread),
-// then decoder drops (last Arc → avloader_close).
+// then decoder drops (last Arc → avloader_video_close).

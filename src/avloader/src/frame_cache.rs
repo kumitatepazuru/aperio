@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
-use crate::ffi::{avloader_close, avloader_decode_frame, AvLoaderHandle};
+use crate::ffi::{avloader_video_close, avloader_video_decode_frame, AvLoaderHandle};
 use crate::yuv_pipeline::PlaneDesc;
 use gpu_util::resource_pool::LruCache;
 
@@ -28,7 +28,7 @@ pub struct CachedYuvFrame {
 
 // ─── DecoderRef ──────────────────────────────────────────────────────────────
 // Owns the C++ AvLoaderHandle and closes it on drop. Multiple Arc clones can
-// exist; avloader_close is called exactly once when the last clone is dropped.
+// exist; avloader_video_close is called exactly once when the last clone is dropped.
 
 pub(crate) struct DecoderRef(pub(crate) AvLoaderHandle);
 
@@ -38,7 +38,7 @@ unsafe impl Sync for DecoderRef {}
 
 impl Drop for DecoderRef {
     fn drop(&mut self) {
-        unsafe { avloader_close(self.0) };
+        unsafe { avloader_video_close(self.0) };
     }
 }
 
@@ -92,37 +92,37 @@ impl CacheState {
 // ─── FrameCacheInner ─────────────────────────────────────────────────────────
 
 struct FrameCacheInner {
-    state:     Mutex<CacheState>,
-    bg_cond:   Condvar,   // wake background thread
-    main_cond: Condvar,   // wake main thread (priority decode done)
-    decoder:   Arc<DecoderRef>,
-    descs:     Vec<PlaneDesc>,
+    state: Mutex<CacheState>,
+    bg_cond: Condvar,   // wake background thread
+    main_cond: Condvar, // wake main thread (priority decode done)
+    decoder: Arc<DecoderRef>,
+    descs: Vec<PlaneDesc>,
 }
 
 // ─── FrameCache ──────────────────────────────────────────────────────────────
 
 pub struct FrameCache {
-    inner:      Arc<FrameCacheInner>,
-    bg_thread:  Option<thread::JoinHandle<()>>,
+    inner: Arc<FrameCacheInner>,
+    bg_thread: Option<thread::JoinHandle<()>>,
 }
 
 impl FrameCache {
     pub fn new(decoder: Arc<DecoderRef>, descs: Vec<PlaneDesc>, fps: f64) -> Self {
         let state = Mutex::new(CacheState {
-            prefetch:        BTreeMap::new(),
-            lru:             LruCache::new(LRU_CAPACITY),
-            failed:          BTreeSet::new(),
-            current_frame:   0,
+            prefetch: BTreeMap::new(),
+            lru: LruCache::new(LRU_CAPACITY),
+            failed: BTreeSet::new(),
+            current_frame: 0,
             fps,
-            target_fps:      fps,
-            priority_frame:  None,
+            target_fps: fps,
+            priority_frame: None,
             priority_failed: false,
-            stop:            false,
+            stop: false,
         });
 
         let inner = Arc::new(FrameCacheInner {
             state,
-            bg_cond:   Condvar::new(),
+            bg_cond: Condvar::new(),
             main_cond: Condvar::new(),
             decoder,
             descs,
@@ -131,7 +131,10 @@ impl FrameCache {
         let bg_inner = Arc::clone(&inner);
         let bg = thread::spawn(move || bg_worker(bg_inner));
 
-        Self { inner, bg_thread: Some(bg) }
+        Self {
+            inner,
+            bg_thread: Some(bg),
+        }
     }
 
     /// Retrieve frame `frame_num`.
@@ -173,16 +176,14 @@ impl FrameCache {
         }
 
         // ── Cache miss: request priority decode ───────────────────────────
-        state.priority_frame  = Some(frame_num);
+        state.priority_frame = Some(frame_num);
         state.priority_failed = false;
         inner.bg_cond.notify_one();
 
         let mut state = inner
             .main_cond
             .wait_while(state, |s| {
-                !s.stop
-                    && !s.prefetch.contains_key(&frame_num)
-                    && !s.priority_failed
+                !s.stop && !s.prefetch.contains_key(&frame_num) && !s.priority_failed
             })
             .unwrap();
 
@@ -228,7 +229,9 @@ fn bg_worker(inner: Arc<FrameCacheInner>) {
                 })
                 .unwrap();
 
-            if state.stop { break; }
+            if state.stop {
+                break;
+            }
 
             let target_fps = state.target_fps;
 
@@ -279,11 +282,11 @@ fn decode_one(
     target_fps: f64,
 ) -> Option<CachedYuvFrame> {
     let mut planes: Vec<Vec<u8>> = descs.iter().map(|d| vec![0u8; d.total_bytes()]).collect();
-    let mut ptrs: Vec<*mut u8>   = planes.iter_mut().map(|v| v.as_mut_ptr()).collect();
-    let strides: Vec<i32>        = descs.iter().map(|d| d.bytes_per_row() as i32).collect();
+    let mut ptrs: Vec<*mut u8> = planes.iter_mut().map(|v| v.as_mut_ptr()).collect();
+    let strides: Vec<i32> = descs.iter().map(|d| d.bytes_per_row() as i32).collect();
 
     let ret = unsafe {
-        avloader_decode_frame(
+        avloader_video_decode_frame(
             decoder.0,
             frame_num,
             target_fps,
@@ -293,5 +296,9 @@ fn decode_one(
         )
     };
 
-    if ret < 0 { None } else { Some(CachedYuvFrame { planes }) }
+    if ret < 0 {
+        None
+    } else {
+        Some(CachedYuvFrame { planes })
+    }
 }

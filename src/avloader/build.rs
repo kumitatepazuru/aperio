@@ -32,7 +32,9 @@ fn main() {
     cc::Build::new()
         .cpp(true)
         .std("c++17")
+        .file("../avloader-cpp/src/avloader.cpp")
         .file("../avloader-cpp/src/video_decoder.cpp")
+        .file("../avloader-cpp/src/audio_decoder.cpp")
         .include("../avloader-cpp/include")
         .include(&ffmpeg_include)
         // MSVC: enable exceptions, suppress deprecation warnings from FFmpeg headers
@@ -98,5 +100,8 @@ fn main() {
         .expect("Couldn't write avloader_bindings.rs");
 
     println!("cargo:rerun-if-changed=../avloader-cpp/include/avloader.h");
+    println!("cargo:rerun-if-changed=../avloader-cpp/include/avloader_internal.h");
+    println!("cargo:rerun-if-changed=../avloader-cpp/src/avloader.cpp");
     println!("cargo:rerun-if-changed=../avloader-cpp/src/video_decoder.cpp");
+    println!("cargo:rerun-if-changed=../avloader-cpp/src/audio_decoder.cpp");
 }

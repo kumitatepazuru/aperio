@@ -3,8 +3,10 @@ mod ffi {
     include!(concat!(env!("OUT_DIR"), "/avloader_bindings.rs"));
 }
 
+mod audio_loader;
 mod frame_cache;
 mod video_loader;
 mod yuv_pipeline;
 
+pub use audio_loader::AudioLoader;
 pub use video_loader::{ColorFormat, VideoLoader};
