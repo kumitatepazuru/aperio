@@ -11,7 +11,7 @@ fn main() {
             }
         } else if cfg!(target_os = "linux") {
             if cfg!(target_arch = "aarch64") {
-                "aarch64-linux".to_string()
+                "arm64-linux".to_string()
             } else {
                 "x64-linux".to_string()
             }
@@ -51,10 +51,17 @@ fn main() {
     println!("cargo:rustc-link-lib=swscale");
     println!("cargo:rustc-link-lib=swresample");
     println!("cargo:rustc-link-lib=dav1d");
-    println!("cargo:rustc-link-lib=libx264");
-    println!("cargo:rustc-link-lib=x265-static");
+    if cfg!(target_os = "windows") {
+        println!("cargo:rustc-link-lib=libx264");
+        println!("cargo:rustc-link-lib=x265-static");
+    } else {
+        println!("cargo:rustc-link-lib=x264");
+        println!("cargo:rustc-link-lib=x265");
+    }
+    if cfg!(target_arch = "x86_64") || cfg!(target_os = "windows") {
+        println!("cargo:rustc-link-lib=libmfx");
+    }
     println!("cargo:rustc-link-lib=vpx");
-    println!("cargo:rustc-link-lib=libmfx");
     println!("cargo:rustc-link-lib=vorbis");
     println!("cargo:rustc-link-lib=vorbisfile");
     println!("cargo:rustc-link-lib=vorbisenc");

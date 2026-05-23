@@ -49,12 +49,6 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
     // PYTHONPATHとPYTHONHOMEの設定
     let local_data_dir = get_local_data_dir(dir)?; // 環境ファイルがある
     let python_path = local_data_dir.join("python"); // pythonがある
-                                                     // linux/macならbin/python、windowsならpython.exe
-    let bin_path = if cfg!(target_os = "windows") {
-        file_extension(&python_path, "python") // pythonの実行ファイルがある
-    } else {
-        file_extension(&python_path.join("bin"), "python") // pythonの実行ファイルがある
-    };
 
     unsafe {
         env::set_var("UV_PROJECT_ENVIRONMENT", &python_path);
@@ -63,11 +57,6 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
             python_path
                 .to_str()
                 .context("Failed to convert python path to str")?,
-        )?;
-        let bin_path = CString::new(
-            bin_path
-                .to_str()
-                .context("Failed to convert python bin path to str")?,
         )?;
 
         let mut config: PyPreConfig = std::mem::zeroed();
@@ -84,7 +73,7 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
         let mut config: PyConfig = std::mem::zeroed();
         PyConfig_InitIsolatedConfig(&mut config);
         PyConfig_SetBytesString(&mut config, &mut config.home, python_path.as_ptr());
-        PyConfig_SetBytesString(&mut config, &mut config.executable, bin_path.as_ptr());
+        // config.site_import = 1;
 
         let err = Py_InitializeFromConfig(&mut config);
         PyConfig_Clear(&mut config);
