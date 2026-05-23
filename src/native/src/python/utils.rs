@@ -49,12 +49,6 @@ pub fn add_python_path_env(dir: &Dirs) -> Result<()> {
     // PYTHONPATHとPYTHONHOMEの設定
     let local_data_dir = get_local_data_dir(dir)?; // 環境ファイルがある
     let python_path = local_data_dir.join("python"); // pythonがある
-                                                     // linux/macならbin/python、windowsならpython.exe
-    let bin_path = if cfg!(target_os = "windows") {
-        file_extension(&python_path, "python") // pythonの実行ファイルがある
-    } else {
-        file_extension(&python_path.join("bin"), "python") // pythonの実行ファイルがある
-    };
 
     unsafe {
         env::set_var("UV_PROJECT_ENVIRONMENT", &python_path);

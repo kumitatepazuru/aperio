@@ -58,7 +58,7 @@ fn main() {
         println!("cargo:rustc-link-lib=x264");
         println!("cargo:rustc-link-lib=x265");
     }
-    if cfg!(target_arch = "x86_64") {
+    if cfg!(target_arch = "x86_64") || cfg!(target_os = "windows") {
         println!("cargo:rustc-link-lib=libmfx");
     }
     println!("cargo:rustc-link-lib=vpx");
