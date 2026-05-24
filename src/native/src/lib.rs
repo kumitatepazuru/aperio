@@ -26,6 +26,7 @@ mod python;
 mod store;
 mod structs;
 mod utils;
+mod audio;
 
 #[cfg(target_os = "linux")]
 fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {

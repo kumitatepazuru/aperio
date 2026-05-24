@@ -59,7 +59,7 @@ void          avloader_audio_close(AvAudioHandle h);
 // Immutable properties (safe to read from any thread without locking)
 int     avloader_audio_channels(AvAudioHandle h);
 double  avloader_audio_duration(AvAudioHandle h);
-int64_t avloader_audio_bitrate(AvAudioHandle h);
+int     avloader_audio_bit_depth(AvAudioHandle h);
 int     avloader_audio_sampling_rate(AvAudioHandle h);
 
 // Decode audio from `time` seconds for `duration` seconds.

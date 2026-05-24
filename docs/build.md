@@ -5,6 +5,7 @@
   - node lts/npm(bunの使用を勧める)
   - vcpkg
   - clang(bindgenのビルドに必要) [詳細](https://rust-lang.github.io/rust-bindgen/requirements.html)
+  - Linuxのみ：cpal用の追加パッケージ(libpulse-dev libpipewire-0.3-dev libasound2-dev)
 2. scripts/copy-python.sh(Windowsの場合はcopy-python.ps1をpowershellで実行)を実行して、Pythonの必要なファイルをコピー
   - これによりdist/に.so/.dylib/.dllがコピーされる
   - pythonコマンドがuvでインストールしたPythonを指すようにしておくこと
@@ -28,7 +29,7 @@
 
 - bun run napi:debugまたはnapi:buildで、Rustコードのみをビルドしてnapiを使用しdist/に.nodeとして出力することも可能。
   - typescriptの型生成も行われるため、単に型の更新をするときはこれを利用する
-- bun run wrapper:stubgenで、RustのコードからPythonのstubファイルを生成することが可能
+- bun run python:stubgenで、RustのコードからPythonのstubファイルを生成することが可能
   - これにより、Rustコードの型定義をPython側で利用できるようになる
-- bun run python:stubgenで、プラグインマネージャのPythonコードからPythonのstubファイルを生成することが可能
+- bun run plugin:stubgenで、プラグインマネージャのPythonコードからPythonのstubファイルを生成することが可能
   - これにより、Pythonコードの型定義をプラグイン側で利用できるようになる

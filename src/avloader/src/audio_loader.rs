@@ -7,7 +7,7 @@ pub struct AudioLoader {
     handle: AvAudioHandle,
     channels: u32,
     duration: f64,
-    bitrate: i64,
+    bit_depth: i32,
     sampling_rate: u32,
 }
 
@@ -26,14 +26,14 @@ impl AudioLoader {
 
         let channels = unsafe { avloader_audio_channels(handle) } as u32;
         let duration = unsafe { avloader_audio_duration(handle) };
-        let bitrate = unsafe { avloader_audio_bitrate(handle) };
+        let bit_depth = unsafe { avloader_audio_bit_depth(handle) };
         let sampling_rate = unsafe { avloader_audio_sampling_rate(handle) } as u32;
 
         Ok(Self {
             handle,
             channels,
             duration,
-            bitrate,
+            bit_depth,
             sampling_rate,
         })
     }
@@ -46,8 +46,8 @@ impl AudioLoader {
         self.duration
     }
 
-    pub fn get_bitrate(&self) -> i64 {
-        self.bitrate
+    pub fn get_bit_depth(&self) -> i32 {
+        self.bit_depth
     }
 
     pub fn get_sampling_rate(&self) -> u32 {

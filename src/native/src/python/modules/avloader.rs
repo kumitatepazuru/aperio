@@ -192,10 +192,10 @@ impl PyAudioLoader {
         self.inner.get_duration()
     }
 
-    /// ビットレート（bps）。
+    /// ビット深度（bits per sample）。
     #[getter]
-    pub fn bitrate(&self) -> i64 {
-        self.inner.get_bitrate()
+    pub fn bit_depth(&self) -> i32 {
+        self.inner.get_bit_depth()
     }
 
     /// サンプリングレート（Hz）。

@@ -69,7 +69,7 @@ struct AvAudio {
     // Immutable after open
     int     channels    = 0;
     double  duration    = 0.0;
-    int64_t bitrate     = 0;
+    int     bit_depth   = 0;
     int     sample_rate = 0;
     double  start_time  = 0.0;
 

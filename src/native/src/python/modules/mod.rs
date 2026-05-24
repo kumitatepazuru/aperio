@@ -11,6 +11,8 @@ pub mod text_rendering;
 #[pymodule]
 mod aperio {
     #[pymodule_export]
+    use crate::audio::audio_register;
+    #[pymodule_export]
     use super::avloader::avloader_register;
     #[pymodule_export]
     use super::frame_structure::frame_structure;

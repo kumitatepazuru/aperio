@@ -45,11 +45,11 @@ AvAudioHandle avloader_audio_open(const char* path) {
 
     aud->channels    = aud->codec_ctx->ch_layout.nb_channels;
     aud->sample_rate = aud->codec_ctx->sample_rate;
-    aud->bitrate     = aud->codec_ctx->bit_rate;
-    if (aud->bitrate == 0 && stream->codecpar->bit_rate > 0)
-        aud->bitrate = stream->codecpar->bit_rate;
-    if (aud->bitrate == 0 && aud->fmt_ctx->bit_rate > 0)
-        aud->bitrate = aud->fmt_ctx->bit_rate;
+    // bits_per_raw_sample: source precision (e.g. 24 for 24-bit FLAC, 0 for lossy codecs).
+    // Fall back to the decoded sample format's size when not recorded.
+    aud->bit_depth = aud->codec_ctx->bits_per_raw_sample;
+    if (aud->bit_depth == 0)
+        aud->bit_depth = av_get_bytes_per_sample(aud->codec_ctx->sample_fmt) * 8;
 
     // Initialise swresample: convert decoded format → float32 planar (FLTP)
     // at the same sample rate (no SRC, so no internal delay in swr_convert).
@@ -75,7 +75,7 @@ void avloader_audio_close(AvAudioHandle h) {
 
 int     avloader_audio_channels(AvAudioHandle h)     { return static_cast<AvAudio*>(h)->channels; }
 double  avloader_audio_duration(AvAudioHandle h)     { return static_cast<AvAudio*>(h)->duration; }
-int64_t avloader_audio_bitrate(AvAudioHandle h)      { return static_cast<AvAudio*>(h)->bitrate; }
+int     avloader_audio_bit_depth(AvAudioHandle h)    { return static_cast<AvAudio*>(h)->bit_depth; }
 int     avloader_audio_sampling_rate(AvAudioHandle h){ return static_cast<AvAudio*>(h)->sample_rate; }
 
 int64_t avloader_audio_get_audio(AvAudioHandle h, double time, double duration,
