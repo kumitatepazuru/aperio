@@ -1,88 +1,113 @@
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use syn::parse::{Parse, ParseStream};
-use syn::punctuated::Punctuated;
-use syn::{bracketed, parse_macro_input, Data, DeriveInput, Fields, Ident, Token};
+use syn::{parse_macro_input, Data, DeriveInput, Fields, ItemStruct};
 
 mod plugin_events;
 mod register_submodules;
 
-struct ApplyPartialArgs {
-    target: Ident,
-    skip: Vec<Ident>,
+struct GeneratePartialInput {
+    source: ItemStruct,
+    partial: ItemStruct,
 }
 
-impl Parse for ApplyPartialArgs {
+impl Parse for GeneratePartialInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut target = None;
-        let mut skip = vec![];
-
-        while !input.is_empty() {
-            let key: Ident = input.parse()?;
-            if key == "target" {
-                input.parse::<Token![=]>()?;
-                target = Some(input.parse::<Ident>()?);
-            } else if key == "skip" {
-                input.parse::<Token![=]>()?;
-                let content;
-                bracketed!(content in input);
-                let ids = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
-                skip = ids.into_iter().collect();
-            } else {
-                return Err(syn::Error::new(key.span(), format!("unknown key: {}", key)));
-            }
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
-        }
-
-        Ok(ApplyPartialArgs {
-            target: target.ok_or_else(|| input.error("target = Type is required"))?,
-            skip,
-        })
+        let source: ItemStruct = input.parse()?;
+        let partial: ItemStruct = input.parse()?;
+        Ok(Self { source, partial })
     }
 }
 
-#[proc_macro_derive(ApplyPartial, attributes(apply_partial))]
-pub fn derive_apply_partial(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
+/// source struct と partial struct を並べて書くと、partial に書いていないフィールドを
+/// source から自動補完して `apply_to` メソッドも生成するマクロ。
+///
+/// ```rust,ignore
+/// generate_partial! {
+///     #[napi(object)]
+///     pub struct SyncableState {
+///         pub viewer_state: ViewerState,
+///         #[napi(ts_type = "string | null")]
+///         pub main_selected_item_id: NullOr<String>,
+///         // ...
+///     }
+///
+///     /// 手動指定が必要なフィールドだけ書く。残りは source から自動生成される。
+///     #[napi(object)]
+///     pub struct SyncableStatePartial {
+///         #[napi(ts_type = "string | null | undefined")]
+///         pub main_selected_item_id: Option<NullOr<String>>,
+///     }
+/// }
+/// ```
+///
+/// - partial に書いていないフィールドは `Option<T>` で自動追加される
+/// - フィールドの順序は source に準拠する
+#[proc_macro]
+pub fn generate_partial(input: TokenStream) -> TokenStream {
+    let GeneratePartialInput { source, partial } =
+        parse_macro_input!(input as GeneratePartialInput);
 
-    let args = input
-        .attrs
-        .iter()
-        .find(|a| a.path().is_ident("apply_partial"))
-        .map(|a| a.parse_args::<ApplyPartialArgs>().expect("invalid #[apply_partial(...)]"))
-        .expect("ApplyPartial requires #[apply_partial(target = ..., skip = [...])]");
+    let source_name = &source.ident;
+    let partial_name = &partial.ident;
 
-    let target_type = &args.target;
-    let skip_set: HashSet<String> = args.skip.iter().map(|i| i.to_string()).collect();
-
-    let fields = match &input.data {
-        Data::Struct(s) => match &s.fields {
-            Fields::Named(f) => &f.named,
-            _ => panic!("ApplyPartial requires named fields"),
-        },
-        _ => panic!("ApplyPartial only supports structs"),
+    let source_fields = match &source.fields {
+        Fields::Named(f) => &f.named,
+        _ => panic!("generate_partial: source struct must have named fields"),
     };
 
-    let stmts: Vec<_> = fields
-        .iter()
-        .filter_map(|f| {
-            let name = f.ident.as_ref().unwrap();
-            if skip_set.contains(&name.to_string()) {
-                None
-            } else {
-                Some(quote! { if let Some(v) = self.#name.take() { s.#name = v; } })
-            }
-        })
-        .collect();
+    // partial に手動定義されているフィールドをマップ化
+    let partial_overrides: HashMap<String, &syn::Field> = match &partial.fields {
+        Fields::Named(f) => f
+            .named
+            .iter()
+            .filter_map(|field| field.ident.as_ref().map(|i| (i.to_string(), field)))
+            .collect(),
+        _ => HashMap::new(),
+    };
 
-    let struct_name = &input.ident;
+    let mut all_partial_fields: Vec<TokenStream2> = vec![];
+    let mut apply_stmts: Vec<TokenStream2> = vec![];
+
+    // source のフィールド順に処理
+    for field in source_fields {
+        let name = field.ident.as_ref().unwrap();
+        let name_str = name.to_string();
+        let ty = &field.ty;
+
+        if let Some(override_field) = partial_overrides.get(&name_str) {
+            // 手動定義をそのまま使用
+            all_partial_fields.push(quote! { #override_field , });
+        } else {
+            // source のアトリビュートをそのまま引き継ぎ Option<T> で自動生成
+            let field_attrs = &field.attrs;
+            all_partial_fields.push(quote! {
+                #(#field_attrs)*
+                pub #name: Option<#ty>,
+            });
+        }
+
+        apply_stmts.push(quote! {
+            if let Some(v) = self.#name.take() { s.#name = v; }
+        });
+    }
+
+    let partial_struct_attrs = &partial.attrs;
+    let partial_vis = &partial.vis;
+
     quote! {
-        impl #struct_name {
-            pub fn apply_to(&mut self, s: &mut #target_type) {
-                #(#stmts)*
+        #source
+
+        #(#partial_struct_attrs)*
+        #partial_vis struct #partial_name {
+            #(#all_partial_fields)*
+        }
+
+        impl #partial_name {
+            pub fn apply_to(&mut self, s: &mut #source_name) {
+                #(#apply_stmts)*
             }
         }
     }

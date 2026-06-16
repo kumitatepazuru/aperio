@@ -1,7 +1,6 @@
 import math
 import os
 
-from aperio import logger, store
 import aperio_plugin
 from aperio.avloader import PyVideoLoader
 from aperio.frame_structure import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
@@ -37,7 +36,7 @@ class VideoObject(ObjectGeneratorBase):
                 self.video_loaders[path] = loader
                 self.compiled_funcs[path] = PyCompiledTextureFunc("video_frame", loader.get_frame_for_pipeline)
 
-        fps = store.store_get_state().frame_state.fps
+        fps = aperio_plugin.store_manager.get_state().frame_state.fps
         return GeneratorInformation(
             display_name=self.display_name,
             duration_frames=300,

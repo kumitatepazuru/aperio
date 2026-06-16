@@ -1,9 +1,14 @@
 import { webContents } from "electron";
-import { storeGetState, storeSetPartial } from "native";
 import type { SyncableState, SyncableStatePartial } from "native";
+import { NativeModule } from "./nativeModule";
 
 export class SyncServer {
   private renderers = new Set<number>();
+  nativeModule: NativeModule;
+
+  constructor(nativeModule: NativeModule) {
+    this.nativeModule = nativeModule;
+  }
 
   register(webContentsId: number): SyncableState {
     this.renderers.add(webContentsId);
@@ -11,14 +16,14 @@ export class SyncServer {
     if (wc) {
       wc.once("destroyed", () => this.renderers.delete(webContentsId));
     }
-    return storeGetState();
+    return this.nativeModule.storeManager.getState();
   }
 
   setAndBroadcast(
     senderWebContentsId: number,
     partial: SyncableStatePartial,
   ): void {
-    storeSetPartial(partial);
+    this.nativeModule.storeManager.setPartial(partial);
     for (const id of this.renderers) {
       if (id === senderWebContentsId) continue;
       const wc = webContents.fromId(id);

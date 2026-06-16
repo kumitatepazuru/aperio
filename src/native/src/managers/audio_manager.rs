@@ -9,8 +9,6 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     Stream,
 };
-use napi_derive::napi;
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 struct Pending {
     start_time: f64,
@@ -36,12 +34,10 @@ impl Shared {
     }
 }
 
-#[pyclass]
-#[napi]
 pub struct AudioManager {
-    channels: u16,
-    sample_rate: u32,
-    bit_depth: u32,
+    pub(super) channels: u16,
+    pub(super) sample_rate: u32,
+    pub(super) bit_depth: u32,
     shared: Arc<Mutex<Shared>>,
     stream: Option<Stream>,
     monitor: Option<thread::JoinHandle<()>>,
@@ -52,15 +48,15 @@ impl AudioManager {
         channels: u16,
         sample_rate: u32,
         shared: Arc<Mutex<Shared>>,
-    ) -> PyResult<Stream> {
+    ) -> Result<Stream> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
-            .ok_or_else(|| PyRuntimeError::new_err("no default audio output device"))?;
+            .ok_or_else(|| anyhow!("no default audio output device"))?;
 
         let config = cpal::StreamConfig {
             channels,
-            sample_rate,
+            sample_rate: cpal::SampleRate::from(sample_rate),
             buffer_size: cpal::BufferSize::Default,
         };
 
@@ -90,11 +86,11 @@ impl AudioManager {
                 |err| eprintln!("[AudioManager] cpal error: {err}"),
                 None,
             )
-            .map_err(|e| PyRuntimeError::new_err(format!("build_output_stream failed: {e}")))?;
+            .map_err(|e| anyhow!("build_output_stream failed: {e}"))?;
 
         stream
             .play()
-            .map_err(|e| PyRuntimeError::new_err(format!("stream.play failed: {e}")))?;
+            .map_err(|e| anyhow!("stream.play failed: {e}"))?;
 
         Ok(stream)
     }
@@ -126,7 +122,6 @@ impl AudioManager {
                 continue;
             }
 
-            // Pick the entry with the latest start_time among those that are due
             let best = *due
                 .iter()
                 .max_by(|&&a, &&b| {
@@ -137,24 +132,12 @@ impl AudioManager {
                 .unwrap();
 
             let entry = st.pending.remove(best);
-            // Discard any remaining overdue entries
             st.pending.retain(|p| p.start_time > now);
             st.playing = entry.samples;
             st.play_pos = 0;
         })
     }
-}
 
-#[pymethods]
-#[napi]
-impl AudioManager {
-    /// Create an AudioManager.
-    ///
-    /// - `channels`: number of output channels
-    /// - `sample_rate`: samples per second (Hz)
-    /// - `bit_depth`: bits per sample (informational; cpal plays f32 directly)
-    #[new]
-    #[napi(constructor)]
     pub fn new(channels: u16, sample_rate: u32, bit_depth: u32) -> Result<Self> {
         let shared = Arc::new(Mutex::new(Shared {
             playing: Vec::new(),
@@ -175,15 +158,10 @@ impl AudioManager {
         })
     }
 
-    #[getter]
-    #[napi]
     pub fn channels(&self) -> u16 {
         self.channels
     }
 
-    /// Changing channels rebuilds the output stream.
-    #[setter]
-    #[napi]
     pub fn set_channels(&mut self, value: u16) -> Result<()> {
         let stream = Self::build_stream(value, self.sample_rate, Arc::clone(&self.shared))?;
         self.channels = value;
@@ -191,15 +169,10 @@ impl AudioManager {
         Ok(())
     }
 
-    #[getter]
-    #[napi]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
-    /// Changing sample_rate rebuilds the output stream.
-    #[setter]
-    #[napi]
     pub fn set_sample_rate(&mut self, value: u32) -> Result<()> {
         let stream = Self::build_stream(self.channels, value, Arc::clone(&self.shared))?;
         self.sample_rate = value;
@@ -207,14 +180,10 @@ impl AudioManager {
         Ok(())
     }
 
-    #[getter]
-    #[napi]
     pub fn bit_depth(&self) -> u32 {
         self.bit_depth
     }
 
-    #[setter]
-    #[napi]
     pub fn set_bit_depth(&mut self, value: u32) {
         self.bit_depth = value;
     }
@@ -222,10 +191,6 @@ impl AudioManager {
     /// Stack audio data for playback at `start_time` seconds from the playback clock.
     ///
     /// `data` shape: `[[ch0_s0, ch0_s1, ...], [ch1_s0, ch1_s1, ...], ...]`
-    ///
-    /// The playback clock starts on the first call to `stack_audio` and is reset by `stop()`.
-    /// If `start_time` has already elapsed, playback begins within ~1 ms. If another audio
-    /// is playing at `start_time`, it is interrupted and replaced.
     pub fn stack_audio(&mut self, data: Vec<Vec<f32>>, start_time: f64) -> Result<()> {
         if data.is_empty() {
             bail!("data must have at least one channel");
@@ -246,7 +211,7 @@ impl AudioManager {
         let mut st = self
             .shared
             .lock()
-            .map_err(|_| PyRuntimeError::new_err("mutex poisoned"))?;
+            .map_err(|_| anyhow!("mutex poisoned"))?;
 
         if st.playback_start.is_none() {
             st.playback_start = Some(Instant::now());
@@ -262,8 +227,6 @@ impl AudioManager {
         Ok(())
     }
 
-    /// Stop playback immediately and clear all stacked audio. Resets the playback clock.
-    #[napi]
     pub fn stop(&mut self) -> Result<()> {
         let mut st = self.shared.lock().map_err(|_| anyhow!("mutex poisoned"))?;
         st.playing.clear();
@@ -273,9 +236,6 @@ impl AudioManager {
         Ok(())
     }
 
-    /// Elapsed seconds since the playback clock started (0.0 before first `stack_audio`).
-    #[getter]
-    #[napi]
     pub fn current_time(&self) -> Result<f64> {
         let st = self.shared.lock().map_err(|_| anyhow!("mutex poisoned"))?;
         Ok(st.current_secs())
@@ -292,10 +252,4 @@ impl Drop for AudioManager {
             let _ = h.join();
         }
     }
-}
-
-#[pymodule(name = "audio")]
-pub mod audio_register {
-    #[pymodule_export]
-    use super::AudioManager;
 }

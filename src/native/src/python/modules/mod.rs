@@ -1,4 +1,11 @@
-use crate::structs::*;
+use crate::{
+    managers::wrappers::{
+        audio_manager::PyAudioManager,
+        config_manager::PyConfigManager,
+        store_manager::PyStoreManager,
+    },
+    structs::*,
+};
 use aperio_derive::register_submodules;
 use pyo3::{prelude::*, types::PyDict};
 
@@ -7,11 +14,16 @@ pub mod gpu_util;
 pub mod logger;
 pub mod text_rendering;
 
+#[pyclass(get_all)]
+pub struct PyManagers {
+    pub config_manager: Py<PyConfigManager>,
+    pub store_manager: Py<PyStoreManager>,
+    pub audio_manager: Py<PyAudioManager>,
+}
+
 #[register_submodules]
 #[pymodule]
 mod aperio {
-    #[pymodule_export]
-    use crate::audio::audio_register;
     #[pymodule_export]
     use super::avloader::avloader_register;
     #[pymodule_export]
@@ -23,7 +35,13 @@ mod aperio {
     #[pymodule_export]
     use super::text_rendering::text_rendering_register;
     #[pymodule_export]
-    use crate::store::store;
+    use crate::managers::wrappers::config_manager::config_manager;
+    #[pymodule_export]
+    use crate::managers::wrappers::audio_manager::audio_register;
+    #[pymodule_export]
+    use crate::managers::wrappers::store_manager::store;
+    #[pymodule_export]
+    use super::PyManagers;
 }
 
 /// `native` クレートが Python の sys.modules にモジュールを注入する際に使う関数。

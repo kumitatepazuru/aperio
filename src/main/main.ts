@@ -170,7 +170,7 @@ ipcMain.handle(
 
 // ─── Sync Server ─────────────────────────────────────────────────────────────
 
-const syncServer = new SyncServer();
+const syncServer = new SyncServer(nativeModule);
 
 ipcMain.handle("sync:register", (event) => {
   return syncServer.register(event.sender.id);

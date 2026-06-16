@@ -3,7 +3,6 @@ from typing import final
 
 @final
 class AudioManager:
-    def __new__(cls, /, channels: int, sample_rate: int, bit_depth: int) -> AudioManager: ...
     @property
     def bit_depth(self, /) -> int: ...
     @bit_depth.setter

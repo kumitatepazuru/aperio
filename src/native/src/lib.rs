@@ -1,51 +1,44 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::{
-    app_config::{AperioConfig, AperioConfigManager},
+    managers::{
+        audio_manager::AudioManager,
+        config_manager::ConfigManager,
+        store_manager::StoreManager,
+        wrappers::{
+            audio_manager::{NapiAudioManager, PyAudioManager},
+            config_manager::{NapiConfigManager, PyConfigManager},
+            store_manager::{NapiStoreManager, PyStoreManager},
+        },
+    },
+    python::modules::PyManagers,
     structs::{frame_structure::*, node_shared_texture::NodeOffscreenSharedTextureInfo},
-    utils::{get_local_data_dir, json_value::JsonValue},
+    utils::json_value::JsonValue,
 };
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
 #[cfg(target_os = "windows")]
 use gpu_util::texture_to_native::windows::SharedTextureHandle;
 
-// Python公開用の型は wrapper クレートから使用する
 use crate::python::modules::{
     gpu_util::{PySharedTextureHandle, WrappedSharedTextureFormat},
     text_rendering::FontsList,
 };
 use aperio_derive::impl_plugin_event_methods;
 use log::debug;
-use napi::bindgen_prelude::Uint8ArraySlice;
+use napi::bindgen_prelude::{JavaScriptClassExt, Reference, Uint8ArraySlice};
+use napi::Env;
 use napi_derive::napi;
 use pyo3::prelude::*;
 
-mod app_config;
+mod managers;
 mod python;
-mod store;
 mod structs;
 mod utils;
-mod audio;
-
-#[cfg(target_os = "linux")]
-fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
-    use std::ffi::CString;
-    unsafe {
-        let soname = CString::new(name)?; // 環境に合わせて調整
-                                          // 既に読み込まれていれば GLOBAL に昇格
-        let h = libc::dlopen(soname.as_ptr(), libc::RTLD_NOLOAD | libc::RTLD_GLOBAL);
-        if h.is_null() {
-            // 未ロードなら GLOBAL でロード
-            let h2 = libc::dlopen(soname.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL);
-            assert!(!h2.is_null(), "failed to dlopen libpython with RTLD_GLOBAL");
-        }
-
-        Ok(())
-    }
-}
 
 #[napi(object)]
+#[derive(Clone)]
 pub struct Dirs {
     pub data_dir: String,
     pub local_data_dir: String,
@@ -55,65 +48,12 @@ pub struct Dirs {
     pub dist_dir: String,
 }
 
-fn _initialize(dirs: &Dirs, config: &AperioConfig) -> anyhow::Result<Py<PyAny>> {
-    let default_version = &config.python.default_version;
-    let local_data_dir = get_local_data_dir(dirs)?;
-    let python_path = local_data_dir.join("python"); // pythonがある
-
-    // pythonがインストールされているか確認
-    // python環境変数の設定
-    if !python_path.exists() {
-        println!("Found no Python installation at {:?}", python_path);
-        python::utils::install_python(dirs, default_version, true)?;
-    }
-    python::utils::add_python_path_env(dirs)?;
-
-    let mut result = python::utils::check_python_installed(dirs)?;
-    let mut try_count = 0;
-    // TODO: try_countが3回を超えたら正しいエラーハンドリングをする
-    while !result.installed && try_count < 3 {
-        println!("Python is not installed. Installing...");
-        python::utils::install_python(
-            dirs,
-            result.version.as_ref().unwrap_or(default_version),
-            result.version.is_none(),
-        )?;
-        println!("Python installed");
-        result = python::utils::check_python_installed(dirs)?;
-        try_count += 1;
-    }
-
-    println!("Installed python version: {:?}", result.version);
-
-    println!("syncing packages...");
-    let sync_result = python::utils::sync_packages(dirs);
-    println!("Package sync result: {:?}", sync_result);
-
-    // Linuxの場合、libpythonをRTLD_GLOBALで読み込む
-    #[cfg(target_os = "linux")]
-    {
-        // resourc_dir/app.asar.unpacked/dist/にあるlibpython*.so*を探す
-        let entries = std::fs::read_dir(&dirs.dist_dir)?;
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-            if let Some(fname) = path.file_name().and_then(|s| s.to_str()) {
-                if fname.starts_with("libpython") && fname.contains(".so") {
-                    println!("Linux: Ensuring libpython global: {}", fname);
-                    ensure_libpython_global(fname)?;
-                }
-            }
-        }
-    }
-    // python環境の初期化
-    let pl_manager = python::initialize::initialize_python(dirs)?;
-
-    Ok(pl_manager)
-}
-
 #[napi]
 pub struct AperioManager {
     plmanager: Py<PyAny>,
+    config_manager: Reference<NapiConfigManager>,
+    audio_manager: Reference<NapiAudioManager>,
+    store_manager: Reference<NapiStoreManager>,
 }
 
 // 一部IDEでanalyserが誤ってエラーを出すため挿入
@@ -121,20 +61,82 @@ pub struct AperioManager {
 #[napi]
 impl AperioManager {
     #[napi(constructor)]
-    pub fn new(dirs: Dirs, config_manager: &AperioConfigManager) -> napi::Result<Self> {
+    pub fn new(env: Env, dirs: Dirs) -> napi::Result<Self> {
         match env_logger::try_init() {
             Ok(()) => {}
             Err(e) => {
-                // すでに初期化されている場合は無視するが、デバッグ用にログを出力
                 debug!("env_logger initialization skipped: {}", e);
             }
         }
-        let config = config_manager.get_config();
-        let plmanager = _initialize(&dirs, &config).map_err(|e| {
+
+        // 内部 struct を生成
+        let config_inner = ConfigManager::new(&dirs)?;
+        let config = config_inner.get_config();
+
+        let default_audio = crate::managers::store_manager::default_audio_state();
+        let audio_inner = AudioManager::new(
+            default_audio.channels,
+            default_audio.sample_rate,
+            default_audio.bit_depth,
+        )
+        .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+
+        // Arc でラップして共有所有権を確立
+        let config_arc = Arc::new(Mutex::new(config_inner));
+        let audio_arc = Arc::new(Mutex::new(audio_inner));
+        let store_arc = Arc::new(RwLock::new(StoreManager::new_with_audio(Arc::clone(
+            &audio_arc,
+        ))));
+
+        // napi wrapper を生成して Reference に変換
+        let config_ref = NapiConfigManager::new(Arc::clone(&config_arc)).into_reference(env)?;
+        let audio_ref = NapiAudioManager::new(Arc::clone(&audio_arc)).into_reference(env)?;
+        let store_ref = NapiStoreManager::new(Arc::clone(&store_arc)).into_reference(env)?;
+
+        // Python 環境初期化
+        python::initialize::initialize_python(&dirs, &config).map_err(|e| {
             napi::Error::from_reason(format!("Failed to initialize Python environment: {:?}", e))
         })?;
 
-        Ok(Self { plmanager })
+        // pyo3 wrapper を生成して PyManagers に格納
+        let py_managers = Python::attach(|py| -> PyResult<PyManagers> {
+            Ok(PyManagers {
+                config_manager: Py::new(py, PyConfigManager::new(Arc::clone(&config_arc)))?,
+                audio_manager: Py::new(py, PyAudioManager::new(Arc::clone(&audio_arc)))?,
+                store_manager: Py::new(py, PyStoreManager::new(Arc::clone(&store_arc)))?,
+            })
+        })
+        .map_err(|e| {
+            napi::Error::from_reason(format!("Failed to create Python managers: {:?}", e))
+        })?;
+
+        // プラグインマネージャー初期化
+        let plmanager =
+            python::initialize::initialize_pl_manager(&dirs, py_managers).map_err(|e| {
+                napi::Error::from_reason(format!("Failed to initialize plugin manager: {:?}", e))
+            })?;
+
+        Ok(Self {
+            plmanager,
+            config_manager: config_ref,
+            audio_manager: audio_ref,
+            store_manager: store_ref,
+        })
+    }
+
+    #[napi(getter)]
+    pub fn config_manager(&self, env: Env) -> napi::Result<Reference<NapiConfigManager>> {
+        self.config_manager.clone(env)
+    }
+
+    #[napi(getter)]
+    pub fn audio_manager(&self, env: Env) -> napi::Result<Reference<NapiAudioManager>> {
+        self.audio_manager.clone(env)
+    }
+
+    #[napi(getter)]
+    pub fn store_manager(&self, env: Env) -> napi::Result<Reference<NapiStoreManager>> {
+        self.store_manager.clone(env)
     }
 
     #[napi]
@@ -195,7 +197,6 @@ impl AperioManager {
         let pl_manager = &self.plmanager;
 
         let content_size = base_texture.coded_size;
-        // formatとbase_texture.pixel_formatが一致してなければエラー
         if (tex_format == WrappedSharedTextureFormat::Rgba16Float
             && base_texture.pixel_format != "rgbaf16")
             || (tex_format == WrappedSharedTextureFormat::Bgra8Unorm

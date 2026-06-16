@@ -11,7 +11,7 @@ from aperio.frame_structure import PluginNameInfo
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import EffectGeneratorBase, ObjectGeneratorBase
 
-
+# TODO: PluginLoaderに改名、ファイル名も改名
 class PluginManager:
     """
     プラグインの登録・読み込み・追加を管理するクラス。

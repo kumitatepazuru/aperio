@@ -3,10 +3,13 @@ import os.path
 import struct
 import traceback
 
-from aperio import gpu_util
+from aperio import PyManagers, gpu_util
 from aperio import logger
 from aperio import text_rendering
+from aperio.audio import AudioManager
+from aperio.config_manager import ConfigManager
 from aperio.frame_structure import *
+from aperio.store import StoreManager
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
@@ -40,7 +43,11 @@ from .event_manager import EventManager
 # モジュールレベルグローバル — AperioManager.__init__ で設定される
 image_generator = gpu_util.PyImageGenerator()
 text_renderer = text_rendering.PyTextRenderer(image_generator)
+# TODO: PluginManagerに名称を変更し、plugin_managerとして提供
 manager: AperioManager
+config_manager: ConfigManager
+store_manager: StoreManager
+audio_manager: AudioManager
 
 
 class AperioManager(PluginManager, EventManager):
@@ -49,8 +56,11 @@ class AperioManager(PluginManager, EventManager):
     Rust 側から aperio_plugin.AperioManager として参照される。
     """
 
-    def __init__(self, data_dir: str, plugin_dir_name: str = "plugins"):
+    def __init__(self, data_dir: str, managers: PyManagers, plugin_dir_name: str = "plugins"):
         global manager
+        global config_manager
+        global store_manager
+        global audio_manager
 
         # モジュールレベルグローバルに自身を設定（プラグインから参照されるため）
         manager = self
@@ -58,6 +68,11 @@ class AperioManager(PluginManager, EventManager):
         # self にも保持（フレーム生成メソッドで直接参照）
         self.generator = image_generator
         self.text_renderer = text_renderer
+
+        # managers から各種マネージャーを取得して設定
+        config_manager = managers.config_manager
+        store_manager = managers.store_manager
+        audio_manager = managers.audio_manager
 
         shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
         with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:
@@ -282,7 +297,7 @@ class AperioManager(PluginManager, EventManager):
         height: int,
         fps: float,
         texture_handle: gpu_util.PySharedTextureHandle,
-        format: gpu_util.SharedTextureFormat,
+        format: gpu_util.WrappedSharedTextureFormat,
     ) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
@@ -294,7 +309,7 @@ class AperioManager(PluginManager, EventManager):
             height (int): フレームの高さ
             fps (float): フレームレート
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
-            format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
+            format (gpu_util.WrappedSharedTextureFormat): 共有テクスチャのフォーマット
         
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書

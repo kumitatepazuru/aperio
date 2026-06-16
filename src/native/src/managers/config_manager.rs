@@ -1,4 +1,6 @@
+use anyhow::Result;
 use napi_derive::napi;
+use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -15,8 +17,10 @@ use crate::Dirs;
 pub struct PythonConfig {
     pub default_version: String,
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[napi(object)]
+#[pyclass(from_py_object)]
 pub struct AperioConfig {
     pub python: PythonConfig,
     pub fast_preview: bool,
@@ -24,27 +28,22 @@ pub struct AperioConfig {
     pub dock_layout: Option<JsonValue>,
 }
 
-const DEFAULT_CONFIG: &str = include_str!("data/default-config.json");
+const DEFAULT_CONFIG: &str = include_str!("../data/default-config.json");
 
-#[derive(Clone)]
-#[napi]
-pub struct AperioConfigManager {
+pub struct ConfigManager {
     config_path: PathBuf,
     config: AperioConfig,
 }
 
-#[napi]
-impl AperioConfigManager {
-    #[napi(constructor)]
-    pub fn new(dirs: Dirs) -> napi::Result<Self> {
-        // 設定ファイルがあるか確認し、なければdefault-config.jsonをコピー
+impl ConfigManager {
+    pub fn new(dirs: &Dirs) -> napi::Result<Self> {
         let appdata_dir =
-            get_data_dir(&dirs).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            get_data_dir(dirs).map_err(|e| napi::Error::from_reason(e.to_string()))?;
         let config_path = appdata_dir.join("config.json");
         let config_str = if !config_path.exists() {
             let config_bytes = DEFAULT_CONFIG.as_bytes();
             let mut file = File::create(&config_path)?;
-            file.write(config_bytes)?;
+            file.write_all(config_bytes)?;
             file.sync_data()?;
             println!("Default config copied to {:?}", config_path);
 
@@ -62,10 +61,10 @@ impl AperioConfigManager {
                     "Failed to parse config.json: {}. Trying to merge with default config.",
                     err
                 );
-                let merged_config = merge_configs(&config_str)?;
+                let merged_config = merge_configs(&config_str)
+                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
                 let config: AperioConfig = serde_json::from_value(merged_config)?;
 
-                // 成功したなら保存
                 let config_str = serde_json::to_string_pretty(&config)?;
                 fs::write(&config_path, config_str)?;
 
@@ -73,19 +72,17 @@ impl AperioConfigManager {
             }
         };
 
-        Ok(AperioConfigManager {
+        Ok(ConfigManager {
             config_path,
             config,
         })
     }
 
-    #[napi(getter, js_name = "config")]
     pub fn get_config(&self) -> AperioConfig {
         self.config.clone()
     }
 
-    #[napi]
-    pub fn set_config(&mut self, config: AperioConfig) -> napi::Result<()> {
+    pub fn set_config(&mut self, config: AperioConfig) -> Result<()> {
         let config_str = serde_json::to_string_pretty(&config)?;
         self.config = config;
         fs::write(&self.config_path, config_str)?;
@@ -94,7 +91,7 @@ impl AperioConfigManager {
     }
 }
 
-fn merge_configs(config: &str) -> napi::Result<Value> {
+fn merge_configs(config: &str) -> Result<Value> {
     let default_config_bytes = DEFAULT_CONFIG.as_bytes();
     let default_config: Value = serde_json::from_slice(default_config_bytes)?;
     let user_config: Value = serde_json::from_str(config)?;

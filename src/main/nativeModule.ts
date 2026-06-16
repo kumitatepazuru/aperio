@@ -12,14 +12,16 @@ import {
   ItemStructure,
   NodeOffscreenSharedTextureInfo,
   AperioManager,
-  AperioConfigManager,
+  ConfigManager,
   AperioConfig,
+  StoreManager,
 } from "native";
 
 const TIMEOUT_MS = 5000;
 
 export class NativeModule {
-  configManager: AperioConfigManager;
+  configManager: ConfigManager;
+  storeManager: StoreManager;
   aperioManager: AperioManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
@@ -43,8 +45,9 @@ export class NativeModule {
     console.log("Plugin Manager Path:", dirs.pluginManagerDir);
     console.log("Default Plugins Path:", dirs.defaultPluginsDir);
     console.log("Dist Path:", dirs.distDir);
-    this.configManager = new AperioConfigManager(dirs);
-    this.aperioManager = new AperioManager(dirs, this.configManager);
+    this.aperioManager = new AperioManager(dirs);
+    this.configManager = this.aperioManager.configManager;
+    this.storeManager = this.aperioManager.storeManager;
   }
 
   setOsrWebContents(wc: Electron.WebContents) {

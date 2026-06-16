@@ -2,11 +2,17 @@ from aperio.frame_structure import *
 from .event_manager import EventManager
 from .plugin_manager import PluginManager
 from _typeshed import Incomplete
-from aperio import gpu_util
+from aperio import PyManagers as PyManagers, gpu_util
+from aperio.audio import AudioManager as AudioManager
+from aperio.config_manager import ConfigManager as ConfigManager
+from aperio.store import StoreManager as StoreManager
 
 image_generator: Incomplete
 text_renderer: Incomplete
 manager: AperioManager
+config_manager: ConfigManager
+store_manager: StoreManager
+audio_manager: AudioManager
 
 class AperioManager(PluginManager, EventManager):
     """
@@ -17,7 +23,7 @@ class AperioManager(PluginManager, EventManager):
     text_renderer: Incomplete
     compose_wgsl: Incomplete
     fill_black_wgsl: Incomplete
-    def __init__(self, data_dir: str, plugin_dir_name: str = 'plugins') -> None: ...
+    def __init__(self, data_dir: str, managers: PyManagers, plugin_dir_name: str = 'plugins') -> None: ...
     def get_fonts_list(self) -> dict[str, list[int]]:
         """
         システムにインストールされているフォントの一覧を返す。
@@ -40,7 +46,7 @@ class AperioManager(PluginManager, EventManager):
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, fps: float, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.SharedTextureFormat) -> dict[str, ItemResult]:
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, fps: float, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.WrappedSharedTextureFormat) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -51,7 +57,7 @@ class AperioManager(PluginManager, EventManager):
             height (int): フレームの高さ
             fps (float): フレームレート
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
-            format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
+            format (gpu_util.WrappedSharedTextureFormat): 共有テクスチャのフォーマット
         
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
