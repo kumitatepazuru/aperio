@@ -31,7 +31,6 @@ declare global {
       ) => void;
       getFrameSharedTexture: (
         count: number,
-        fps: number,
         frameStruct: ItemStructure[],
       ) => Promise<void>;
     };
@@ -49,7 +48,9 @@ declare global {
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       openContextMenu: (id: string) => Promise<void>;
-      onAddObject: (cb: (objName: string) => void) => () => void;
+      onAddObject: (
+        cb: (objName: string, type: "Audio" | "Video") => void,
+      ) => () => void;
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
       resizeOsr: (width: number, height: number) => Promise<void>;

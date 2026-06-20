@@ -88,6 +88,7 @@ const _useStore = create<Store>()((set, get) => {
     selectedItemIds: [],
     mainSelectedItemId: null,
     colorPicker: { colorSpace: "HSV", displayMode: "0-255", history: [] },
+    audioState: { channels: 2, sampleRate: 44100, bitDepth: 16 },
     frameResults: {},
     play: (beginFrame: number) =>
       syncSet({
@@ -187,7 +188,7 @@ export const getCurrentFrameStruct = async () => {
         )
       : viewerState.beginFrame;
   return state.timelineItems
-    .filter((item) => currentFrame >= item.from && currentFrame <= item.to)
+    .filter((item) => currentFrame >= item.start && currentFrame <= item.end)
     .sort((a, b) => a.layer - b.layer);
 };
 

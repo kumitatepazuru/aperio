@@ -5,6 +5,8 @@ import type { ItemStructure } from "native";
 import { useEffect, useState } from "react";
 import { FaArrowRotateRight } from "react-icons/fa6";
 
+type VideoItem = ItemStructure & { type: "Video" };
+
 const Overlay = () => {
   const viewerState = useStore((state) => state.viewerState);
   const frameState = useStore((state) => state.frameState);
@@ -37,7 +39,7 @@ const Overlay = () => {
     e.stopPropagation();
 
     const item = timelineItems.find((i) => i.id === itemId);
-    if (!item) return;
+    if (!item || item.type !== "Video") return;
 
     // ハンドルの親要素（アイテムdiv）の中心 = 回転中心をクライアント座標で取得
     const itemRect = (
@@ -53,10 +55,13 @@ const Overlay = () => {
       e.clientX - centerClientX,
     );
 
-    // 選択中のすべてのアイテムの初期回転角を記録
+    // 選択中のすべてのVideoアイテムの初期回転角を記録
     const initRotations = new Map(
       timelineItems
-        .filter((i) => selectedItemIds.includes(i.id))
+        .filter(
+          (i): i is VideoItem =>
+            selectedItemIds.includes(i.id) && i.type === "Video",
+        )
         .map((i) => [i.id, i.rotation]),
     );
 
@@ -71,6 +76,7 @@ const Overlay = () => {
         timelineItems.map((i) => {
           const initRot = initRotations.get(i.id);
           if (initRot === undefined) return i;
+          if (i.type !== "Video") return i;
           // CSS: rotate(-item.rotation) なので、時計回りドラッグ = item.rotation 減少
           return { ...i, rotation: orgFloor(initRot - deltaAngleDeg, 100) };
         }),
@@ -99,7 +105,7 @@ const Overlay = () => {
 
     const item = timelineItems.find((i) => i.id === itemId);
     const result = frameResults[itemId];
-    if (!item || !result) return;
+    if (!item || item.type !== "Video" || !result) return;
 
     const pctW = width / frameState.width;
     const pctH = height / frameState.height;
@@ -149,10 +155,15 @@ const Overlay = () => {
     const initialMouseX = e.clientX;
     const initialMouseY = e.clientY;
 
-    // 他の選択アイテムの初期スケールを記録
+    // 他の選択Videoアイテムの初期スケールを記録
     const initOtherScales = new Map(
       timelineItems
-        .filter((i) => selectedItemIds.includes(i.id) && i.id !== itemId)
+        .filter(
+          (i): i is VideoItem =>
+            selectedItemIds.includes(i.id) &&
+            i.id !== itemId &&
+            i.type === "Video",
+        )
         .map((i) => [i.id, i.scale]),
     );
 
@@ -184,6 +195,7 @@ const Overlay = () => {
       setTimelineItems(
         timelineItems.map((i) => {
           if (i.id === itemId) {
+            if (i.type !== "Video") return i;
             return {
               ...i,
               scale: orgFloor(newScale, 100),
@@ -193,6 +205,7 @@ const Overlay = () => {
           }
           const initS = initOtherScales.get(i.id);
           if (initS === undefined) return i;
+          if (i.type !== "Video") return i;
           // 他の選択アイテム: 同じスケール倍率を適用（各自の中心から拡縮）
           return { ...i, scale: orgFloor(initS * scaleFactor, 100) };
         }),
@@ -221,9 +234,12 @@ const Overlay = () => {
     const initialMouseX = e.clientX;
     const initialMouseY = e.clientY;
 
-    // 選択中のすべてのアイテムの初期座標を記録
+    // 選択中のすべてのVideoアイテムの初期座標を記録
     const initItems = timelineItems
-      .filter((i) => selectedItemIds.includes(i.id))
+      .filter(
+        (i): i is VideoItem =>
+          selectedItemIds.includes(i.id) && i.type === "Video",
+      )
       .map((i) => ({ id: i.id, x: i.x, y: i.y }));
 
     const onDrag = (e: MouseEvent) => {
@@ -234,6 +250,7 @@ const Overlay = () => {
         timelineItems.map((i) => {
           const init = initItems.find((it) => it.id === i.id);
           if (!init) return i;
+          if (i.type !== "Video") return i;
           return {
             ...i,
             x: Math.round(init.x + deltaX / pctW),
@@ -266,6 +283,7 @@ const Overlay = () => {
       onMouseDown={clearSelection}
     >
       {items.map((item) => {
+        if (item.type !== "Video") return null;
         const result = frameResults[item.id];
         if (!result) return;
         const selected = selectedItemIds.includes(item.id);

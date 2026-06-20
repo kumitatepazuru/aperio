@@ -13,7 +13,7 @@ use crate::{
         },
     },
     python::modules::PyManagers,
-    structs::{frame_structure::*, node_shared_texture::NodeOffscreenSharedTextureInfo},
+    structs::{item_structures::*, node_shared_texture::NodeOffscreenSharedTextureInfo},
     utils::json_value::JsonValue,
 };
 #[cfg(target_os = "linux")]
@@ -190,7 +190,6 @@ impl AperioManager {
         &self,
         count: i32,
         tex_format: WrappedSharedTextureFormat,
-        fps: f64,
         frame_struct: Vec<ItemStructure>,
         base_texture: NodeOffscreenSharedTextureInfo,
     ) -> napi::Result<HashMap<String, ItemResult>> {
@@ -221,7 +220,6 @@ impl AperioManager {
                     frame_struct,
                     content_size.width,
                     content_size.height,
-                    fps,
                     base_texture,
                     tex_format,
                 ))?

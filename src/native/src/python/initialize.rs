@@ -91,7 +91,7 @@ pub fn initialize_pl_manager(dirs: &Dirs, py_managers: PyManagers) -> Result<Py<
     let pl_manager = Python::attach(|py| {
         let sys = py.import("sys")?;
 
-        // aperio / aperio.gpu_util / aperio.logger / aperio.frame_structure をまとめて注入
+        // aperio / aperio.gpu_util / aperio.logger / aperio.item_structures をまとめて注入
         let modules = sys.getattr("modules")?;
         let modules = modules.cast::<PyDict>()?;
         modules::register_all(py, modules)?;

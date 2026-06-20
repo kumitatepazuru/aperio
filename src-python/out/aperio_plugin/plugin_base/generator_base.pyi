@@ -1,7 +1,10 @@
+import numpy as np
+import numpy.typing as npt
 from . import SubPluginBase as SubPluginBase
-from aperio.frame_structure import ItemStructure as ItemStructure
 from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl
+from aperio.item_structures import ItemStructure as ItemStructure
 from dataclasses import dataclass
+from enum import Enum as Enum
 
 @dataclass
 class GeneratorWgslReturn:
@@ -25,40 +28,73 @@ class GeneratorTextureReturn:
     output_height: int
 
 @dataclass
-class GenerateParameters:
-    """フレーム生成に必要なパラメーターをまとめたデータクラス。ジェネレーターのgenerateメソッドに渡される。"""
+class VideoGenerateParameters:
+    """ビデオフレーム生成に必要なパラメーターをまとめたデータクラス。ジェネレーターのgenerateメソッドに渡される。"""
     frame_number: int
-    layer: ItemStructure
+    layer: ItemStructure.Video
     args: dict
     width: int
     height: int
-    fps: float
 
-class GeneratorBase(SubPluginBase):
+@dataclass
+class AudioGenerateParameters:
+    """オーディオサンプル生成に必要なパラメーターをまとめたデータクラス。ジェネレーターのgenerateメソッドに渡される。"""
+    start_time: float
+    layer: ItemStructure.Audio
+    sample_rate: int
+    channels: int
+    sample_count: int
+    args: dict
+    input_samples: npt.NDArray[np.float32] | None = ...
+
+class VideoGeneratorBase(SubPluginBase):
     """
     フレームを生成するための基底クラス。サブクラスでオーバーライドして使用することを想定している。
     イベントハンドラーは @event デコレーターで登録する。
     """
     def __init__(self) -> None: ...
-    def generate(self, params: GenerateParameters) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
         Args:
-            params (GenerateParameters): フレーム生成に必要なパラメーター
+            params (VideoGenerateParameters): フレーム生成に必要なパラメーター
 
         Returns:
             GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
             生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
 
-class ObjectGeneratorBase(GeneratorBase):
+class AudioGeneratorBase(SubPluginBase):
     """
-    オブジェクトを生成するための基底クラス。
-    on_new / on_request_structure は @event デコレーターでサブクラスに実装する。
+    オーディオサンプルを生成するための基底クラス。サブクラスでオーバーライドして使用することを想定している。
+    イベントハンドラーは @event デコレーターで登録する。
     """
-class EffectGeneratorBase(GeneratorBase):
+    def __init__(self) -> None: ...
+    def generate(self, params: AudioGenerateParameters) -> npt.NDArray[np.float32] | None:
+        """
+        オーディオサンプルを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
+
+        Args:
+            params (AudioGenerateParameters): オーディオサンプル生成に必要なパラメーター
+
+        Returns:
+            npt.NDArray[np.float32] | None: 生成されたオーディオサンプルの2次元配列。Noneを返すとその処理はスキップされる。
+        """
+
+class VideoObjectGeneratorBase(VideoGeneratorBase):
     """
-    エフェクトを適用してフレームを生成するための基底クラス。
-    on_new / on_request_structure は @event デコレーターでサブクラスに実装する。
+    ビデオオブジェクトを生成するための基底クラス。
+    """
+class VideoEffectGeneratorBase(VideoGeneratorBase):
+    """
+    ビデオエフェクトを適用してフレームを生成するための基底クラス。
+    """
+class AudioObjectGeneratorBase(AudioGeneratorBase):
+    """
+    オーディオオブジェクトを生成するための基底クラス。
+    """
+class AudioEffectGeneratorBase(AudioGeneratorBase):
+    """
+    オーディオエフェクトを適用してサンプルを生成するための基底クラス。
     """

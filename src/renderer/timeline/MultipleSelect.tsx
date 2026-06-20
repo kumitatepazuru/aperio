@@ -8,15 +8,19 @@ type Props = {
 };
 
 const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
-  const { timelineItems, selectedItemIds, mainSelectedItemId, setSelectedItems } =
-    useStore(
-      useShallow((state) => ({
-        timelineItems: state.timelineItems,
-        selectedItemIds: state.selectedItemIds,
-        mainSelectedItemId: state.mainSelectedItemId,
-        setSelectedItems: state.setSelectedItems,
-      })),
-    );
+  const {
+    timelineItems,
+    selectedItemIds,
+    mainSelectedItemId,
+    setSelectedItems,
+  } = useStore(
+    useShallow((state) => ({
+      timelineItems: state.timelineItems,
+      selectedItemIds: state.selectedItemIds,
+      mainSelectedItemId: state.mainSelectedItemId,
+      setSelectedItems: state.setSelectedItems,
+    })),
+  );
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -50,8 +54,8 @@ const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
 
       const inRect = timelineItems
         .filter((item) => {
-          const itemLeft = item.from * zoomLevelPxPerFrame;
-          const itemRight = item.to * zoomLevelPxPerFrame;
+          const itemLeft = item.start * zoomLevelPxPerFrame;
+          const itemRight = item.end * zoomLevelPxPerFrame;
           const itemTop = item.layer * layerHeight;
           const itemBottom = itemTop + layerHeight;
           return (
@@ -67,8 +71,11 @@ const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
         firstEnteredIdRef.current = inRect[0];
       }
 
-      const mergedIds = [...new Set([...initialSelectionRef.current.ids, ...inRect])];
-      const mainId = initialSelectionRef.current.mainId ?? firstEnteredIdRef.current;
+      const mergedIds = [
+        ...new Set([...initialSelectionRef.current.ids, ...inRect]),
+      ];
+      const mainId =
+        initialSelectionRef.current.mainId ?? firstEnteredIdRef.current;
 
       setSelectedItems(mergedIds, mainId);
     };
@@ -96,7 +103,10 @@ const MultipleSelect = ({ zoomLevelPxPerFrame, layerHeight }: Props) => {
       x: event.clientX - bounds.left,
       y: event.clientY - bounds.top,
     };
-    initialSelectionRef.current = { ids: selectedItemIds, mainId: mainSelectedItemId };
+    initialSelectionRef.current = {
+      ids: selectedItemIds,
+      mainId: mainSelectedItemId,
+    };
     firstEnteredIdRef.current = null;
     setSelRect(null);
   };

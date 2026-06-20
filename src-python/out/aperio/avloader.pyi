@@ -1,5 +1,5 @@
+from .gpu_util import PyImageGenerator, PyTexture
 from _typeshed import Incomplete
-from aperio.gpu_util import PyImageGenerator, PyTexture
 from collections.abc import Sequence
 from typing import Final, final
 

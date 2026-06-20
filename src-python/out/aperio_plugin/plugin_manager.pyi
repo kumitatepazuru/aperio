@@ -1,7 +1,7 @@
+from .plugin_base.generator_base import *
 from .plugin_base import MainPluginBase as MainPluginBase, SubPluginBase as SubPluginBase
-from .plugin_base.generator_base import EffectGeneratorBase as EffectGeneratorBase, ObjectGeneratorBase as ObjectGeneratorBase
 from _typeshed import Incomplete
-from aperio.frame_structure import PluginNameInfo
+from aperio.item_structures import PluginNameInfo
 from typing import Callable
 
 class PluginManager:
@@ -10,8 +10,10 @@ class PluginManager:
     プラグインディレクトリのスキャン、クラスのインスタンス化、サブプラグインの登録を担う。
     """
     plugins: dict[str, MainPluginBase]
-    object_plugins: dict[str, ObjectGeneratorBase]
-    effect_plugins: dict[str, EffectGeneratorBase]
+    video_object_plugins: dict[str, VideoObjectGeneratorBase]
+    video_effect_plugins: dict[str, VideoEffectGeneratorBase]
+    audio_object_plugins: dict[str, AudioObjectGeneratorBase]
+    audio_effect_plugins: dict[str, AudioEffectGeneratorBase]
     data_dir: Incomplete
     plugin_dir_name: Incomplete
     def __init__(self, data_dir: str, plugin_dir_name: str = 'plugins') -> None: ...

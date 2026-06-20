@@ -1,5 +1,5 @@
+from .item_structures import ItemStructure
 from _typeshed import Incomplete
-from aperio.frame_structure import ItemStructure
 from collections.abc import Sequence
 from typing import Any, final
 
@@ -51,7 +51,7 @@ class SyncableState:
     @property
     def selected_item_ids(self, /) -> list[str]: ...
     @property
-    def timeline_items(self, /) -> list[Incomplete]: ...
+    def timeline_items(self, /) -> list[ItemStructure]: ...
     @property
     def viewer_state(self, /) -> ViewerState: ...
 

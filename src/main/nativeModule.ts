@@ -98,7 +98,6 @@ export class NativeModule {
 
   getFrameSharedTexture(
     count: number,
-    fps: number,
     frameStruct: ItemStructure[],
     frame: Electron.WebContents,
   ) {
@@ -111,7 +110,6 @@ export class NativeModule {
       const frameResults = this.aperioManager.getFrameTexture(
         count,
         this.configManager.config.texPixelFormat,
-        fps,
         frameStruct,
         textureInfo as NodeOffscreenSharedTextureInfo,
       );

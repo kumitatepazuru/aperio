@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::managers::audio_manager::AudioManager;
-use crate::structs::frame_structure::ItemStructure;
+use crate::structs::item_structures::ItemStructure;
 use crate::utils::NullOr;
 
 #[napi(object)]

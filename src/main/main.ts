@@ -102,8 +102,8 @@ ipcMain.handle(
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  (event, count: number, fps: number, frameStruct: ItemStructure[]) => {
-    nativeModule.getFrameSharedTexture(count, fps, frameStruct, event.sender);
+  (event, count: number, frameStruct: ItemStructure[]) => {
+    nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
   },
 );
 

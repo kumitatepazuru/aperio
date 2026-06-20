@@ -5,7 +5,7 @@ import type { RequestStructureParameter } from "native";
 import { useMemo } from "react";
 
 // TODO: ID重複の時にエラーを出す
-const baseParameterStructure: RequestStructureParameter[] = [
+const videoBaseParameterStructure: RequestStructureParameter[] = [
   {
     type: "Vec2Int",
     id: "position",
@@ -36,6 +36,23 @@ const baseParameterStructure: RequestStructureParameter[] = [
   },
 ];
 
+const audioBaseParameterStructure: RequestStructureParameter[] = [
+  {
+    type: "Float",
+    id: "volume",
+    title: "音量",
+    defaultValue: 100,
+    suffix: "%",
+  },
+  {
+    type: "Float",
+    id: "pan",
+    title: "パン",
+    defaultValue: 0,
+    suffix: "%",
+  },
+];
+
 const BaseParameter = () => {
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
   const setTimelineItems = useStore((state) => state.setTimelineItems);
@@ -43,27 +60,42 @@ const BaseParameter = () => {
     state.timelineItems.find((item) => item.id === state.mainSelectedItemId),
   );
 
-  const baseParams: Record<string, ConfigableValue> | null = useMemo(() => {
+  const baseParams = useMemo<Record<string, ConfigableValue> | null>(() => {
     if (!selectedItem) return null;
-    return {
-      position: [selectedItem.x, selectedItem.y],
-      scale: selectedItem.scale,
-      rotation: selectedItem.rotation,
-      alpha: selectedItem.alpha,
-    };
+    if (selectedItem.type === "Video") {
+      const r: Record<string, ConfigableValue> = {
+        position: [selectedItem.x, selectedItem.y],
+        scale: selectedItem.scale,
+        rotation: selectedItem.rotation,
+        alpha: selectedItem.alpha,
+      };
+      return r;
+    } else {
+      const r: Record<string, ConfigableValue> = {
+        volume: selectedItem.volume,
+        pan: selectedItem.pan,
+      };
+      return r;
+    }
   }, [selectedItem]);
 
   const handleBaseChange = async (params: Record<string, ConfigableValue>) => {
     if (!selectedItemId) return;
 
-    // positionだけxyに分けて保存する
-    const position = params.position as Vec2Value;
-    const updatedParams = {
-      ...params,
-      position: undefined,
-      x: position[0],
-      y: position[1],
-    };
+    let updatedParams = {};
+
+    if (selectedItem?.type === "Video") {
+      // positionだけxyに分けて保存する
+      const position = params.position as Vec2Value;
+      updatedParams = {
+        ...params,
+        position: undefined,
+        x: position[0],
+        y: position[1],
+      };
+    } else {
+      updatedParams = params;
+    }
     const timeline = (await getStoreState()).timelineItems;
     setTimelineItems(
       timeline.map((item) =>
@@ -74,7 +106,11 @@ const BaseParameter = () => {
 
   return (
     <Configable
-      structures={baseParameterStructure}
+      structures={
+        selectedItem?.type === "Video"
+          ? videoBaseParameterStructure
+          : audioBaseParameterStructure
+      }
       value={baseParams ?? {}}
       onChange={handleBaseChange}
     />

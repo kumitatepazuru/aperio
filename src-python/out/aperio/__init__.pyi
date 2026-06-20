@@ -1,7 +1,7 @@
+from .audio import AudioManager
+from .config_manager import ConfigManager
+from .store import StoreManager
 from _typeshed import Incomplete
-from aperio.audio import AudioManager
-from aperio.config_manager import ConfigManager
-from aperio.store import StoreManager
 from typing import final
 
 @final

@@ -3,13 +3,13 @@ import os
 
 import aperio_plugin
 from aperio.avloader import PyVideoLoader
-from aperio.frame_structure import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
+from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, ObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, VideoGenerateParameters, VideoObjectGeneratorBase
 
 
-class VideoObject(ObjectGeneratorBase):
+class VideoObject(VideoObjectGeneratorBase):
     """
     動画を再生するオブジェクトプラグイン。動画ファイルのパスを指定してフレームに動画を再生することができる。
     """
@@ -58,7 +58,7 @@ class VideoObject(ObjectGeneratorBase):
             ],
         )
 
-    def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorTextureReturn | None:
         paths = params.args.get("video_path", [""])
         if not paths:
             return None
@@ -68,11 +68,11 @@ class VideoObject(ObjectGeneratorBase):
         if video_loader is None or compiled_func is None:
             return None
 
-        video_frame_number = params.frame_number - params.layer.get("from", 0) + 1
+        video_frame_number = params.frame_number - params.layer.start + 1
 
         return GeneratorTextureReturn(
             compiled=compiled_func,
-            params=(video_frame_number, params.fps),
+            params=(video_frame_number, aperio_plugin.store_manager.get_state().frame_state.fps),
             output_width=video_loader.width,
             output_height=video_loader.height,
         )

@@ -2,13 +2,13 @@ import os
 import struct
 
 import aperio_plugin
-from aperio.frame_structure import GeneratorEvent, GeneratorInformation, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import EffectGeneratorBase, GenerateParameters, GeneratorWgslReturn
+from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 
-class BlurEffect(EffectGeneratorBase):
+class BlurEffect(VideoEffectGeneratorBase):
     def __init__(self) -> None:
         super().__init__()
         self.name = "base.blur_effect"
@@ -37,7 +37,7 @@ class BlurEffect(EffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: GenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
         args = params.args
         blur_radius = args.get("blur_radius", 5)
         if blur_radius < 0:

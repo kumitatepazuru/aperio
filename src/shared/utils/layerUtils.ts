@@ -38,7 +38,7 @@ export const snapFrame = (
  *          すべての非ゼロ値で衝突する場合は 0 を返す。
  */
 export function clampLayerDelta(
-  initItems: Array<{ id: string; from: number; to: number; layer: number }>,
+  initItems: Array<{ id: string; start: number; end: number; layer: number }>,
   desiredLayerDelta: number,
 ): number {
   const hasConflict = (ld: number): boolean => {
@@ -48,7 +48,7 @@ export function clampLayerDelta(
       for (let j = i + 1; j < initItems.length; j++) {
         const b = initItems[j];
         if (Math.max(0, b.layer + ld) !== aLayer) continue;
-        if (a.from < b.to && a.to > b.from) return true;
+        if (a.start < b.end && a.end > b.start) return true;
       }
     }
     return false;
@@ -82,24 +82,24 @@ export function clampLayerDelta(
 export function resolveGroupMoveDelta(
   allItems: ItemStructure[],
   movingIds: Set<string>,
-  initItems: Array<{ id: string; from: number; to: number; layer: number }>,
+  initItems: Array<{ id: string; start: number; end: number; layer: number }>,
   layerDelta: number,
   desiredDelta: number,
 ): number {
   if (initItems.length === 0) return desiredDelta;
 
   // いずれかのアイテムが frame 0 より前に行かないよう最小デルタを計算
-  const minDelta = -Math.min(...initItems.map((i) => i.from));
+  const minDelta = -Math.min(...initItems.map((i) => i.start));
 
   const isValidDelta = (D: number): boolean => {
     if (D < minDelta) return false;
     for (const init of initItems) {
       const targetLayer = Math.max(0, init.layer + layerDelta);
-      const newFrom = init.from + D;
-      const newTo = newFrom + (init.to - init.from);
+      const newStart = init.start + D;
+      const newEnd = newStart + (init.end - init.start);
       for (const o of allItems) {
         if (movingIds.has(o.id) || o.layer !== targetLayer) continue;
-        if (newFrom < o.to && newTo > o.from) return false;
+        if (newStart < o.end && newEnd > o.start) return false;
       }
     }
     return true;
@@ -112,11 +112,11 @@ export function resolveGroupMoveDelta(
   const candidates = new Set<number>([0, minDelta]);
   for (const init of initItems) {
     const targetLayer = Math.max(0, init.layer + layerDelta);
-    const duration = init.to - init.from;
+    const duration = init.end - init.start;
     for (const o of allItems) {
       if (movingIds.has(o.id) || o.layer !== targetLayer) continue;
-      candidates.add(o.from - duration - init.from); // このアイテムを障害物の直前に
-      candidates.add(o.to - init.from); // このアイテムを障害物の直後に
+      candidates.add(o.start - duration - init.start); // このアイテムを障害物の直前に
+      candidates.add(o.end - init.start); // このアイテムを障害物の直後に
     }
   }
 

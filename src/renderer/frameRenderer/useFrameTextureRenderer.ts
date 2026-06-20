@@ -99,7 +99,6 @@ const useFrameTextureRenderer = () => {
     try {
       await window.frame.getFrameSharedTexture(
         currentFrameCount,
-        (await getStoreState()).frameState.fps,
         await getCurrentFrameStruct(),
       );
       previousFrameCount.current = currentFrameCount;

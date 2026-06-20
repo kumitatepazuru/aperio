@@ -1,4 +1,4 @@
-from aperio.gpu_util import PyImageGenerator, PyTexture
+from .gpu_util import PyImageGenerator, PyTexture
 from collections.abc import Sequence
 from typing import final
 

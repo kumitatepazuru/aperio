@@ -1,4 +1,6 @@
-from aperio.frame_structure import *
+from aperio.item_structures import *
+import numpy as np
+import numpy.typing as npt
 from .event_manager import EventManager
 from .plugin_manager import PluginManager
 from _typeshed import Incomplete
@@ -31,7 +33,7 @@ class AperioManager(PluginManager, EventManager):
         Returns:
             dict[str, list[int]]: フォントファミリー名 → ウェイト値（100/200/…/900）のリスト
         """
-    def make_frame_buf(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, fps: float, buffer_ptr: int) -> dict[str, ItemResult]:
+    def make_frame_buf(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, buffer_ptr: int) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
 
@@ -40,13 +42,12 @@ class AperioManager(PluginManager, EventManager):
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-            fps (float): フレームレート
             buffer_ptr (int): 書き込み先バッファのポインタ
 
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, fps: float, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.WrappedSharedTextureFormat) -> dict[str, ItemResult]:
+    def make_frame_shared_texture(self, frame_number: int, frame_structure: list[ItemStructure], width: int, height: int, texture_handle: gpu_util.PySharedTextureHandle, format: gpu_util.WrappedSharedTextureFormat) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
 
@@ -55,10 +56,23 @@ class AperioManager(PluginManager, EventManager):
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-            fps (float): フレームレート
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
             format (gpu_util.WrappedSharedTextureFormat): 共有テクスチャのフォーマット
-        
+
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
+        """
+    def make_audio_sample(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, sample_count: int) -> npt.NDArray[np.float32]:
+        """
+        指定されたオーディオ構造に基づいてオーディオサンプルを生成するメソッド。
+
+        Args:
+            audio_structure (list[ItemStructure]): オーディオ構造のリスト
+            sample_rate (int): サンプルレート
+            channels (int): チャンネル数
+            start_time (float): 生成を開始する時間（秒）
+            sample_count (int): 生成するサンプル数
+
+        Returns:
+            npt.NDArray[np.float32]: 生成されたオーディオサンプルの2次元配列（チャンネル数 x サンプル数）
         """

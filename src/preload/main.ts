@@ -44,10 +44,9 @@ contextBridge.exposeInMainWorld("frame", {
   },
   getFrameSharedTexture: async (
     count: number,
-    fps: number,
     frameStruct: ItemStructure[],
   ) => {
-    await ipcRenderer.invoke("get-frame-shared-texture", count, fps, frameStruct);
+    await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
   },
 });
 
@@ -84,9 +83,9 @@ contextBridge.exposeInMainWorld("main", {
     ipcRenderer.invoke("resize-osr", width, height),
   showDialog: (id: string) => ipcRenderer.invoke("show-dialog", id),
   openContextMenu: (id: string) => ipcRenderer.invoke("context-menu-open", id),
-  onAddObject: (cb: (objName: string) => void) => {
-    const listener = (_event: IpcRendererEvent, objName: string) => {
-      cb(objName);
+  onAddObject: (cb: (objName: string, type: "Audio" | "Video") => void) => {
+    const listener = (_event: IpcRendererEvent, objName: string, type: "Audio" | "Video") => {
+      cb(objName, type);
     };
     ipcRenderer.on("add-object", listener);
 
