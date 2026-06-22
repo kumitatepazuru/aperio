@@ -74,7 +74,6 @@ export class NativeModule {
     count: number,
     width: number,
     height: number,
-    fps: number,
     frameStruct: ItemStructure[],
   ) {
     const size = width * height * 4;
@@ -90,7 +89,6 @@ export class NativeModule {
       count,
       width,
       height,
-      fps,
       frameStruct,
     );
     this.p1.postMessage({ frame: this._sharedBuf, frameResults });

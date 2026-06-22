@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import FrameManager from "../bridge";
 import useStore, {
+  getCurrentAudioItems,
   getCurrentFrameCount,
-  getCurrentFrameStruct,
+  getCurrentVideoItems,
   getStoreState,
 } from "@shared/store";
 import { useShallow } from "zustand/shallow";
@@ -98,7 +99,8 @@ const useFrameBufferRenderer = () => {
 
   // フレームループ
   const frameLoop = useCallback(async () => {
-    const isPlaying = (await getStoreState()).viewerState.state === "playing";
+    const storeState = await getStoreState();
+    const isPlaying = storeState.viewerState.state === "playing";
     const currentFrameCount = await getCurrentFrameCount();
     // 前回と同じフレームならスキップ
     // TODO: この前に音声1ブロック分の生成・再生処理を入れる
@@ -114,17 +116,31 @@ const useFrameBufferRenderer = () => {
       return;
     }
 
+    // TODO: 音声の生成をフレーム生成と並列で行い、ここでは音声の再生のみにする
+    window.audio.play(
+      await getCurrentAudioItems(storeState.frameState.fps), // 1秒分
+      storeState.audioState.sampleRate,
+      storeState.audioState.channels,
+      (await getCurrentFrameCount()) / storeState.frameState.fps, // 現在の再生位置
+      1.0,
+    );
+    if (!isPlaying) {
+      requestAnimationFrame(() => {
+        // 次のフレームで音を止める
+        window.audio.stop();
+      });
+    }
+
     try {
       // フレームデータを取得
       const data = await frameManager.getBuf(
         currentFrameCount,
         frameState.width,
         frameState.height,
-        frameState.fps,
-        await getCurrentFrameStruct(),
+        await getCurrentVideoItems(),
       );
       const uint8Data = new Uint8Array(data.frame);
-      (await getStoreState()).setFrameResults(data.frameResults);
+      storeState.setFrameResults(data.frameResults);
 
       // 描画
       updateAndRender(uint8Data, resources);

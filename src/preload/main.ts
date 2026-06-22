@@ -26,7 +26,6 @@ contextBridge.exposeInMainWorld("frame", {
     count: number,
     width: number,
     height: number,
-    fps: number,
     frameStruct: ItemStructure[],
   ) => {
     await ipcRenderer.invoke(
@@ -34,7 +33,6 @@ contextBridge.exposeInMainWorld("frame", {
       count,
       width,
       height,
-      fps,
       frameStruct,
     );
   },
@@ -47,6 +45,32 @@ contextBridge.exposeInMainWorld("frame", {
     frameStruct: ItemStructure[],
   ) => {
     await ipcRenderer.invoke("get-frame-shared-texture", count, frameStruct);
+  },
+});
+
+// Audio API
+contextBridge.exposeInMainWorld("audio", {
+  play: (
+    audioStructure: ItemStructure[],
+    sampleRate: number,
+    channels: number,
+    startTime: number,
+    duration: number,
+  ) => {
+    void ipcRenderer.invoke(
+      "play-audio",
+      audioStructure,
+      sampleRate,
+      channels,
+      startTime,
+      duration,
+    );
+  },
+  stop: () => {
+    void ipcRenderer.invoke("stop-audio");
+  },
+  getPendingSamples: () => {
+    return ipcRenderer.invoke("get-pending-samples");
   },
 });
 
@@ -84,7 +108,11 @@ contextBridge.exposeInMainWorld("main", {
   showDialog: (id: string) => ipcRenderer.invoke("show-dialog", id),
   openContextMenu: (id: string) => ipcRenderer.invoke("context-menu-open", id),
   onAddObject: (cb: (objName: string, type: "Audio" | "Video") => void) => {
-    const listener = (_event: IpcRendererEvent, objName: string, type: "Audio" | "Video") => {
+    const listener = (
+      _event: IpcRendererEvent,
+      objName: string,
+      type: "Audio" | "Video",
+    ) => {
       cb(objName, type);
     };
     ipcRenderer.on("add-object", listener);
@@ -100,10 +128,8 @@ contextBridge.exposeInMainWorld("main", {
     pluginName: string,
     params: Record<string, unknown>,
   ) => ipcRenderer.invoke("request-parameter-struct", pluginName, params),
-  requestNewGenerator: (
-    pluginName: string,
-    args: Record<string, unknown>,
-  ) => ipcRenderer.invoke("request-new", pluginName, args),
+  requestNewGenerator: (pluginName: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke("request-new", pluginName, args),
   showOpenDialog: (options: OpenDialogOptions): Promise<string[] | undefined> =>
     ipcRenderer.invoke("show-open-dialog", options),
 });

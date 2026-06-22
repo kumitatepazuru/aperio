@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import useStore, {
+  getCurrentAudioItems,
   getCurrentFrameCount,
-  getCurrentFrameStruct,
+  getCurrentVideoItems,
   getStoreState,
 } from "@shared/store";
 import {
@@ -86,20 +87,35 @@ const useFrameTextureRenderer = () => {
   // フレームループ
   const frameLoop = useCallback(async () => {
     const currentFrameCount = await getCurrentFrameCount();
-    // TODO: この前に音声1ブロック分の生成・再生処理を入れる
+    const storeState = await getStoreState();
     if (previousFrameCount.current === currentFrameCount) {
       // フレームが前回と同じならスキップ
       animationFrameReserve.current =
-        (await getStoreState()).viewerState.state === "playing"
+        storeState.viewerState.state === "playing"
           ? requestAnimationFrame(frameLoop)
           : null;
       return;
     }
 
+    // TODO: 音声の生成をフレーム生成と並列で行い、ここでは音声の再生のみにする
+    window.audio.play(
+      await getCurrentAudioItems(storeState.frameState.fps), // 1秒分
+      storeState.audioState.sampleRate,
+      storeState.audioState.channels,
+      (await getCurrentFrameCount()) / storeState.frameState.fps, // 現在の再生位置
+      1.0,
+    );
+    if (storeState.viewerState.state === "paused") {
+      requestAnimationFrame(() => {
+        // 次のフレームで音を止める
+        window.audio.stop();
+      });
+    }
+
     try {
       await window.frame.getFrameSharedTexture(
         currentFrameCount,
-        await getCurrentFrameStruct(),
+        await getCurrentVideoItems(),
       );
       previousFrameCount.current = currentFrameCount;
     } catch (error) {

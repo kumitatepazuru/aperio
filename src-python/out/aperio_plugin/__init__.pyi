@@ -1,6 +1,4 @@
 from aperio.item_structures import *
-import numpy as np
-import numpy.typing as npt
 from .event_manager import EventManager
 from .plugin_manager import PluginManager
 from _typeshed import Incomplete
@@ -62,17 +60,14 @@ class AperioManager(PluginManager, EventManager):
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-    def make_audio_sample(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, sample_count: int) -> npt.NDArray[np.float32]:
+    def play_audio(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, duration: float):
         """
-        指定されたオーディオ構造に基づいてオーディオサンプルを生成するメソッド。
+        指定されたオーディオ構造に基づいてオーディオを生成し、再生するメソッド。
 
         Args:
             audio_structure (list[ItemStructure]): オーディオ構造のリスト
             sample_rate (int): サンプルレート
             channels (int): チャンネル数
-            start_time (float): 生成を開始する時間（秒）
-            sample_count (int): 生成するサンプル数
-
-        Returns:
-            npt.NDArray[np.float32]: 生成されたオーディオサンプルの2次元配列（チャンネル数 x サンプル数）
+            start_time (float): 再生を開始する時間（秒）
+            duration (float): 再生する期間（秒）
         """

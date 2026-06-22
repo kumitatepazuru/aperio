@@ -344,7 +344,7 @@ class AperioManager(PluginManager, EventManager):
 
         return results
 
-    def make_audio_sample(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, sample_count: int) -> npt.NDArray[np.float32]:
+    def _make_audio_sample(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, sample_count: int) -> npt.NDArray[np.float32]:
         """
         指定されたオーディオ構造に基づいてオーディオサンプルを生成するメソッド。
 
@@ -389,6 +389,7 @@ class AperioManager(PluginManager, EventManager):
                 overlap_sample_count = round((overlap_end - overlap_start) * sample_rate)
 
                 if overlap_sample_count <= 0:
+                    logger.warning(f"Layer {layer.id} has no overlapping samples to generate. Skipping.")
                     continue
 
                 # オブジェクトプラグインでサンプル生成
@@ -434,8 +435,8 @@ class AperioManager(PluginManager, EventManager):
                     )
 
                 # ボリュームとパンをnumpyで一括適用
-                pan_gains = _compute_pan_gains(float(layer.pan), channels)
-                layer_samples = layer_samples * (float(layer.volume) * pan_gains[:, np.newaxis])
+                pan_gains = _compute_pan_gains(layer.pan / 100.0, channels) # panは-100～100を-1～1に変換して渡す
+                layer_samples = layer_samples * (layer.volume / 100.0 * pan_gains[:, np.newaxis]) # volumeは0-100
 
                 # 出力バッファに加算（浮動小数点丸め誤差による境界超過をクリップ）
                 write_count = min(overlap_sample_count, sample_count - sample_offset)
@@ -448,4 +449,17 @@ class AperioManager(PluginManager, EventManager):
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to generate audio sample: {e}") from e
 
+    def play_audio(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, duration: float):
+        """
+        指定されたオーディオ構造に基づいてオーディオを生成し、再生するメソッド。
 
+        Args:
+            audio_structure (list[ItemStructure]): オーディオ構造のリスト
+            sample_rate (int): サンプルレート
+            channels (int): チャンネル数
+            start_time (float): 再生を開始する時間（秒）
+            duration (float): 再生する期間（秒）
+        """
+        samples = self._make_audio_sample(audio_structure, sample_rate, channels, start_time, math.floor(sample_rate * duration))  # 指定された期間分のサンプルを生成して再生
+        start_sample = round(start_time * sample_rate)
+        audio_manager.stack_audio(samples, start_sample)

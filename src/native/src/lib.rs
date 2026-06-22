@@ -160,7 +160,6 @@ impl AperioManager {
         count: i32,
         width: i32,
         height: i32,
-        fps: f64,
         frame_struct: Vec<ItemStructure>,
     ) -> napi::Result<HashMap<String, ItemResult>> {
         let pl_manager = &self.plmanager;
@@ -175,7 +174,7 @@ impl AperioManager {
 
             let func = pl_manager.getattr("make_frame_buf")?;
             let results: HashMap<String, ItemResult> = func
-                .call1((count, frame_struct, width, height, fps, buffer_ptr))?
+                .call1((count, frame_struct, width, height, buffer_ptr))?
                 .extract()?;
 
             Ok(results)
@@ -230,6 +229,38 @@ impl AperioManager {
         .map_err(|e| napi::Error::from_reason(format!("Failed to get frame: {:?}", e)))?;
 
         Ok(output)
+    }
+
+    #[napi]
+    pub fn play_audio(
+        &self,
+        audio_structure: Vec<ItemStructure>,
+        sample_rate: u32,
+        channels: u16,
+        start_time: f64,
+        duration: f64,
+    ) -> napi::Result<()> {
+        let pl_manager = &self.plmanager;
+
+        Python::attach(|py| -> PyResult<()> {
+            let pl_manager = pl_manager.bind(py);
+
+            pl_manager.call_method1(
+                "play_audio",
+                (
+                    audio_structure,
+                    sample_rate,
+                    channels,
+                    start_time,
+                    duration,
+                ),
+            )?;
+
+            Ok(())
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to play audio: {:?}", e)))?;
+
+        Ok(())
     }
 
     /// システムにインストールされているフォントの一覧を返す。

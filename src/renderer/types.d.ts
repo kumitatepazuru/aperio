@@ -23,7 +23,6 @@ declare global {
         count: number,
         width: number,
         height: number,
-        fps: number,
         frameStruct: ItemStructure[],
       ) => Promise<void>;
       setReceiver: (
@@ -33,6 +32,17 @@ declare global {
         count: number,
         frameStruct: ItemStructure[],
       ) => Promise<void>;
+    };
+    audio: {
+      play: (
+        audioStructure: ItemStructure[],
+        sampleRate: number,
+        channels: number,
+        startTime: number,
+        duration: number,
+      ) => void;
+      stop: () => void;
+      getPendingSamples: () => Promise<number>;
     };
     main: {
       getPluginNames: () => Promise<PluginNameInfo>;

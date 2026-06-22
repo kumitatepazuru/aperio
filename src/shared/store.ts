@@ -177,7 +177,7 @@ export const getCurrentFrameCount = async (): Promise<number> => {
   return viewerState.beginFrame;
 };
 
-export const getCurrentFrameStruct = async () => {
+export const getCurrentVideoItems = async () => {
   const state = await getStoreState();
   const { viewerState, frameState } = state;
   const currentFrame =
@@ -188,7 +188,32 @@ export const getCurrentFrameStruct = async () => {
         )
       : viewerState.beginFrame;
   return state.timelineItems
-    .filter((item) => currentFrame >= item.start && currentFrame <= item.end)
+    .filter(
+      (item) =>
+        currentFrame >= item.start &&
+        currentFrame <= item.end &&
+        item.type === "Video",
+    )
+    .sort((a, b) => a.layer - b.layer);
+};
+
+export const getCurrentAudioItems = async (duration: number) => {
+  const state = await getStoreState();
+  const { viewerState, frameState } = state;
+  const currentFrame =
+    viewerState.state === "playing"
+      ? viewerState.beginFrame +
+        Math.floor(
+          ((Date.now() - viewerState.changeTime) / 1000) * frameState.fps,
+        )
+      : viewerState.beginFrame;
+  return state.timelineItems
+    .filter(
+      (item) =>
+        currentFrame + duration >= item.start &&
+        currentFrame <= item.end &&
+        item.type === "Audio",
+    )
     .sort((a, b) => a.layer - b.layer);
 };
 

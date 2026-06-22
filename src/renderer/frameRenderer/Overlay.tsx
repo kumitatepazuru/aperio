@@ -1,6 +1,6 @@
 import useContentSize from "@/hooks/useContentSize";
 import orgFloor from "@shared/utils/orgFloor";
-import useStore, { getCurrentFrameStruct } from "@shared/store";
+import useStore, { getCurrentVideoItems } from "@shared/store";
 import type { ItemStructure } from "native";
 import { useEffect, useState } from "react";
 import { FaArrowRotateRight } from "react-icons/fa6";
@@ -26,7 +26,7 @@ const Overlay = () => {
 
   useEffect(() => {
     (async () => {
-      const currentItems = await getCurrentFrameStruct();
+      const currentItems = await getCurrentVideoItems();
       setItems(currentItems);
     })();
   }, [viewerState, frameResults, timelineItems]);
