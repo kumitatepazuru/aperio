@@ -38,8 +38,8 @@
 
 | フィールド | 型 | 意味 |
 |---|---|---|
-| `volume` | `number` | 音量（0.0〜1.0） |
-| `pan` | `number` | パン（-1.0=左、0.0=中央、1.0=右） |
+| `volume` | `number` | 音量（%、100が等倍） |
+| `pan` | `number` | パン（%、-100=左、0=中央、100=右） |
 
 **Store上の名称:**
 - `timelineItems: ItemStructure[]` — 全アイテムのリスト（VideoとAudio混在）
@@ -255,7 +255,7 @@
 | `args` | `dict` | パラメータ値の辞書 |
 | `input_samples` | `npt.NDArray[np.float32] \| None` | エフェクト用の入力サンプル（Objectは `None`） |
 
-**戻り値:** `npt.NDArray[np.float32] | None`（インターリーブ形式の f32 配列）
+**戻り値:** `npt.NDArray[np.float32] | None`（shape: `(channels, samples)` の float32 2次元配列）
 
 ---
 

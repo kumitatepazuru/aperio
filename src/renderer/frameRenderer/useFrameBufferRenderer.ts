@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import FrameManager from "../bridge";
 import useStore, {
-  getCurrentAudioItems,
   getCurrentFrameCount,
   getCurrentVideoItems,
   getStoreState,
@@ -11,6 +10,7 @@ import {
   useBufferPreviewWebGPU,
   type BufferWebGPUResources,
 } from "@/hooks/useWebGPU";
+import playAudio from "./audio";
 
 // RGBAバッファをテクスチャとして描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -117,19 +117,7 @@ const useFrameBufferRenderer = () => {
     }
 
     // TODO: 音声の生成をフレーム生成と並列で行い、ここでは音声の再生のみにする
-    window.audio.play(
-      await getCurrentAudioItems(storeState.frameState.fps), // 1秒分
-      storeState.audioState.sampleRate,
-      storeState.audioState.channels,
-      (await getCurrentFrameCount()) / storeState.frameState.fps, // 現在の再生位置
-      1.0,
-    );
-    if (!isPlaying) {
-      requestAnimationFrame(() => {
-        // 次のフレームで音を止める
-        window.audio.stop();
-      });
-    }
+    await playAudio();
 
     try {
       // フレームデータを取得

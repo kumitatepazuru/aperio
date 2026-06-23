@@ -59,7 +59,6 @@ impl AudioManager {
                         return;
                     }
 
-                    let n_frames = out.len() / channels as usize;
                     let rel = buf.play_pos.saturating_sub(buf.buffer_start) as usize;
                     let data_start = rel * channels as usize;
                     let avail = buf.data.len().saturating_sub(data_start);

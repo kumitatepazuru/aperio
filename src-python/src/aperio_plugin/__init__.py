@@ -435,8 +435,8 @@ class AperioManager(PluginManager, EventManager):
                     )
 
                 # ボリュームとパンをnumpyで一括適用
-                pan_gains = _compute_pan_gains(layer.pan / 100.0, channels) # panは-100～100を-1～1に変換して渡す
-                layer_samples = layer_samples * (layer.volume / 100.0 * pan_gains[:, np.newaxis]) # volumeは0-100
+                pan_gains = _compute_pan_gains(layer.pan / 100.0, channels)
+                layer_samples = layer_samples * (layer.volume / 100.0 * pan_gains[:, np.newaxis])
 
                 # 出力バッファに加算（浮動小数点丸め誤差による境界超過をクリップ）
                 write_count = min(overlap_sample_count, sample_count - sample_offset)
