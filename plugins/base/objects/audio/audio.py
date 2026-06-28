@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 
 from aperio.avloader import PyAudioLoader
-from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, ItemStructure, RequestStructureParameter
+from aperio.item_structures import *
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import AudioGenerateParameters, AudioObjectGeneratorBase
 
