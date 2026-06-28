@@ -34,7 +34,7 @@ class TextObject(VideoObjectGeneratorBase):
                 RequestStructureParameter.Textarea("text", "文字", "ここにテキストを入力"),
                 RequestStructureParameter.Color("color", "色", (1.0, 1.0, 1.0, 1.0), use_alpha=True),
                 RequestStructureParameter.Font("font", "フォント"),
-                RequestStructureParameter.Int("font_size", "フォントサイズ", 48, suffix="px"),
+                RequestStructureParameter.Int("font_size", "フォントサイズ", 48, suffix="px", min=1, max=None),
             ],
         )
 

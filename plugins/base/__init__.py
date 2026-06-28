@@ -5,7 +5,6 @@ from aperio_plugin.plugin_base import MainPluginBase
 
 from .effects.blur.blur import BlurEffect
 from .objects.audio.audio import AudioObject
-from .objects.test.test import SinWaveObject
 from .objects.text.text import TextObject
 from .objects.video.video import VideoObject
 
@@ -24,4 +23,3 @@ class AperioBasePlugin(MainPluginBase):
         aperio_plugin.manager.register_sub_plugin(self, AudioObject())
         aperio_plugin.manager.register_sub_plugin(self, TextObject())
         aperio_plugin.manager.register_sub_plugin(self, VideoObject())
-        aperio_plugin.manager.register_sub_plugin(self, SinWaveObject())
