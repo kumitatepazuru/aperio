@@ -25,16 +25,6 @@ AvAudioHandle avloader_audio_open(const char* path) {
 
     AVStream* stream = aud->fmt_ctx->streams[idx];
 
-    if (stream->start_time != AV_NOPTS_VALUE)
-        aud->start_time = stream->start_time * av_q2d(stream->time_base);
-    else if (aud->fmt_ctx->start_time != AV_NOPTS_VALUE)
-        aud->start_time = aud->fmt_ctx->start_time / static_cast<double>(AV_TIME_BASE);
-
-    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
-        aud->duration = stream->duration * av_q2d(stream->time_base);
-    else if (aud->fmt_ctx->duration != AV_NOPTS_VALUE && aud->fmt_ctx->duration > 0)
-        aud->duration = aud->fmt_ctx->duration / static_cast<double>(AV_TIME_BASE);
-
     aud->codec_ctx = avcodec_alloc_context3(codec);
     if (!aud->codec_ctx) { delete aud; return nullptr; }
     avcodec_parameters_to_context(aud->codec_ctx, stream->codecpar);
@@ -45,20 +35,47 @@ AvAudioHandle avloader_audio_open(const char* path) {
 
     aud->channels    = aud->codec_ctx->ch_layout.nb_channels;
     aud->sample_rate = aud->codec_ctx->sample_rate;
+
+    // For uncompressed PCM codecs the WAV header's ByteRate (nAvgBytesPerSec) is a
+    // derived field (= nSamplesPerSec * nBlockAlign) that is often wrong in practice.
+    // FFmpeg's ff_pcm_read_seek converts a PTS to a byte offset using:
+    //   pos = pts * (codecpar->bit_rate / 8) / sample_rate
+    // which should equal pts * block_align, but diverges when bit_rate was set from
+    // a corrupt ByteRate.  Overwrite it with the correct formula so that av_seek_frame
+    // always lands on the right byte.  We identify PCM codecs by their "pcm_" name
+    // prefix (covers s16le, s24le, f32le, alaw, mulaw, …) to avoid touching
+    // compressed formats (ADPCM, MP3, AAC, FLAC) where the formula doesn't hold.
+    if (codec->name && strncmp(codec->name, "pcm_", 4) == 0
+            && stream->codecpar->block_align > 0) {
+        int64_t correct_bit_rate =
+            (int64_t)aud->sample_rate * stream->codecpar->block_align * 8;
+        if (correct_bit_rate != stream->codecpar->bit_rate) {
+            printf("[avaudio] bit_rate fix: header=%lld  correct=%lld\n",
+                   (long long)stream->codecpar->bit_rate,
+                   (long long)correct_bit_rate);
+            stream->codecpar->bit_rate = correct_bit_rate;
+        }
+    }
+
+    // Use stream->time_base for start_time and duration rather than fmt_ctx->duration.
+    // fmt_ctx->duration is derived from ByteRate and is unreliable for the same reason.
+    // stream->duration = data_size / nBlockAlign and stream->time_base.den = nSamplesPerSec
+    // are both independent of ByteRate and are the authoritative source.
+    if (stream->start_time != AV_NOPTS_VALUE)
+        aud->start_time = stream->start_time * av_q2d(stream->time_base);
+    else if (aud->fmt_ctx->start_time != AV_NOPTS_VALUE)
+        aud->start_time = aud->fmt_ctx->start_time / static_cast<double>(AV_TIME_BASE);
+
+    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
+        aud->duration = stream->duration * av_q2d(stream->time_base);
+    else if (aud->fmt_ctx->duration != AV_NOPTS_VALUE && aud->fmt_ctx->duration > 0)
+        aud->duration = aud->fmt_ctx->duration / static_cast<double>(AV_TIME_BASE);
+
     // bits_per_raw_sample: source precision (e.g. 24 for 24-bit FLAC, 0 for lossy codecs).
     // Fall back to the decoded sample format's size when not recorded.
     aud->bit_depth = aud->codec_ctx->bits_per_raw_sample;
     if (aud->bit_depth == 0)
         aud->bit_depth = av_get_bytes_per_sample(aud->codec_ctx->sample_fmt) * 8;
-
-    // Initialise swresample: convert decoded format → float32 planar (FLTP)
-    // at the same sample rate (no SRC, so no internal delay in swr_convert).
-    if (swr_alloc_set_opts2(&aud->swr_ctx,
-            &aud->codec_ctx->ch_layout, AV_SAMPLE_FMT_FLTP, aud->sample_rate,
-            &aud->codec_ctx->ch_layout, aud->codec_ctx->sample_fmt, aud->sample_rate,
-            0, nullptr) < 0 || swr_init(aud->swr_ctx) < 0) {
-        delete aud; return nullptr;
-    }
 
     aud->frame  = av_frame_alloc();
     aud->packet = av_packet_alloc();
@@ -78,19 +95,45 @@ double  avloader_audio_duration(AvAudioHandle h)     { return static_cast<AvAudi
 int     avloader_audio_bit_depth(AvAudioHandle h)    { return static_cast<AvAudio*>(h)->bit_depth; }
 int     avloader_audio_sampling_rate(AvAudioHandle h){ return static_cast<AvAudio*>(h)->sample_rate; }
 
-int64_t avloader_audio_get_audio(AvAudioHandle h, double time, double duration,
-                           float* out_buf, int64_t buf_samples_per_channel) {
+int64_t avloader_audio_get_audio(AvAudioHandle h,
+                                  int64_t time_samples, int64_t duration_samples,
+                                  int target_sample_rate, int target_channels,
+                                  float* out_buf, int64_t buf_samples_per_channel) {
     auto* aud = static_cast<AvAudio*>(h);
     std::lock_guard<std::mutex> lock(aud->decode_mutex);
 
-    AVStream* stream  = aud->fmt_ctx->streams[aud->audio_stream_idx];
+    // Convert target-rate sample positions to seconds for seeking/PTS comparison.
+    const double time     = static_cast<double>(time_samples)     / target_sample_rate;
+    const double duration = static_cast<double>(duration_samples) / target_sample_rate;
+
+    AVStream* stream   = aud->fmt_ctx->streams[aud->audio_stream_idx];
     const double end_time = time + duration;
-    const int channels    = aud->channels;
+
+    // Build per-call SwrContext: decoded format → FLTP at target_sample_rate/target_channels.
+    // Created fresh each call so there is no residual state from previous seeks.
+    AVChannelLayout out_layout = {};
+    av_channel_layout_default(&out_layout, target_channels);
+    SwrContext* swr = nullptr;
+    int swr_err = swr_alloc_set_opts2(&swr,
+        &out_layout, AV_SAMPLE_FMT_FLTP, target_sample_rate,
+        &aud->codec_ctx->ch_layout, aud->codec_ctx->sample_fmt, aud->sample_rate,
+        0, nullptr);
+    av_channel_layout_uninit(&out_layout);
+    if (swr_err < 0 || !swr || swr_init(swr) < 0) {
+        if (swr) swr_free(&swr);
+        return -1;
+    }
 
     // Seek slightly before target to ensure we don't miss the first frame.
     double seek_time = std::max(aud->start_time, time - 0.5);
-    int64_t seek_pts = static_cast<int64_t>(
-        (seek_time - aud->start_time) / av_q2d(stream->time_base));
+    // Build seek_pts in stream->time_base units via av_rescale_q so that a
+    // corrupted ByteRate (which may cause aud->sample_rate != stream->time_base.den)
+    // does not shift the seek position.  The WAV demuxer's read_seek interprets the
+    // PTS argument in stream->time_base units, not in aud->sample_rate units.
+    int64_t seek_pts = av_rescale_q(
+        static_cast<int64_t>((seek_time - aud->start_time) * AV_TIME_BASE),
+        AV_TIME_BASE_Q,
+        stream->time_base);
     if (stream->start_time != AV_NOPTS_VALUE)
         seek_pts += stream->start_time;
 
@@ -98,19 +141,23 @@ int64_t avloader_audio_get_audio(AvAudioHandle h, double time, double duration,
         if (av_seek_frame(aud->fmt_ctx, -1,
                 static_cast<int64_t>(seek_time * AV_TIME_BASE),
                 AVSEEK_FLAG_BACKWARD) < 0) {
+            swr_free(&swr);
             return -1;
         }
     }
     avcodec_flush_buffers(aud->codec_ctx);
-    // Flush swr internal state (safe even with no-SRC context).
-    swr_convert(aud->swr_ctx, nullptr, 0, nullptr, 0);
 
-    // Temporary per-frame conversion buffer.
+    // Temporary per-frame output buffer (target rate, target channels).
     // AAC=1024, MP3=1152, Opus≤2880, FLAC/PCM≤65536 samples/frame.
-    const int kMaxFrameSamples = 65536;
-    std::vector<std::vector<float>> tmp(channels, std::vector<float>(kMaxFrameSamples));
-    std::vector<uint8_t*> tmp_ptrs(channels);
-    for (int c = 0; c < channels; c++)
+    // At 4× upsampling the output can be ~4× larger, plus SRC filter delay headroom.
+    const int kMaxSrcSamples = 65536;
+    const int kMaxOutPerFrame = static_cast<int>(
+        (static_cast<int64_t>(kMaxSrcSamples) * target_sample_rate + aud->sample_rate - 1)
+        / aud->sample_rate) + 128;
+
+    std::vector<std::vector<float>> tmp(target_channels, std::vector<float>(kMaxOutPerFrame));
+    std::vector<uint8_t*> tmp_ptrs(target_channels);
+    for (int c = 0; c < target_channels; c++)
         tmp_ptrs[c] = reinterpret_cast<uint8_t*>(tmp[c].data());
 
     int64_t collected = 0;
@@ -136,6 +183,11 @@ int64_t avloader_audio_get_audio(AvAudioHandle h, double time, double duration,
 
             int64_t pts = (aud->frame->best_effort_timestamp != AV_NOPTS_VALUE)
                           ? aud->frame->best_effort_timestamp : aud->frame->pts;
+            // Convert PTS using stream->time_base, not aud->sample_rate: for WAV PCM
+            // the demuxer assigns PTS = sample_index, expressed in stream->time_base
+            // units (= nSamplesPerSec).  When ByteRate is corrupted aud->sample_rate
+            // may differ from stream->time_base.den, making the old /aud->sample_rate
+            // form yield the wrong frame time and silently pass the wrong window check.
             double frame_time = (pts != AV_NOPTS_VALUE)
                                 ? pts * av_q2d(stream->time_base)
                                 : aud->start_time;
@@ -154,37 +206,59 @@ int64_t avloader_audio_get_audio(AvAudioHandle h, double time, double duration,
                 break;
             }
 
-            // Convert to AV_SAMPLE_FMT_FLTP (no-op if already FLTP).
-            int converted = swr_convert(aud->swr_ctx,
-                tmp_ptrs.data(), kMaxFrameSamples,
+            // Convert this frame: decoded format → FLTP at target_sample_rate/target_channels.
+            int converted = swr_convert(swr,
+                tmp_ptrs.data(), kMaxOutPerFrame,
                 const_cast<const uint8_t**>(aud->frame->data), nb);
             av_frame_unref(aud->frame);
             if (converted <= 0) continue;
 
-            // How many samples at the start of this frame to skip
-            // (seek overshoot: frame started before our target time).
-            int skip = 0;
+            // Number of output samples to skip due to seek overshoot
+            // (frame started before our target time). Computed in target-rate units.
+            int skip_out = 0;
             if (frame_time < time) {
                 double skip_secs = time - frame_time;
-                skip = std::min(static_cast<int>(skip_secs * aud->sample_rate), converted);
+                skip_out = std::min(
+                    static_cast<int>(skip_secs * target_sample_rate),
+                    converted);
             }
 
-            int use = std::min(converted - skip,
-                               static_cast<int>(buf_samples_per_channel - collected));
+            int use = static_cast<int>(std::min(
+                static_cast<int64_t>(converted - skip_out),
+                buf_samples_per_channel - collected));
             if (use <= 0) {
                 if (collected >= buf_samples_per_channel) done = true;
                 continue;
             }
 
-            for (int c = 0; c < channels; c++) {
-                std::memcpy(out_buf + static_cast<int64_t>(c) * buf_samples_per_channel + collected,
-                            tmp[c].data() + skip,
-                            static_cast<size_t>(use) * sizeof(float));
+            for (int c = 0; c < target_channels; c++) {
+                std::memcpy(
+                    out_buf + static_cast<int64_t>(c) * buf_samples_per_channel + collected,
+                    tmp[c].data() + skip_out,
+                    static_cast<size_t>(use) * sizeof(float));
             }
             collected += use;
             if (collected >= buf_samples_per_channel) done = true;
         }
     }
 
+    // Flush SRC internal delay buffer.
+    while (!done && collected < buf_samples_per_channel) {
+        int flushed = swr_convert(swr, tmp_ptrs.data(), kMaxOutPerFrame, nullptr, 0);
+        if (flushed <= 0) break;
+        int use = static_cast<int>(std::min(
+            static_cast<int64_t>(flushed),
+            buf_samples_per_channel - collected));
+        for (int c = 0; c < target_channels; c++) {
+            std::memcpy(
+                out_buf + static_cast<int64_t>(c) * buf_samples_per_channel + collected,
+                tmp[c].data(),
+                static_cast<size_t>(use) * sizeof(float));
+        }
+        collected += use;
+        if (collected >= buf_samples_per_channel) done = true;
+    }
+
+    swr_free(&swr);
     return collected;
 }

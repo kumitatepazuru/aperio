@@ -204,27 +204,38 @@ impl PyAudioLoader {
         self.inner.get_sampling_rate()
     }
 
-    /// `time` 秒から `duration` 秒分の波形データを numpy 配列で返す。
+    /// `time_samples` から `duration_samples` サンプル分の波形データを numpy 配列で返す。
+    ///
+    /// `time_samples` / `duration_samples` は **出力（target）`sample_rate` 単位**の
+    /// サンプル数で指定する（秒 × sample_rate で変換）。
     ///
     /// **shape**: `(channels, samples)`  **dtype**: `float32`
     ///
+    /// `sample_rate` と `channels` を指定した場合は swresample で一括変換する。
+    /// 省略するとネイティブのサンプルレート・チャンネル数のまま返す。
+    ///
     /// ステレオ例: `[[L0, L1, …], [R0, R1, …]]`
+    #[pyo3(signature = (time_samples, duration_samples, *, sample_rate=None, channels=None))]
     pub fn get_audio<'py>(
         &self,
         py: Python<'py>,
-        time: f64,
-        duration: f64,
+        time_samples: i64,
+        duration_samples: i64,
+        sample_rate: Option<u32>,
+        channels: Option<u32>,
     ) -> PyResult<Bound<'py, PyArray2<f32>>> {
-        let channels = self
+        let sr = sample_rate.unwrap_or_else(|| self.inner.get_sampling_rate());
+        let chs = channels.unwrap_or_else(|| self.inner.get_chs());
+        let raw = self
             .inner
-            .get_audio(time, duration)
+            .get_audio(time_samples, duration_samples, sr, chs)
             .map_err(|e| PyValueError::new_err(format!("get_audio: {e}")))?;
 
-        let n_chs = channels.len();
-        let n_samples = channels.first().map_or(0, |c| c.len());
+        let n_chs = raw.len();
+        let n_samples = raw.first().map_or(0, |c| c.len());
 
         // Vec<Vec<f32>> → 平坦化して Array2 に変換（コピー 1 回）
-        let flat: Vec<f32> = channels.into_iter().flatten().collect();
+        let flat: Vec<f32> = raw.into_iter().flatten().collect();
         let arr = Array2::<f32>::from_shape_vec((n_chs, n_samples), flat)
             .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
         Ok(arr.into_pyarray(py))
@@ -238,9 +249,9 @@ impl PyAudioLoader {
 #[pymodule(name = "avloader")]
 pub mod avloader_register {
     #[pymodule_export]
+    use super::PyAudioLoader;
+    #[pymodule_export]
     use super::PyColorFormat;
     #[pymodule_export]
     use super::PyVideoLoader;
-    #[pymodule_export]
-    use super::PyAudioLoader;
 }

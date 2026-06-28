@@ -73,9 +73,6 @@ struct AvAudio {
     int     sample_rate = 0;
     double  start_time  = 0.0;
 
-    // Resampler: converts decoded format → AV_SAMPLE_FMT_FLTP at same sample rate
-    SwrContext* swr_ctx = nullptr;
-
     // Working state (protected by decode_mutex)
     AVFrame*  frame  = nullptr;
     AVPacket* packet = nullptr;
@@ -83,7 +80,6 @@ struct AvAudio {
     std::mutex decode_mutex;
 
     ~AvAudio() {
-        if (swr_ctx)   swr_free(&swr_ctx);
         if (frame)     av_frame_free(&frame);
         if (packet)    av_packet_free(&packet);
         if (codec_ctx) avcodec_free_context(&codec_ctx);

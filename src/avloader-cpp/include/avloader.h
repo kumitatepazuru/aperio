@@ -62,11 +62,16 @@ double  avloader_audio_duration(AvAudioHandle h);
 int     avloader_audio_bit_depth(AvAudioHandle h);
 int     avloader_audio_sampling_rate(AvAudioHandle h);
 
-// Decode audio from `time` seconds for `duration` seconds.
+// Decode audio starting at time_samples (in target_sample_rate units)
+// for duration_samples samples (also in target_sample_rate units), resampling to
+// target_sample_rate and remixing to target_channels via swresample in one pass.
 // out_buf layout: planar float32 — [ch0_s0…ch0_sN, ch1_s0…ch1_sN, …]
-// buf_samples_per_channel: float capacity per channel.
+// out_buf capacity must be target_channels * buf_samples_per_channel floats.
+// buf_samples_per_channel is measured in target_sample_rate units.
 // Returns actual samples-per-channel written on success, -1 on failure.
-int64_t avloader_audio_get_audio(AvAudioHandle h, double time, double duration,
+int64_t avloader_audio_get_audio(AvAudioHandle h,
+                                  int64_t time_samples, int64_t duration_samples,
+                                  int target_sample_rate, int target_channels,
                                   float* out_buf, int64_t buf_samples_per_channel);
 
 #ifdef __cplusplus

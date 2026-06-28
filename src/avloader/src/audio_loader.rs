@@ -54,37 +54,44 @@ impl AudioLoader {
         self.sampling_rate
     }
 
-    /// Decode `duration` seconds of audio starting at `time`.
-    ///
-    /// Returns a 2-D array where the outer dimension is channels and the inner
-    /// dimension is samples: `[[L0, L1, …], [R0, R1, …]]` for stereo.
-    pub fn get_audio(&self, time: f64, duration: f64) -> Result<Vec<Vec<f32>>> {
+    /// Decode audio starting at `time_samples` (in `target_sample_rate` units)
+    /// for `duration_samples` samples (also in `target_sample_rate` units), resampling to
+    /// `target_sample_rate` Hz and remixing to `target_channels` channels via swresample.
+    pub fn get_audio(
+        &self,
+        time_samples: i64,
+        duration_samples: i64,
+        target_sample_rate: u32,
+        target_channels: u32,
+    ) -> Result<Vec<Vec<f32>>> {
         if self.channels == 0 || self.sampling_rate == 0 {
             bail!("AudioLoader: invalid channel/sample-rate configuration");
         }
 
-        // Allocate one extra sample per channel as a rounding buffer.
-        let samples_per_channel = (duration * self.sampling_rate as f64).ceil() as i64 + 1;
-        let total = self.channels as usize * samples_per_channel as usize;
+        // duration_samples is already in target-rate units; add 1 for SRC headroom.
+        let samples_per_channel = duration_samples + 1;
+        let total = target_channels as usize * samples_per_channel as usize;
         let mut buf = vec![0f32; total];
 
         let actual = unsafe {
             avloader_audio_get_audio(
                 self.handle,
-                time,
-                duration,
+                time_samples,
+                duration_samples,
+                target_sample_rate as i32,
+                target_channels as i32,
                 buf.as_mut_ptr(),
                 samples_per_channel,
             )
         };
 
         if actual < 0 {
-            bail!("avloader_audio_get_audio failed (time={time:.3}, duration={duration:.3})");
+            bail!("avloader_audio_get_audio failed (time_samples={time_samples}, duration_samples={duration_samples})");
         }
 
         let actual = actual as usize;
-        let mut result = Vec::with_capacity(self.channels as usize);
-        for ch in 0..self.channels as usize {
+        let mut result = Vec::with_capacity(target_channels as usize);
+        for ch in 0..target_channels as usize {
             let start = ch * samples_per_channel as usize;
             result.push(buf[start..start + actual].to_vec());
         }

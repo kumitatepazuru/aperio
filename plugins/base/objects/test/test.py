@@ -31,7 +31,7 @@ class SinWaveObject(AudioObjectGeneratorBase):
 
     def generate(self, params: AudioGenerateParameters) -> npt.NDArray[np.float32] | None:
         base_hz = float(params.args.get("hz", 261.63))
-        interval = 0.5  # 音階が変わる間隔（秒）
+        interval = 1  # 音階が変わる間隔（秒）
 
         t = params.start_time + np.arange(params.sample_count, dtype=np.float64) / params.sample_rate
 
