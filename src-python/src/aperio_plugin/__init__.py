@@ -35,6 +35,7 @@ except ImportError as e:
 from .plugin_base.generator_base import (
     AudioGenerateParameters,
     VideoGenerateParameters,
+    GeneratorBuilderReturn,
     GeneratorFuncReturn,
     GeneratorTextureReturn,
     GeneratorWgslReturn,
@@ -207,6 +208,8 @@ class AperioManager(PluginManager, EventManager):
                         layer_frame.output_width,
                         layer_frame.output_height,
                     )
+                elif isinstance(layer_frame, GeneratorBuilderReturn):
+                    layer_builder = layer_builder.add_builder(layer_frame.builder)
 
                 for effect in layer.effects:
                     if effect["name"] not in self.video_effect_plugins:
@@ -248,6 +251,8 @@ class AperioManager(PluginManager, EventManager):
                             layer_frame.output_width,
                             layer_frame.output_height,
                         )
+                    elif isinstance(layer_frame, GeneratorBuilderReturn):
+                        layer_builder = layer_builder.add_builder(layer_frame.builder)
 
                 if layer_frame is None:
                     continue

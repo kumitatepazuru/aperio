@@ -1,8 +1,6 @@
 from dataclasses import dataclass
-from enum import Enum
-
 from aperio.item_structures import ItemStructure
-from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl
+from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerateBuilder
 import numpy as np
 import numpy.typing as npt
 
@@ -29,6 +27,13 @@ class GeneratorFuncReturn:
 class GeneratorTextureReturn:
     compiled: PyCompiledTextureFunc
     params: object
+    output_width: int
+    output_height: int
+
+
+@dataclass
+class GeneratorBuilderReturn:
+    builder: PyImageGenerateBuilder
     output_width: int
     output_height: int
 
@@ -78,7 +83,7 @@ class VideoGeneratorBase(SubPluginBase):
 
     def generate(
         self, params: VideoGenerateParameters
-    ) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+    ) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -86,7 +91,7 @@ class VideoGeneratorBase(SubPluginBase):
             params (VideoGenerateParameters): フレーム生成に必要なパラメーター
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
             生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
         raise NotImplementedError("Subclasses must implement this method")

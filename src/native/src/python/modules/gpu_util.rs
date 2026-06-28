@@ -274,6 +274,11 @@ impl PyImageGenerateBuilder {
         Self { inner: new_inner }
     }
 
+    pub fn add_builder(&self, _py: Python<'_>, other: &PyImageGenerateBuilder) -> Self {
+        let new_inner = self.inner.clone().chain(&other.inner);
+        Self { inner: new_inner }
+    }
+
     pub fn add_parallel_wgsl<'py>(
         &self,
         py: Python<'py>,

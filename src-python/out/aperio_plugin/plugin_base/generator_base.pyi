@@ -1,10 +1,9 @@
 import numpy as np
 import numpy.typing as npt
 from . import SubPluginBase as SubPluginBase
-from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl
+from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerateBuilder as PyImageGenerateBuilder
 from aperio.item_structures import ItemStructure as ItemStructure
 from dataclasses import dataclass
-from enum import Enum as Enum
 
 @dataclass
 class GeneratorWgslReturn:
@@ -24,6 +23,12 @@ class GeneratorFuncReturn:
 class GeneratorTextureReturn:
     compiled: PyCompiledTextureFunc
     params: object
+    output_width: int
+    output_height: int
+
+@dataclass
+class GeneratorBuilderReturn:
+    builder: PyImageGenerateBuilder
     output_width: int
     output_height: int
 
@@ -53,7 +58,7 @@ class VideoGeneratorBase(SubPluginBase):
     イベントハンドラーは @event デコレーターで登録する。
     """
     def __init__(self) -> None: ...
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -61,7 +66,7 @@ class VideoGeneratorBase(SubPluginBase):
             params (VideoGenerateParameters): フレーム生成に必要なパラメーター
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
             生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
 

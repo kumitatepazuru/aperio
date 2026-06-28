@@ -152,4 +152,18 @@ impl ImageGenerateBuilder {
             steps: Arc::new(new_steps),
         }
     }
+
+    /// 別のビルダーのステップを末尾に連結します（直列実行）。
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - 連結するビルダー。
+    pub fn chain(self, other: &ImageGenerateBuilder) -> Self {
+        let mut new_steps = (*self.steps).clone();
+        new_steps.extend((*other.steps).clone());
+
+        Self {
+            steps: Arc::new(new_steps),
+        }
+    }
 }
