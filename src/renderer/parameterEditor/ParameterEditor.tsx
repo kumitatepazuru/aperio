@@ -58,7 +58,11 @@ const ParameterEditor = () => {
       id,
       type: "submenu",
       value,
-      submenu: Object.entries(pluginNames.effectPlugins)
+      submenu: Object.entries(
+        selectedItem?.type === "Video"
+          ? pluginNames.videoEffectPlugins
+          : pluginNames.audioEffectPlugins,
+      )
         .filter(([effectId]) => effectId.startsWith(`${id}.`))
         .map(([effectId, effectValue]) => ({
           id: effectId,

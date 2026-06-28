@@ -1,5 +1,5 @@
-use avloader::{ColorFormat, VideoLoader};
-use numpy::{ndarray::Array3, IntoPyArray, PyArray3};
+use avloader::{AudioLoader, ColorFormat, VideoLoader};
+use numpy::{ndarray::Array2, ndarray::Array3, IntoPyArray, PyArray2, PyArray3};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::python::modules::gpu_util::*;
@@ -149,11 +149,107 @@ impl PyVideoLoader {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  AudioLoader ラッパー
+// ─────────────────────────────────────────────────────────────
+
+/// 1 つのオーディオファイル（または動画ファイルの音声トラック）を扱うローダー。
+///
+/// ```python
+/// loader = AudioLoader("/path/to/audio.wav")
+///
+/// # shape: (channels, samples)  dtype: float32
+/// # e.g. stereo → [[L0, L1, …], [R0, R1, …]]
+/// waveform = loader.get_audio(time=0.0, duration=1.0)
+/// ```
+
+#[pyclass]
+pub struct PyAudioLoader {
+    inner: AudioLoader,
+}
+
+#[pymethods]
+impl PyAudioLoader {
+    /// オーディオファイルを開く。
+    ///
+    /// # Arguments
+    /// - `path` : ファイルパス（UTF-8）。動画ファイルを渡すと音声トラックを開く。
+    #[new]
+    pub fn new(path: &str) -> PyResult<Self> {
+        let inner = AudioLoader::new(path)
+            .map_err(|e| PyValueError::new_err(format!("AudioLoader::new: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// チャンネル数。
+    #[getter]
+    pub fn chs(&self) -> u32 {
+        self.inner.get_chs()
+    }
+
+    /// 最大再生時間（秒）。
+    #[getter]
+    pub fn duration(&self) -> f64 {
+        self.inner.get_duration()
+    }
+
+    /// ビット深度（bits per sample）。
+    #[getter]
+    pub fn bit_depth(&self) -> i32 {
+        self.inner.get_bit_depth()
+    }
+
+    /// サンプリングレート（Hz）。
+    #[getter]
+    pub fn sampling_rate(&self) -> u32 {
+        self.inner.get_sampling_rate()
+    }
+
+    /// `time_samples` から `duration_samples` サンプル分の波形データを numpy 配列で返す。
+    ///
+    /// `time_samples` / `duration_samples` は **出力（target）`sample_rate` 単位**の
+    /// サンプル数で指定する（秒 × sample_rate で変換）。
+    ///
+    /// **shape**: `(channels, samples)`  **dtype**: `float32`
+    ///
+    /// `sample_rate` と `channels` を指定した場合は swresample で一括変換する。
+    /// 省略するとネイティブのサンプルレート・チャンネル数のまま返す。
+    ///
+    /// ステレオ例: `[[L0, L1, …], [R0, R1, …]]`
+    #[pyo3(signature = (time_samples, duration_samples, *, sample_rate=None, channels=None))]
+    pub fn get_audio<'py>(
+        &self,
+        py: Python<'py>,
+        time_samples: i64,
+        duration_samples: i64,
+        sample_rate: Option<u32>,
+        channels: Option<u32>,
+    ) -> PyResult<Bound<'py, PyArray2<f32>>> {
+        let sr = sample_rate.unwrap_or_else(|| self.inner.get_sampling_rate());
+        let chs = channels.unwrap_or_else(|| self.inner.get_chs());
+        let raw = self
+            .inner
+            .get_audio(time_samples, duration_samples, sr, chs)
+            .map_err(|e| PyValueError::new_err(format!("get_audio: {e}")))?;
+
+        let n_chs = raw.len();
+        let n_samples = raw.first().map_or(0, |c| c.len());
+
+        // Vec<Vec<f32>> → 平坦化して Array2 に変換（コピー 1 回）
+        let flat: Vec<f32> = raw.into_iter().flatten().collect();
+        let arr = Array2::<f32>::from_shape_vec((n_chs, n_samples), flat)
+            .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+        Ok(arr.into_pyarray(py))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 //  モジュール登録
 // ─────────────────────────────────────────────────────────────
 
 #[pymodule(name = "avloader")]
 pub mod avloader_register {
+    #[pymodule_export]
+    use super::PyAudioLoader;
     #[pymodule_export]
     use super::PyColorFormat;
     #[pymodule_export]

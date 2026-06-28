@@ -1,25 +1,9 @@
 #include "avloader.h"
+#include "avloader_internal.h"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <mutex>
-
-static inline double now_ms() {
-    using namespace std::chrono;
-    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
-}
-
-extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/imgutils.h>
-#include <libavutil/hwcontext.h>
-#include <libavutil/opt.h>
-#include <libavutil/pixdesc.h>
-#include <libswscale/swscale.h>
-}
 
 static constexpr uint64_t PREFETCH_RESET_THRESH = 60;
 
@@ -32,56 +16,6 @@ static const AVHWDeviceType kHwPriority[] = {
     AV_HWDEVICE_TYPE_VAAPI,
     AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
     AV_HWDEVICE_TYPE_NONE,  // sentinel
-};
-
-// ─── AvLoader ────────────────────────────────────────────────────────────────
-
-struct AvLoader {
-    AVFormatContext* fmt_ctx          = nullptr;
-    AVCodecContext*  codec_ctx        = nullptr;
-    int              video_stream_idx = -1;
-
-    // Immutable after open (no lock needed)
-    int           width       = 0;
-    int           height      = 0;
-    // SW pixel format. HW path: NV12 at open, updated to actual format on first frame transfer.
-    AVPixelFormat pix_fmt     = AV_PIX_FMT_NONE;
-    // AVCOL_RANGE_MPEG(1)=limited, AVCOL_RANGE_JPEG(2)=full, AVCOL_RANGE_UNSPECIFIED(0)=unknown
-    AVColorRange  color_range = AVCOL_RANGE_UNSPECIFIED;
-    double        native_fps       = 0.0;
-    double        duration         = 0.0;  // total duration in seconds
-    double        start_time       = 0.0;  // stream start in seconds (absolute timestamp base)
-    int64_t       probed_nb_frames = 0;    // frame count from end-of-file scan (0 = not probed)
-
-    // Hardware decoding
-    AVBufferRef*  hw_device_ctx = nullptr;
-    AVPixelFormat hw_pix_fmt    = AV_PIX_FMT_NONE;
-    AVFrame*      hw_frame      = nullptr;  // temp buffer for HW→CPU transfer
-
-    // Decoder working state (protected by decode_mutex)
-    AVFrame*  frame      = nullptr;
-    AVPacket* packet     = nullptr;
-    double    last_decoded_time = -1.0;
-    double    last_target_time  = -1.0;
-    double    last_target_fps   = 0.0;
-
-    // sws contexts for RGB conversion (protected by decode_mutex)
-    SwsContext* sws_rgb  = nullptr;
-    SwsContext* sws_rgba = nullptr;
-
-    // Serialise all decoder calls so callers may come from any thread
-    std::mutex decode_mutex;
-
-    ~AvLoader() {
-        if (sws_rgb)       sws_freeContext(sws_rgb);
-        if (sws_rgba)      sws_freeContext(sws_rgba);
-        if (hw_frame)      av_frame_free(&hw_frame);
-        if (frame)         av_frame_free(&frame);
-        if (packet)        av_packet_free(&packet);
-        if (codec_ctx)     avcodec_free_context(&codec_ctx);
-        if (hw_device_ctx) av_buffer_unref(&hw_device_ctx);
-        if (fmt_ctx)       avformat_close_input(&fmt_ctx);
-    }
 };
 
 // ─── plane helpers ───────────────────────────────────────────────────────────
@@ -192,7 +126,7 @@ static void probe_end_pts(AvLoader* ldr) {
 
 // Decode one frame to discover the actual SW pixel format produced by the HW
 // decoder, then reset state so callers start from a clean position.
-// Called only from avloader_open before the handle is shared.
+// Called only from avloader_video_open before the handle is shared.
 static void probe_hw_pixel_format(AvLoader* ldr) {
     AVPacket* pkt = av_packet_alloc();
     if (!pkt) return;
@@ -251,7 +185,7 @@ static bool decode_to_time(AvLoader* ldr, double target_time, double target_fps)
         double margin    = (ldr->native_fps > 0.0) ? (1.0 / ldr->native_fps) : 0.04;
         // Never seek before stream start
         double seek_time = std::max(ldr->start_time, target_time - margin);
-        
+
         int64_t seek_pts = static_cast<int64_t>((seek_time - ldr->start_time) / av_q2d(stream->time_base));
         if (stream->start_time != AV_NOPTS_VALUE) {
             seek_pts += stream->start_time;
@@ -262,7 +196,7 @@ static bool decode_to_time(AvLoader* ldr, double target_time, double target_fps)
                 return false;
         }
         avcodec_flush_buffers(ldr->codec_ctx);
-               
+
         ldr->last_decoded_time = -1.0;
     } else if (ldr->frame->data[0] != nullptr && ldr->last_decoded_time >= target_time - tol) {
         // [FAST PATH]
@@ -400,7 +334,7 @@ static bool decode_to_time(AvLoader* ldr, double target_time, double target_fps)
 
 // ─── public API ─────────────────────────────────────────────────────────────
 
-AvLoaderHandle avloader_open(const char* path) {
+AvLoaderHandle avloader_video_open(const char* path) {
     auto* ldr = new (std::nothrow) AvLoader();
     if (!ldr) return nullptr;
 
@@ -511,34 +445,34 @@ AvLoaderHandle avloader_open(const char* path) {
     return static_cast<AvLoaderHandle>(ldr);
 }
 
-void avloader_close(AvLoaderHandle h) {
+void avloader_video_close(AvLoaderHandle h) {
     delete static_cast<AvLoader*>(h);
 }
 
-int    avloader_width(AvLoaderHandle h)        { return static_cast<AvLoader*>(h)->width; }
-int    avloader_height(AvLoaderHandle h)       { return static_cast<AvLoader*>(h)->height; }
-int    avloader_pixel_format(AvLoaderHandle h) { return static_cast<int>(static_cast<AvLoader*>(h)->pix_fmt); }
-int    avloader_color_range(AvLoaderHandle h)  { return static_cast<int>(static_cast<AvLoader*>(h)->color_range); }
-double  avloader_native_fps(AvLoaderHandle h)  { return static_cast<AvLoader*>(h)->native_fps; }
-int64_t avloader_frame_count(AvLoaderHandle h) {
+int    avloader_video_width(AvLoaderHandle h)        { return static_cast<AvLoader*>(h)->width; }
+int    avloader_video_height(AvLoaderHandle h)       { return static_cast<AvLoader*>(h)->height; }
+int    avloader_video_pixel_format(AvLoaderHandle h) { return static_cast<int>(static_cast<AvLoader*>(h)->pix_fmt); }
+int    avloader_video_color_range(AvLoaderHandle h)  { return static_cast<int>(static_cast<AvLoader*>(h)->color_range); }
+double  avloader_video_native_fps(AvLoaderHandle h)  { return static_cast<AvLoader*>(h)->native_fps; }
+int64_t avloader_video_frame_count(AvLoaderHandle h) {
     auto* ldr = static_cast<AvLoader*>(h);
     int64_t n = ldr->fmt_ctx->streams[ldr->video_stream_idx]->nb_frames;
     return (n > 0) ? n : ldr->probed_nb_frames;
 }
 
-int avloader_yuv_plane_count(AvLoaderHandle h) {
+int avloader_video_yuv_plane_count(AvLoaderHandle h) {
     return plane_count_for(static_cast<AvLoader*>(h));
 }
 
-void avloader_yuv_plane_info(AvLoaderHandle h, int plane_idx,
-                              int* tex_width, int* tex_height, int* bytes_per_texel) {
+void avloader_video_yuv_plane_info(AvLoaderHandle h, int plane_idx,
+                                    int* tex_width, int* tex_height, int* bytes_per_texel) {
     compute_plane_info(static_cast<AvLoader*>(h), plane_idx,
                        tex_width, tex_height, bytes_per_texel);
 }
 
-int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num, double target_fps,
-                          int num_planes, uint8_t** plane_bufs,
-                          const int* bytes_per_row) {
+int avloader_video_decode_frame(AvLoaderHandle h, uint64_t frame_num, double target_fps,
+                                 int num_planes, uint8_t** plane_bufs,
+                                 const int* bytes_per_row) {
     auto* ldr = static_cast<AvLoader*>(h);
     std::lock_guard<std::mutex> lock(ldr->decode_mutex);
 
@@ -569,8 +503,8 @@ int avloader_decode_frame(AvLoaderHandle h, uint64_t frame_num, double target_fp
     return 0;
 }
 
-int avloader_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double target_fps,
-                               uint8_t* out_buf, size_t /*buf_size*/, int channels) {
+int avloader_video_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double target_fps,
+                                     uint8_t* out_buf, size_t /*buf_size*/, int channels) {
     auto* ldr = static_cast<AvLoader*>(h);
     std::lock_guard<std::mutex> lock(ldr->decode_mutex);
 

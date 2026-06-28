@@ -12,14 +12,16 @@ import {
   ItemStructure,
   NodeOffscreenSharedTextureInfo,
   AperioManager,
-  AperioConfigManager,
+  ConfigManager,
   AperioConfig,
+  StoreManager,
 } from "native";
 
 const TIMEOUT_MS = 5000;
 
 export class NativeModule {
-  configManager: AperioConfigManager;
+  configManager: ConfigManager;
+  storeManager: StoreManager;
   aperioManager: AperioManager;
   p1: MessagePortMain;
   p2: MessagePortMain;
@@ -43,8 +45,9 @@ export class NativeModule {
     console.log("Plugin Manager Path:", dirs.pluginManagerDir);
     console.log("Default Plugins Path:", dirs.defaultPluginsDir);
     console.log("Dist Path:", dirs.distDir);
-    this.configManager = new AperioConfigManager(dirs);
-    this.aperioManager = new AperioManager(dirs, this.configManager);
+    this.aperioManager = new AperioManager(dirs);
+    this.configManager = this.aperioManager.configManager;
+    this.storeManager = this.aperioManager.storeManager;
   }
 
   setOsrWebContents(wc: Electron.WebContents) {
@@ -71,7 +74,6 @@ export class NativeModule {
     count: number,
     width: number,
     height: number,
-    fps: number,
     frameStruct: ItemStructure[],
   ) {
     const size = width * height * 4;
@@ -87,7 +89,6 @@ export class NativeModule {
       count,
       width,
       height,
-      fps,
       frameStruct,
     );
     this.p1.postMessage({ frame: this._sharedBuf, frameResults });
@@ -95,7 +96,6 @@ export class NativeModule {
 
   getFrameSharedTexture(
     count: number,
-    fps: number,
     frameStruct: ItemStructure[],
     frame: Electron.WebContents,
   ) {
@@ -108,7 +108,6 @@ export class NativeModule {
       const frameResults = this.aperioManager.getFrameTexture(
         count,
         this.configManager.config.texPixelFormat,
-        fps,
         frameStruct,
         textureInfo as NodeOffscreenSharedTextureInfo,
       );

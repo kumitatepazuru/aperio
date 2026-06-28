@@ -44,7 +44,7 @@ const Timeline = () => {
   );
   const maxVisibleFrames = useMemo(() => {
     return (
-      Math.max(...timelineItems.map((item) => item.to), 0) +
+      Math.max(...timelineItems.map((item) => item.end), 0) +
       Math.floor(size.width / ZoomLevels[zoom])
     ); // 表示領域に収まるフレーム数を余裕を持って計算
   }, [size.width, timelineItems, zoom]);
@@ -159,7 +159,7 @@ const Timeline = () => {
       elem.addEventListener("contextmenu", handleContextMenu);
 
       const removeAddObjectListener = window.main.onAddObject(
-        async (objName) => {
+        async (objName, type) => {
           console.log("Add object from context menu:", objName);
 
           const structure = await window.main.requestNewGenerator(objName, {});
@@ -184,26 +184,21 @@ const Timeline = () => {
             timelineItems.some(
               (item) =>
                 item.layer === layer &&
-                ((currentFrame >= item.from && currentFrame < item.to) ||
-                  (endFrame > item.from && endFrame <= item.to) ||
-                  (currentFrame <= item.from && endFrame >= item.to)),
+                ((currentFrame >= item.start && currentFrame < item.end) ||
+                  (endFrame > item.start && endFrame <= item.end) ||
+                  (currentFrame <= item.start && endFrame >= item.end)),
             )
           ) {
             layer++;
           }
 
-          const newItem: ItemStructure = {
+          const newBaseItem = {
             id: uuidv4(),
             layer,
-            from: currentFrame,
-            to: endFrame,
+            start: currentFrame,
+            end: endFrame,
             min: structure.minFrame,
             max: structure.maxFrame,
-            x: 0,
-            y: 0,
-            scale: 100.0,
-            rotation: 0.0,
-            alpha: 100.0,
             object: {
               id: uuidv4(),
               name: objName,
@@ -212,9 +207,28 @@ const Timeline = () => {
             },
             effects: [],
           };
+          if (type === "Video") {
+            const newItem: ItemStructure = {
+              ...newBaseItem,
+              type,
+              x: 0,
+              y: 0,
+              scale: 100.0,
+              rotation: 0.0,
+              alpha: 100.0,
+            };
+            setTimelineItems([...timelineItems, newItem]);
+          } else {
+            const newItem: ItemStructure = {
+              ...newBaseItem,
+              type,
+              volume: 100.0,
+              pan: 0.0,
+            };
+            setTimelineItems([...timelineItems, newItem]);
+          }
 
-          setTimelineItems([...timelineItems, newItem]);
-          setSelectedItemId(newItem.id);
+          setSelectedItemId(newBaseItem.id);
         },
       );
 

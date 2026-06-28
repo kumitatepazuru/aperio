@@ -8,7 +8,9 @@ import { hasSameItems } from "@shared/utils/hasSame";
 import { resolveGroupMoveDelta } from "@shared/utils/layerUtils";
 
 const ObjectParameter = () => {
-  const [structures, setStructures] = useState<GeneratorInformation["structure"]>([]);
+  const [structures, setStructures] = useState<
+    GeneratorInformation["structure"]
+  >([]);
   const [params, setParams] = useState<Record<string, ConfigableValue>>({});
 
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
@@ -18,11 +20,11 @@ const ObjectParameter = () => {
   );
 
   /**
-   * struct の minFrame / maxFrame を item に適用し、必要に応じて from / to を調整した
+   * struct の minFrame / maxFrame を item に適用し、必要に応じて start / end を調整した
    * 新しい ItemStructure を返す。変更がなければ同一オブジェクトを返す。
    *
-   * maxFrame 超過 → to を切り詰める。
-   * minFrame 未満 → resolveGroupMoveDelta で衝突を避けながら from / to を移動させて伸ばす。
+   * maxFrame 超過 → end を切り詰める。
+   * minFrame 未満 → resolveGroupMoveDelta で衝突を避けながら start / end を移動させて伸ばす。
    * maxFrame < minFrame の矛盾がある場合は max 優先で min の調整をスキップする。
    */
   const applyBounds = (
@@ -34,40 +36,58 @@ const ObjectParameter = () => {
     const newMax = struct.maxFrame;
     if (newMin === item.min && newMax === item.max) return item;
 
-    let newFrom = item.from;
-    let newTo = item.to;
+    let newStart = item.start;
+    let newEnd = item.end;
 
-    if (newMax !== undefined && newTo - newFrom > newMax) {
-      newTo = newFrom + newMax;
+    if (newMax !== undefined && newEnd - newStart > newMax) {
+      newEnd = newStart + newMax;
     }
 
     const maxConstraint = newMax ?? Infinity;
-    if (newMin !== undefined && newMin <= maxConstraint && newTo - newFrom < newMin) {
+    if (
+      newMin !== undefined &&
+      newMin <= maxConstraint &&
+      newEnd - newStart < newMin
+    ) {
       // minFrame に合わせた仮アイテムで resolveGroupMoveDelta を呼び、
       // 衝突しない最近傍の位置（delta）を求める。
-      const initForMin = { id: item.id, from: newFrom, to: newFrom + newMin, layer: item.layer };
+      const initForMin = {
+        id: item.id,
+        start: newStart,
+        end: newStart + newMin,
+        layer: item.layer,
+      };
       const movingIds = new Set([item.id]);
-      const delta = resolveGroupMoveDelta(timeline, movingIds, [initForMin], 0, 0);
-      newFrom = Math.max(0, newFrom + delta);
-      newTo = newFrom + newMin;
+      const delta = resolveGroupMoveDelta(
+        timeline,
+        movingIds,
+        [initForMin],
+        0,
+        0,
+      );
+      newStart = Math.max(0, newStart + delta);
+      newEnd = newStart + newMin;
     }
 
-    return { ...item, min: newMin, max: newMax, from: newFrom, to: newTo };
+    return { ...item, min: newMin, max: newMax, start: newStart, end: newEnd };
   };
 
-  const updateTimeline = async (struct: GeneratorInformation, params: Record<string, ConfigableValue>) => {
+  const updateTimeline = async (
+    struct: GeneratorInformation,
+    params: Record<string, ConfigableValue>,
+  ) => {
     const timeline = (await getStoreState()).timelineItems;
-      setTimelineItems(
-        timeline.map((item): ItemStructure => {
-          if (item.id !== selectedItemId) return item;
-          const bounded = applyBounds(item, struct, timeline);
-          return {
-            ...bounded,
-            object: { ...bounded.object, parameters: params },
-          };
-        }),
-      );
-  }
+    setTimelineItems(
+      timeline.map((item): ItemStructure => {
+        if (item.id !== selectedItemId) return item;
+        const bounded = applyBounds(item, struct, timeline);
+        return {
+          ...bounded,
+          object: { ...bounded.object, parameters: params },
+        };
+      }),
+    );
+  };
 
   useEffect(() => {
     if (!selectedItem) {
@@ -84,7 +104,10 @@ const ObjectParameter = () => {
         // TODO: 外部ファイルを参照している場合、保存→ファイル変更→読み込みをすると内部データの更新をする必要があるためupdateTimelineをここでも走らせている
         // TODO: ただ、プロジェクト読み込み時にすべてのupdateをして将来的にこれは削除するべき
         setStructures(struct.structure);
-        const newParams = initValues(struct.structure, selectedItem.object.parameters);
+        const newParams = initValues(
+          struct.structure,
+          selectedItem.object.parameters,
+        );
         setParams(newParams);
         void updateTimeline(struct, newParams);
       })
@@ -111,7 +134,10 @@ const ObjectParameter = () => {
         )
       ) {
         setStructures(struct.structure);
-        paramsToSave = { ...initValues(struct.structure, newParams), ...newParams };
+        paramsToSave = {
+          ...initValues(struct.structure, newParams),
+          ...newParams,
+        };
         setParams(paramsToSave);
       }
 

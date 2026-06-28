@@ -125,23 +125,37 @@ pub struct GenerateStructure {
     pub parameters: HashMap<String, JsonValue>, // パラメータの具体的な型はエフェクトによって異なるため、単にdict(JsonValue)型とする
 }
 
-#[napi(object)]
-#[pyclass(from_py_object, extends = PyDict)]
-#[derive(Clone, IntoPyObject, PartialEq, Debug)]
-pub struct ItemStructure {
-    pub id: String,                      // アイテムのUUID
-    pub layer: i32,                      // アイテムのレイヤー（整数、0が最背面）
-    pub from: i32,                       // アイテムの開始フレーム
-    pub to: i32,                         // アイテムの終了フレーム
-    pub min: Option<i32>,                // アイテムの有効な最小フレーム（省略可能）
-    pub max: Option<i32>,                // アイテムの有効な最大フレーム（省略可能）
-    pub x: i32,                          // アイテムのX座標
-    pub y: i32,                          // アイテムのY座標
-    pub scale: f64,                      // アイテムのスケール
-    pub rotation: f64,                   // アイテムの回転角度（度数法）
-    pub alpha: f64,                      // アイテムの不透明度（0.0〜1.0）
-    pub object: GenerateStructure,       // ベースとなるオブジェクトプラグインの情報
-    pub effects: Vec<GenerateStructure>, // 適用されるエフェクトプラグインの情報のリスト
+#[napi]
+#[pyclass(from_py_object)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ItemStructure {
+    Video {
+        id: String,
+        layer: i32,
+        start: i32,                      // アイテムの開始フレーム
+        end: i32,                        // アイテムの終了フレーム
+        min: Option<i32>,                // アイテムの有効な最小フレーム（省略可能）
+        max: Option<i32>,                // アイテムの有効な最大フレーム（省略可能）
+        x: i32,
+        y: i32,
+        scale: f64,
+        rotation: f64,
+        alpha: f64,
+        object: GenerateStructure,
+        effects: Vec<GenerateStructure>,
+    },
+    Audio {
+        id: String,
+        layer: i32,
+        start: i32,                      // アイテムの開始フレーム
+        end: i32,                        // アイテムの終了フレーム
+        min: Option<i32>,
+        max: Option<i32>,
+        volume: f64,
+        pan: f64,
+        object: GenerateStructure,
+        effects: Vec<GenerateStructure>,
+    },
 }
 
 #[napi(object)]
@@ -168,14 +182,16 @@ pub enum GeneratorEvent {
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
-    pub object_plugins: HashMap<String, String>,
-    pub effect_plugins: HashMap<String, String>,
+    pub video_object_plugins: HashMap<String, String>,
+    pub video_effect_plugins: HashMap<String, String>,
+    pub audio_object_plugins: HashMap<String, String>,
+    pub audio_effect_plugins: HashMap<String, String>,
 }
 
 // ---- モジュール登録 -------------------------------------------------------
 
-#[pymodule(module = "aperio.frame_structure")]
-pub mod frame_structure {
+#[pymodule(module = "aperio.item_structures")]
+pub mod item_structures {
     #[pymodule_export]
     use super::FileFilter;
     #[pymodule_export]

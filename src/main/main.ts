@@ -93,17 +93,16 @@ ipcMain.handle(
     count: number,
     width: number,
     height: number,
-    fps: number,
     frameStruct: ItemStructure[],
   ) => {
-    nativeModule.getFrameBuf(count, width, height, fps, frameStruct);
+    nativeModule.getFrameBuf(count, width, height, frameStruct);
   },
 );
 
 ipcMain.handle(
   "get-frame-shared-texture",
-  (event, count: number, fps: number, frameStruct: ItemStructure[]) => {
-    nativeModule.getFrameSharedTexture(count, fps, frameStruct, event.sender);
+  (event, count: number, frameStruct: ItemStructure[]) => {
+    nativeModule.getFrameSharedTexture(count, frameStruct, event.sender);
   },
 );
 
@@ -113,6 +112,34 @@ ipcMain.handle("get-config", () => {
 
 ipcMain.handle("get-event-stack-length", () => {
   return nativeModule.getEventStack();
+});
+
+ipcMain.handle(
+  "play-audio",
+  (
+    _,
+    audioStructure: ItemStructure[],
+    sampleRate: number,
+    channels: number,
+    startTime: number,
+    duration: number,
+  ) => {
+    nativeModule.aperioManager.playAudio(
+      audioStructure,
+      sampleRate,
+      channels,
+      startTime,
+      duration,
+    );
+  },
+);
+
+ipcMain.handle("get-pending-samples", () => {
+  return nativeModule.aperioManager.audioManager.pendingSamples;
+});
+
+ipcMain.handle("stop-audio", () => {
+  nativeModule.aperioManager.audioManager.stop();
 });
 
 ipcMain.handle("resize-osr", (_, width: number, height: number) => {
@@ -151,26 +178,20 @@ ipcMain.handle("get-fonts-list", () => {
 ipcMain.handle(
   "request-new",
   (_, pluginName: string, args: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestNew(
-      pluginName,
-      args,
-    );
+    return nativeModule.aperioManager.requestNew(pluginName, args);
   },
 );
 
 ipcMain.handle(
   "request-parameter-struct",
   (_, pluginName: string, params: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestStructure(
-      pluginName,
-      params,
-    );
+    return nativeModule.aperioManager.requestStructure(pluginName, params);
   },
 );
 
 // ─── Sync Server ─────────────────────────────────────────────────────────────
 
-const syncServer = new SyncServer();
+const syncServer = new SyncServer(nativeModule);
 
 ipcMain.handle("sync:register", (event) => {
   return syncServer.register(event.sender.id);

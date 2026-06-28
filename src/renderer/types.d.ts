@@ -23,7 +23,6 @@ declare global {
         count: number,
         width: number,
         height: number,
-        fps: number,
         frameStruct: ItemStructure[],
       ) => Promise<void>;
       setReceiver: (
@@ -31,9 +30,19 @@ declare global {
       ) => void;
       getFrameSharedTexture: (
         count: number,
-        fps: number,
         frameStruct: ItemStructure[],
       ) => Promise<void>;
+    };
+    audio: {
+      play: (
+        audioStructure: ItemStructure[],
+        sampleRate: number,
+        channels: number,
+        startTime: number,
+        duration: number,
+      ) => void;
+      stop: () => void;
+      getPendingSamples: () => Promise<number>;
     };
     main: {
       getPluginNames: () => Promise<PluginNameInfo>;
@@ -49,7 +58,9 @@ declare global {
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       openContextMenu: (id: string) => Promise<void>;
-      onAddObject: (cb: (objName: string) => void) => () => void;
+      onAddObject: (
+        cb: (objName: string, type: "Audio" | "Video") => void,
+      ) => () => void;
       getEventStack: () => Promise<number>;
       onEventStackChanged: (cb: (length: number) => void) => () => void;
       resizeOsr: (width: number, height: number) => Promise<void>;

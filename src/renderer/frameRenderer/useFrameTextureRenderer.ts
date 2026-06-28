@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import useStore, {
   getCurrentFrameCount,
-  getCurrentFrameStruct,
+  getCurrentVideoItems,
   getStoreState,
 } from "@shared/store";
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/hooks/useWebGPU";
 import type { ReceivedSharedTextureData } from "electron";
 import type { ItemResult } from "native";
+import playAudio from "./audio";
 
 // VideoFrameをcanvasに描画するためのシェーダー
 const fragmentShaderCode = /* wgsl */ `
@@ -86,21 +87,23 @@ const useFrameTextureRenderer = () => {
   // フレームループ
   const frameLoop = useCallback(async () => {
     const currentFrameCount = await getCurrentFrameCount();
-    // TODO: この前に音声1ブロック分の生成・再生処理を入れる
+    const storeState = await getStoreState();
+    const isPlaying = storeState.viewerState.state === "playing";
     if (previousFrameCount.current === currentFrameCount) {
       // フレームが前回と同じならスキップ
-      animationFrameReserve.current =
-        (await getStoreState()).viewerState.state === "playing"
-          ? requestAnimationFrame(frameLoop)
-          : null;
+      animationFrameReserve.current = isPlaying
+        ? requestAnimationFrame(frameLoop)
+        : null;
       return;
     }
+
+    // TODO: 音声の生成をフレーム生成と並列で行い、ここでは音声の再生のみにする
+    await playAudio();
 
     try {
       await window.frame.getFrameSharedTexture(
         currentFrameCount,
-        (await getStoreState()).frameState.fps,
-        await getCurrentFrameStruct(),
+        await getCurrentVideoItems(),
       );
       previousFrameCount.current = currentFrameCount;
     } catch (error) {

@@ -3,16 +3,20 @@ import os.path
 import struct
 import traceback
 
-from aperio import gpu_util
+from aperio import PyManagers, gpu_util
 from aperio import logger
 from aperio import text_rendering
-from aperio.frame_structure import *
+from aperio.audio import AudioManager
+from aperio.config_manager import ConfigManager
+from aperio.item_structures import *
+from aperio.store import StoreManager
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
 # どうやらDebian系Linuxではsite-packagesではなくdist-packagesにインストールされるらしいのでimportされない。
 # また、OS管理のPythonを使っているとPYTHONHOMEを設定しているのにもかかわらずそれが適用されないケースが多い。
 try:
-    import numpy as _
+    import numpy as np
+    import numpy.typing as npt
 except ImportError as e:
     import traceback as _tb
     logger.error(_tb.format_exc())
@@ -29,7 +33,8 @@ except ImportError as e:
     ) from e
 
 from .plugin_base.generator_base import (
-    GenerateParameters,
+    AudioGenerateParameters,
+    VideoGenerateParameters,
     GeneratorFuncReturn,
     GeneratorTextureReturn,
     GeneratorWgslReturn,
@@ -37,10 +42,42 @@ from .plugin_base.generator_base import (
 from .plugin_manager import PluginManager
 from .event_manager import EventManager
 
+# スピーカーアジマス角 (度数法): 0=正面、負=左、正=右、±180=背面、None=LFE(常にgain=1.0)
+# 各エントリはFFmpegのデフォルトチャンネルレイアウト順に準拠
+_CHANNEL_AZIMUTHS: dict[int, list[float | None]] = {
+    1: [0.0],                                                    # Mono: FC
+    2: [-30.0, 30.0],                                            # Stereo: FL FR
+    3: [-30.0, 30.0, 0.0],                                       # 3.0: FL FR FC
+    4: [-30.0, 30.0, -110.0, 110.0],                            # 4.0: FL FR BL BR
+    5: [-30.0, 30.0, 0.0, -110.0, 110.0],                       # 5.0: FL FR FC BL BR
+    6: [-30.0, 30.0, 0.0, None, -110.0, 110.0],                 # 5.1: FL FR FC LFE BL BR
+    7: [-30.0, 30.0, 0.0, None, -110.0, 110.0, 180.0],         # 6.1: FL FR FC LFE BL BR BC
+    8: [-30.0, 30.0, 0.0, None, -110.0, 110.0, -60.0, 60.0],  # 7.1: FL FR FC LFE BL BR SL SR
+}
+
+
+def _compute_pan_gains(pan: float, channels: int) -> npt.NDArray[np.float32]:
+    """pan [-1, 1] をスピーカーアジマスに基づくチャンネルごとのゲインに変換する。
+    未定義チャンネル数の場合はすべて 1.0 を返す。"""
+    azimuths = _CHANNEL_AZIMUTHS.get(channels)
+    if azimuths is None:
+        return np.ones(channels, dtype=np.float32)
+    pan_rad = math.radians(pan * 90.0)
+    gains = [
+        1.0 if az is None else max(0.0, math.cos(pan_rad - math.radians(az)))
+        for az in azimuths
+    ]
+    return np.array(gains, dtype=np.float32)
+
+
 # モジュールレベルグローバル — AperioManager.__init__ で設定される
 image_generator = gpu_util.PyImageGenerator()
 text_renderer = text_rendering.PyTextRenderer(image_generator)
+# TODO: PluginManagerに名称を変更し、plugin_managerとして提供
 manager: AperioManager
+config_manager: ConfigManager
+store_manager: StoreManager
+audio_manager: AudioManager
 
 
 class AperioManager(PluginManager, EventManager):
@@ -49,8 +86,11 @@ class AperioManager(PluginManager, EventManager):
     Rust 側から aperio_plugin.AperioManager として参照される。
     """
 
-    def __init__(self, data_dir: str, plugin_dir_name: str = "plugins"):
+    def __init__(self, data_dir: str, managers: PyManagers, plugin_dir_name: str = "plugins"):
         global manager
+        global config_manager
+        global store_manager
+        global audio_manager
 
         # モジュールレベルグローバルに自身を設定（プラグインから参照されるため）
         manager = self
@@ -58,6 +98,11 @@ class AperioManager(PluginManager, EventManager):
         # self にも保持（フレーム生成メソッドで直接参照）
         self.generator = image_generator
         self.text_renderer = text_renderer
+
+        # managers から各種マネージャーを取得して設定
+        config_manager = managers.config_manager
+        store_manager = managers.store_manager
+        audio_manager = managers.audio_manager
 
         shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
         with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:
@@ -82,18 +127,17 @@ class AperioManager(PluginManager, EventManager):
         """
         return self.text_renderer.get_fonts_list()
 
-    def _make_frame(
+    def _make_frame_builder(
         self,
         frame_number: int,
         frame_structure: list[ItemStructure],
         width: int,
         height: int,
-        fps: float,
     ) -> tuple[gpu_util.PyImageGenerateBuilder, dict[str, ItemResult]]:
         """
-        指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。  
+        指定されたフレーム構造に基づいてフレームを生成する内部ヘルパーメソッド。
 
-        このメソッドは公開APIから呼び出されるフレーム生成処理を共通化するために  
+        このメソッドは公開APIから呼び出されるフレーム生成処理を共通化するために
         切り出されたものであり、クラス外部から直接利用されることは想定していない。
 
         Args:
@@ -101,15 +145,12 @@ class AperioManager(PluginManager, EventManager):
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-            fps (float): フレームレート
         Returns:
             tuple[gpu_util.PyImageGenerateBuilder, dict[str, ItemResult]]: フレーム生成のビルダーオブジェクトとフレーム結果の辞書
         """
         try:
             if not isinstance(frame_structure, list):
                 raise TypeError("frame_structure must be a list of ItemStructure")
-            if not all(isinstance(layer, dict) for layer in frame_structure):
-                raise TypeError("Each layer in frame_structure must be a ItemStructure")
             if not isinstance(width, int) or not isinstance(height, int):
                 raise TypeError("width and height must be integers")
             if width <= 0 or height <= 0:
@@ -120,21 +161,23 @@ class AperioManager(PluginManager, EventManager):
             generator_params = []
             frame_results: dict[str, ItemResult] = {}
             for layer in frame_structure:
+                if not isinstance(layer, ItemStructure.Video):
+                    logger.warning(f"Layer {layer.id} is not a video layer. Skipping.") # type: ignore
+                    continue
                 layer_builder = gpu_util.PyImageGenerateBuilder()
-                obj_name = layer["object"]["name"]
-                layer_id = layer["id"]
+                obj_name = layer.object["name"]
+                layer_id = layer.id
 
-                if obj_name not in self.object_plugins:
+                if obj_name not in self.video_object_plugins:
                     raise ValueError(f"Object plugin {obj_name} is not registered")
 
-                obj_plugin = self.object_plugins[obj_name]
-                params = GenerateParameters(
+                obj_plugin = self.video_object_plugins[obj_name]
+                params = VideoGenerateParameters(
                     frame_number=frame_number,
                     layer=layer,
-                    args=layer["object"]["parameters"],
+                    args=layer.object["parameters"],
                     width=width,
                     height=height,
-                    fps=fps,
                 )
                 layer_frame = obj_plugin.generate(params)
                 if layer_frame is None:
@@ -165,24 +208,21 @@ class AperioManager(PluginManager, EventManager):
                         layer_frame.output_height,
                     )
 
-                for effect in layer["effects"]:
-                    if effect["name"] not in self.effect_plugins:
+                for effect in layer.effects:
+                    if effect["name"] not in self.video_effect_plugins:
                         raise ValueError(f"Effect plugin {effect['name']} is not registered")
 
-                    effect_plugin = self.effect_plugins[effect["name"]]
-                    if layer_frame is None:
-                        continue
-                    params = GenerateParameters(
+                    effect_plugin = self.video_effect_plugins[effect["name"]]
+                    params = VideoGenerateParameters(
                         frame_number=frame_number,
                         layer=layer,
                         args=effect["parameters"],
                         width=layer_frame.output_width,
                         height=layer_frame.output_height,
-                        fps=fps,
                     )
                     layer_frame = effect_plugin.generate(params)
                     if layer_frame is None:
-                        continue
+                        break
                     frame_results[layer_id] = ItemResult(
                         width=layer_frame.output_width,
                         height=layer_frame.output_height,
@@ -209,19 +249,21 @@ class AperioManager(PluginManager, EventManager):
                             layer_frame.output_height,
                         )
 
+                if layer_frame is None:
+                    continue
                 layer_builders.append(layer_builder)
 
                 # params準備
                 # 回転をラジアンに変換してから回転行列を計算
-                rotation_rad = math.radians(layer["rotation"])
+                rotation_rad = math.radians(layer.rotation)
                 cos_theta = math.cos(rotation_rad)
                 sin_theta = math.sin(rotation_rad)
-                alpha = layer["alpha"] / 100  # 0-100 -> 0-1
+                alpha = layer.alpha / 100  # 0-100 -> 0-1
                 rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
 
                 fmt = "<iiff"  # x, y, scale, alpha
                 fmt += "4f"  # rotation_matrix (2x2 floats)
-                params_bytes = struct.pack(fmt, layer["x"], layer["y"], layer["scale"] / 100, alpha, *rotation_matrix)
+                params_bytes = struct.pack(fmt, layer.x, layer.y, layer.scale / 100, alpha, *rotation_matrix)
                 generator_params.append(params_bytes)
 
             if len(layer_builders) == 0:
@@ -250,7 +292,6 @@ class AperioManager(PluginManager, EventManager):
         frame_structure: list[ItemStructure],
         width: int,
         height: int,
-        fps: float,
         buffer_ptr: int,
     ) -> dict[str, ItemResult]:
         """
@@ -261,13 +302,12 @@ class AperioManager(PluginManager, EventManager):
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-            fps (float): フレームレート
             buffer_ptr (int): 書き込み先バッファのポインタ
 
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-        builder, results = self._make_frame(frame_number, frame_structure, width, height, fps)
+        builder, results = self._make_frame_builder(frame_number, frame_structure, width, height)
 
         if builder is not None:
             self.generator.generate_buf(builder, buffer_ptr)
@@ -280,9 +320,8 @@ class AperioManager(PluginManager, EventManager):
         frame_structure: list[ItemStructure],
         width: int,
         height: int,
-        fps: float,
         texture_handle: gpu_util.PySharedTextureHandle,
-        format: gpu_util.SharedTextureFormat,
+        format: gpu_util.WrappedSharedTextureFormat,
     ) -> dict[str, ItemResult]:
         """
         指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
@@ -292,16 +331,135 @@ class AperioManager(PluginManager, EventManager):
             frame_structure (list[ItemStructure]): フレーム構造のリスト
             width (int): フレームの幅
             height (int): フレームの高さ
-            fps (float): フレームレート
             texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
-            format (gpu_util.SharedTextureFormat): 共有テクスチャのフォーマット
-        
+            format (gpu_util.WrappedSharedTextureFormat): 共有テクスチャのフォーマット
+
         Returns:
             dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
         """
-        builder, results = self._make_frame(frame_number, frame_structure, width, height, fps)
+        builder, results = self._make_frame_builder(frame_number, frame_structure, width, height)
 
         if builder is not None:
             self.generator.generate_shared_texture(builder, texture_handle, format)
 
         return results
+
+    def _make_audio_sample(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, sample_count: int) -> npt.NDArray[np.float32]:
+        """
+        指定されたオーディオ構造に基づいてオーディオサンプルを生成するメソッド。
+
+        Args:
+            audio_structure (list[ItemStructure]): オーディオ構造のリスト
+            sample_rate (int): サンプルレート
+            channels (int): チャンネル数
+            start_time (float): 生成を開始する時間（秒）
+            sample_count (int): 生成するサンプル数
+
+        Returns:
+            npt.NDArray[np.float32]: 生成されたオーディオサンプルの2次元配列（チャンネル数 x サンプル数）
+        """
+        try:
+            fps = store_manager.get_state().frame_state.fps
+
+            output = np.zeros((channels, sample_count), dtype=np.float32)
+            request_end_time = start_time + sample_count / sample_rate
+
+            for layer in audio_structure:
+                if not isinstance(layer, ItemStructure.Audio):
+                    logger.warning(f"Layer {layer.id} is not an audio layer. Skipping.") # type: ignore
+                    continue
+                obj_name = layer.object["name"]
+                if obj_name not in self.audio_object_plugins:
+                    raise ValueError(f"Audio object plugin {obj_name} is not registered")
+
+                # フレームを時間に変換
+                item_start_time = layer.start / fps
+                item_end_time = layer.end / fps
+
+                # リクエスト時間範囲とのオーバーラップ計算
+                overlap_start = max(start_time, item_start_time)
+                overlap_end = min(request_end_time, item_end_time)
+
+                if overlap_start >= overlap_end:
+                    logger.warning(f"Layer {layer.id} has no overlap with requested audio range. Skipping.")
+                    continue
+
+                # 出力バッファ内のサンプルオフセットと生成サンプル数
+                sample_offset = round((overlap_start - start_time) * sample_rate)
+                overlap_sample_count = round((overlap_end - overlap_start) * sample_rate)
+
+                if overlap_sample_count <= 0:
+                    logger.warning(f"Layer {layer.id} has no overlapping samples to generate. Skipping.")
+                    continue
+
+                # オブジェクトプラグインでサンプル生成
+                obj_plugin = self.audio_object_plugins[obj_name]
+                obj_params = AudioGenerateParameters(
+                    start_time=overlap_start,
+                    layer=layer,
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    sample_count=overlap_sample_count,
+                    args=layer.object["parameters"],
+                )
+                layer_samples = obj_plugin.generate(obj_params)
+
+                if layer_samples is None:
+                    continue
+
+                # エフェクトを順番に適用（各エフェクトは前段サンプルをinput_samplesで受け取る）
+                for effect in layer.effects:
+                    if layer_samples is None:
+                        break
+                    effect_name = effect["name"]
+                    if effect_name not in self.audio_effect_plugins:
+                        raise ValueError(f"Audio effect plugin {effect_name} is not registered")
+                    effect_plugin = self.audio_effect_plugins[effect_name]
+                    effect_params = AudioGenerateParameters(
+                        start_time=overlap_start,
+                        layer=layer,
+                        sample_rate=sample_rate,
+                        channels=channels,
+                        sample_count=overlap_sample_count,
+                        args=effect["parameters"],
+                        input_samples=layer_samples,
+                    )
+                    layer_samples = effect_plugin.generate(effect_params)
+
+                if layer_samples is None:
+                    continue
+
+                if layer_samples.ndim != 2 or layer_samples.shape[0] != channels:
+                    raise ValueError(
+                        f"Audio plugin {obj_name} returned samples with invalid shape {layer_samples.shape}, expected ({channels}, {overlap_sample_count})"
+                    )
+
+                # ボリュームとパンをnumpyで一括適用
+                pan_gains = _compute_pan_gains(layer.pan / 100.0, channels)
+                layer_samples = layer_samples * (layer.volume / 100.0 * pan_gains[:, np.newaxis])
+
+                # 出力バッファに加算（浮動小数点丸め誤差による境界超過をクリップ）
+                write_count = min(overlap_sample_count, sample_count - sample_offset)
+                output[:, sample_offset:sample_offset + write_count] += layer_samples[:, :write_count]
+
+            np.clip(output, -1.0, 1.0, out=output)
+            return output
+
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            raise RuntimeError(f"Failed to generate audio sample: {e}") from e
+
+    def play_audio(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, duration: float):
+        """
+        指定されたオーディオ構造に基づいてオーディオを生成し、再生するメソッド。
+
+        Args:
+            audio_structure (list[ItemStructure]): オーディオ構造のリスト
+            sample_rate (int): サンプルレート
+            channels (int): チャンネル数
+            start_time (float): 再生を開始する時間（秒）
+            duration (float): 再生する期間（秒）
+        """
+        samples = self._make_audio_sample(audio_structure, sample_rate, channels, start_time, math.floor(sample_rate * duration))  # 指定された期間分のサンプルを生成して再生
+        start_sample = round(start_time * sample_rate)
+        audio_manager.stack_audio(samples, start_sample)

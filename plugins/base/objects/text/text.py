@@ -1,12 +1,12 @@
 import aperio_plugin
-from aperio.frame_structure import GeneratorEvent, GeneratorInformation, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc
 from aperio.text_rendering import PyTextRenderer, PyTextSpec
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GenerateParameters, GeneratorTextureReturn, ObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, VideoGenerateParameters, VideoObjectGeneratorBase
 
 
-class TextObject(ObjectGeneratorBase):
+class TextObject(VideoObjectGeneratorBase):
     """
     テキストをレンダリングするオブジェクトプラグイン。テキストの内容、色、フォント、字間を指定してフレームにテキストを描画することができる。
     """
@@ -38,7 +38,7 @@ class TextObject(ObjectGeneratorBase):
             ],
         )
 
-    def generate(self, params: GenerateParameters) -> GeneratorTextureReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorTextureReturn | None:
         args = params.args
 
         text = args.get("text", "ここにテキストを入力")

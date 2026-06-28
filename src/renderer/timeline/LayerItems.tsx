@@ -17,7 +17,7 @@ type DragState = {
   startClientX: number;
   startClientY: number;
   /** 移動対象アイテムのドラッグ開始時スナップショット */
-  initItems: Array<{ id: string; from: number; to: number; layer: number }>;
+  initItems: Array<{ id: string; start: number; end: number; layer: number }>;
 };
 
 type LayerItemsProps = {
@@ -65,7 +65,14 @@ const LayerItems = ({
       mode,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      initItems: allItems.filter((item) => movingItemIds.includes(item.id)),
+      initItems: allItems
+        .filter((item) => movingItemIds.includes(item.id))
+        .map((item) => ({
+          id: item.id,
+          start: item.start,
+          end: item.end,
+          layer: item.layer,
+        })),
     };
   };
 
@@ -88,13 +95,13 @@ const LayerItems = ({
       const movingIds = new Set(dragState.initItems.map((i) => i.id));
 
       if (dragState.mode === "move") {
-        // アンカーアイテムの desiredFrom をスナップしてデルタを計算
+        // アンカーアイテムの desiredDelta をスナップして計算
         const desiredDelta =
           snapFrame(
-            anchorInit.from + frameDeltaRaw,
+            anchorInit.start + frameDeltaRaw,
             graduationInterval,
             zoomLevelPxPerFrame,
-          ) - anchorInit.from;
+          ) - anchorInit.start;
 
         // アイテム同士が同じレイヤーに着地しないよう layerDelta を制限
         const effectiveLayerDelta = clampLayerDelta(
@@ -115,16 +122,16 @@ const LayerItems = ({
           timelineItems.map((item) => {
             const init = dragState.initItems.find((i) => i.id === item.id);
             if (!init) return item;
-            const duration = init.to - init.from;
-            const newFrom = Math.max(0, init.from + resolvedDelta);
+            const duration = init.end - init.start;
+            const newStart = Math.max(0, init.start + resolvedDelta);
             const targetLayerNum = Math.max(
               0,
               init.layer + effectiveLayerDelta,
             );
             return {
               ...item,
-              from: newFrom,
-              to: newFrom + duration,
+              start: newStart,
+              end: newStart + duration,
               layer: targetLayerNum,
             };
           }),
@@ -139,63 +146,63 @@ const LayerItems = ({
           const init = anchorInit;
 
           if (dragState.mode === "resize-start") {
-            const nextFrom = snapFrame(
-              init.from + frameDeltaRaw,
+            const nextStart = snapFrame(
+              init.start + frameDeltaRaw,
               graduationInterval,
               zoomLevelPxPerFrame,
             );
-            const desiredFrom = Math.max(0, Math.min(nextFrom, init.to - 1));
+            const desiredStart = Math.max(0, Math.min(nextStart, init.end - 1));
 
-            // 左側障害物（init.toより前に終わるもの）が左方向への拡張を制限する
-            const minFrom = timelineItems
+            // 左側障害物（init.startより前に終わるもの）が左方向への拡張を制限する
+            const minStart = timelineItems
               .filter(
                 (o) =>
                   o.layer === item.layer &&
                   !movingIds.has(o.id) &&
-                  o.to <= init.from,
+                  o.end <= init.start,
               )
-              .reduce((acc, o) => Math.max(acc, o.to), 0);
+              .reduce((acc, o) => Math.max(acc, o.end), 0);
 
             return {
               ...item,
-              from: Math.min(
-                item.min ? item.to - item.min : Infinity, // minが設定されたときに自動的に引き延ばされるので、その実相を信用して当たり判定はここでは確認しない
+              start: Math.min(
+                item.min ? item.end - item.min : Infinity, // minが設定されたときに自動的に引き延ばされるので、その実相を信用して当たり判定はここでは確認しない
                 Math.max(
-                  desiredFrom,
-                  minFrom,
-                  item.max ? item.to - item.max : 0,
+                  desiredStart,
+                  minStart,
+                  item.max ? item.end - item.max : 0,
                 ),
               ),
             };
           }
 
           // resize-end
-          const nextTo = snapFrame(
-            init.to + frameDeltaRaw,
+          const nextEnd = snapFrame(
+            init.end + frameDeltaRaw,
             graduationInterval,
             zoomLevelPxPerFrame,
           );
-          const desiredTo = Math.max(init.from + 1, nextTo);
+          const desiredEnd = Math.max(init.start + 1, nextEnd);
 
-          // 右側障害物（init.to以降から始まるもの）が右方向への拡張を制限する
-          const maxTo = timelineItems
+          // 右側障害物（init.end以降から始まるもの）が右方向への拡張を制限する
+          const maxEnd = timelineItems
             .filter(
               (o) =>
                 o.layer === item.layer &&
                 !movingIds.has(o.id) &&
-                o.from >= init.to,
+                o.start >= init.end,
             )
-            .reduce((acc, o) => Math.min(acc, o.from), Infinity);
+            .reduce((acc, o) => Math.min(acc, o.start), Infinity);
 
           return {
             ...item,
-            to: Math.max(
+            end: Math.max(
               // minが設定されたときに自動的に引き延ばされるので、その実相を信用して当たり判定はここでは確認しない
-              item.min ? item.from + item.min : 0,
+              item.min ? item.start + item.min : 0,
               Math.min(
-                desiredTo,
-                maxTo,
-                item.max ? item.max + item.from : Infinity,
+                desiredEnd,
+                maxEnd,
+                item.max ? item.max + item.start : Infinity,
               ),
             ),
           };
@@ -224,8 +231,8 @@ const LayerItems = ({
   ]);
 
   return timelineItems.map((item) => {
-    const left = item.from * zoomLevelPxPerFrame;
-    const width = (item.to - item.from) * zoomLevelPxPerFrame;
+    const left = item.start * zoomLevelPxPerFrame;
+    const width = (item.end - item.start) * zoomLevelPxPerFrame;
     const top = item.layer * layerHeight;
     const isSelected = selectedItemIds.includes(item.id);
     const isActiveDrag = isDragging && isSelected;

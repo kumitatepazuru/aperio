@@ -7,52 +7,61 @@
 
 ## Item（アイテム）
 
-**定義:** タイムライン上に配置された編集要素の単位。動画・画像・テキストなどのオブジェクトと、それに付随するエフェクトをまとめたもの。
+**定義:** タイムライン上に配置された編集要素の単位。映像・画像・テキストなどの Video アイテムと、音声の Audio アイテムの2種類がある。
 
-**型:** `ItemStructure`
+**型:** `ItemStructure`（Video / Audio の union enum）
+
+**共通フィールド:**
 
 | フィールド | 型 | 意味 |
 |---|---|---|
 | `id` | `string` | UUID。アイテム固有の識別子 |
+| `type` | `"Video" \| "Audio"` | アイテムの種別 |
 | `layer` | `number` | レイヤー番号（z-index）。0が最下層 |
-| `from` | `number` | 開始フレーム |
-| `to` | `number` | 終了フレーム |
+| `start` | `number` | 開始フレーム |
+| `end` | `number` | 終了フレーム |
 | `min` | `number` (optional) | 最小デュレーション（フレーム数）。プラグインの `minFrame` から自動設定 |
 | `max` | `number` (optional) | 最大デュレーション（フレーム数）。プラグインの `maxFrame` から自動設定 |
+| `object` | `GenerateStructure` | このアイテムのオブジェクト本体 |
+| `effects` | `GenerateStructure[]` | 適用されているエフェクトのリスト |
+
+**Video アイテム固有フィールド:**
+
+| フィールド | 型 | 意味 |
+|---|---|---|
 | `x`, `y` | `number` | キャンバス上の位置（px） |
 | `scale` | `number` | 拡大率（%、100が等倍） |
 | `rotation` | `number` | 回転角（度） |
 | `alpha` | `number` | 不透明度（%、100が不透明） |
-| `object` | `GenerateStructure` | このアイテムのオブジェクト本体 |
-| `effects` | `GenerateStructure[]` | 適用されているエフェクトのリスト |
+
+**Audio アイテム固有フィールド:**
+
+| フィールド | 型 | 意味 |
+|---|---|---|
+| `volume` | `number` | 音量（%、100が等倍） |
+| `pan` | `number` | パン（%、-100=左、0=中央、100=右） |
 
 **Store上の名称:**
-- `timelineItems: ItemStructure[]` — 全アイテムのリスト
+- `timelineItems: ItemStructure[]` — 全アイテムのリスト（VideoとAudio混在）
 - `selectedItemIds: string[]` — 選択中アイテムのIDリスト（複数選択対応）
 - `mainSelectedItemId: string | null` — パラメータ編集の基準となる「メイン選択」アイテムのID
 
+**Store ユーティリティ関数:**
+- `getCurrentVideoItems()` — 現在フレームに表示中の Video アイテム一覧
+- `getCurrentAudioItems(duration)` — 現在フレームから `duration` フレーム内に含まれる Audio アイテム一覧
+
 **注意:**
-- 旧称は `timelineLayers` / `TimelineLayerStructure`。Layer はz-index概念に限定するためリネーム済み。
-- `selectedItemIds` は複数形。かつての `selectedItemId: string[]`（単数形・複数値）から改名。
 - ループ変数は `item` を使う（`layer` は使わない）。
 - `min` / `max` は `GeneratorInformation.minFrame` / `maxFrame` の値をプラグイン呼び出し時に自動設定する。
 
 ### ItemStructure（ネイティブブリッジ型）
 
-**定義:** napi-rs が生成する native の構造体。Rust → Python・TypeScript 間のアイテムデータ転送フォーマット。
+**定義:** napi-rs が生成する native の構造体。Rust → Python・TypeScript 間のアイテムデータ転送フォーマット。Video / Audio の2バリアントを持つ enum として定義される。
 
 **型定義:**
-- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct ItemStructure`
-- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemStructure`
-- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemStructure(dict)`
-
-**フィールド（Python側）:**
-- `id`, `layer`, `from`, `to`, `min`, `max`, `x`, `y`, `scale`, `rotation`, `alpha` — アイテムの基本プロパティ
-- `object: GenerateStructure` — オブジェクトプラグインのインスタンス情報
-- `effects: list[GenerateStructure]` — エフェクトプラグインのインスタンスリスト
-
-**注意:**
-- Python側では `item["object"]["name"]` でオブジェクト名にアクセスする。
+- Rust: `src/native/src/structs/item_structures.rs` → `pub enum ItemStructure { Video { ... }, Audio { ... } }`
+- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）
+- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class ItemStructure.Video` / `class ItemStructure.Audio`
 
 ---
 
@@ -87,8 +96,7 @@
 **アクセス方法:** `item.object`（`ItemStructure` のフィールド）
 
 **注意:**
-- 旧称は `obj`。`object` に統一済み。
-- Rust構造体での定義: `pub object: GenerateStructure`（`src/native/src/structs/frame_structure.rs`）
+- Rust構造体での定義: `pub object: GenerateStructure`（`src/native/src/structs/item_structures.rs`）
 - Pythonプラグインへ渡る際もフィールド名は `object` になる。
 
 ---
@@ -139,9 +147,9 @@
 **定義:** Object・Effect 両方が共有する実行時のプラグインインスタンス構造。napi-rs により native から生成される。
 
 **型定義:**
-- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct GenerateStructure`
+- Rust: `src/native/src/structs/item_structures.rs` → `pub struct GenerateStructure`
 - TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface GenerateStructure`
-- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class GenerateStructure(dict)`
+- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class GenerateStructure(dict)`
 
 **用法:**
 - `item.object` — オブジェクト本体としての GenerateStructure
@@ -154,9 +162,9 @@
 **定義:** フレームレンダリング後、各アイテムの出力サイズ情報を格納する型。
 
 **型定義:**
-- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct ItemResult`
+- Rust: `src/native/src/structs/item_structures.rs` → `pub struct ItemResult`
 - TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemResult`
-- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class ItemResult`
+- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class ItemResult`
 
 **フィールド:** `width: number`, `height: number`
 
@@ -171,7 +179,7 @@
 **定義:** 映像の1コマ。時間軸の単位。
 
 **用法:**
-- `from`, `to` — アイテムの開始・終了フレーム番号（整数）
+- `start`, `end` — アイテムの開始・終了フレーム番号（整数）
 - `viewerState.beginFrame` — 現在（一時停止時）または再生開始時のフレーム番号
 - `frameState` — キャンバスの解像度とFPS（`FrameState: { width, height, fps }`）
 - `frameResults` — ストアのトップレベルフィールド。各アイテムのレンダリング結果（`Record<string, ItemResult>`）
@@ -183,16 +191,18 @@
 
 ## Plugin（プラグイン）
 
-**定義:** Pythonで実装されたオブジェクト・エフェクトの処理単位。
+**定義:** Pythonで実装されたオブジェクト・エフェクトの処理単位。映像系（Video）と音声系（Audio）の2系統がある。
 
 **種別:**
 
-| 種別 | 意味 |
-|---|---|
-| Object Plugin | アイテムの映像コンテンツを生成するプラグイン |
-| Effect Plugin | アイテムに映像効果を適用するプラグイン |
+| 種別 | 基底クラス | 意味 |
+|---|---|---|
+| Video Object Plugin | `VideoObjectGeneratorBase` | アイテムの映像コンテンツを生成するプラグイン |
+| Video Effect Plugin | `VideoEffectGeneratorBase` | アイテムに映像効果を適用するプラグイン |
+| Audio Object Plugin | `AudioObjectGeneratorBase` | オーディオサンプルを生成するプラグイン |
+| Audio Effect Plugin | `AudioEffectGeneratorBase` | オーディオサンプルにエフェクトを適用するプラグイン |
 
-**参照:** `PluginNameInfo.basePlugin`, `PluginNameInfo.objectPlugins`, `PluginNameInfo.effectPlugins`
+**参照:** `PluginNameInfo.basePlugin`, `PluginNameInfo.videoObjectPlugins`, `PluginNameInfo.videoEffectPlugins`, `PluginNameInfo.audioObjectPlugins`, `PluginNameInfo.audioEffectPlugins`
 
 **イベントシステム:**
 - プラグインのイベントハンドラーは `@event(type=GeneratorEvent.New)` 等のデコレーターで登録する。
@@ -201,13 +211,165 @@
 
 ---
 
+## VideoGeneratorBase / AudioGeneratorBase
+
+**定義:** プラグインがフレーム・サンプルを生成するための基底クラス群。映像系と音声系で分かれている。
+
+### 映像系
+
+| クラス | 用途 |
+|---|---|
+| `VideoGeneratorBase` | 映像フレームを生成する基底クラス |
+| `VideoObjectGeneratorBase` | 映像オブジェクトプラグインの基底クラス |
+| `VideoEffectGeneratorBase` | 映像エフェクトプラグインの基底クラス |
+
+**`generate` メソッドの引数型:** `VideoGenerateParameters`
+
+| フィールド | 型 | 意味 |
+|---|---|---|
+| `frame_number` | `int` | 生成するフレーム番号 |
+| `layer` | `ItemStructure.Video` | 対象アイテムの情報 |
+| `args` | `dict` | パラメータ値の辞書 |
+| `width` | `int` | キャンバス幅（px） |
+| `height` | `int` | キャンバス高さ（px） |
+
+**戻り値:** `GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None`
+
+### 音声系
+
+| クラス | 用途 |
+|---|---|
+| `AudioGeneratorBase` | オーディオサンプルを生成する基底クラス |
+| `AudioObjectGeneratorBase` | オーディオオブジェクトプラグインの基底クラス |
+| `AudioEffectGeneratorBase` | オーディオエフェクトプラグインの基底クラス |
+
+**`generate` メソッドの引数型:** `AudioGenerateParameters`
+
+| フィールド | 型 | 意味 |
+|---|---|---|
+| `start_time` | `float` | 生成開始時刻（秒） |
+| `layer` | `ItemStructure.Audio` | 対象アイテムの情報 |
+| `sample_rate` | `int` | サンプルレート（Hz） |
+| `channels` | `int` | チャンネル数 |
+| `sample_count` | `int` | 生成するサンプル数 |
+| `args` | `dict` | パラメータ値の辞書 |
+| `input_samples` | `npt.NDArray[np.float32] \| None` | エフェクト用の入力サンプル（Objectは `None`） |
+
+**戻り値:** `npt.NDArray[np.float32] | None`（shape: `(channels, samples)` の float32 2次元配列）
+
+---
+
+## AudioManager
+
+**定義:** cpal を使ってオーディオを再生するネイティブマネージャー。プラグインが生成したサンプルをバッファに積み上げ（`stack_audio`）、CPALストリームで順次再生する。
+
+**型定義:**
+- Rust: `src/native/src/managers/audio_manager.rs` → `pub struct AudioManager`
+- Python スタブ: `src-python/out/aperio/audio.pyi` → `class AudioManager`
+
+**API:**
+
+| メソッド/プロパティ | 型 | 意味 |
+|---|---|---|
+| `sample_rate` | `int` (get/set) | サンプルレート（Hz）。変更するとストリームを再構築 |
+| `channels` | `int` (get/set) | チャンネル数。変更するとストリームを再構築 |
+| `bit_depth` | `int` (get/set) | ビット深度 |
+| `current_time` | `float` (get) | 現在の再生位置（秒） |
+| `pending_samples` | `int` (get) | 再生位置より先にバッファされているサンプル数 |
+| `stack_audio(data, start_time)` | — | サンプルデータを `start_time`（絶対サンプルインデックス）から積む |
+| `stop()` | — | 再生を停止してバッファをクリア |
+
+**動作:**
+- `stack_audio` 呼び出し時に停止中なら自動的に再生開始する。
+- 再生済みサンプルは自動的にバッファから除去される。
+- バッファが空になると自動停止（アンダーラン時）。
+- インスタンス破棄時に CPAL ストリームが自動停止する。
+
+**Python側グローバル参照:** `aperio_plugin.audio_manager`
+
+---
+
+## AudioState
+
+**定義:** ストアに保存される音声設定。プロジェクト全体の音声出力パラメータを定める。
+
+**型定義:**
+- Rust: `src/native/src/managers/store_manager.rs` → `pub struct AudioState`
+- TypeScript: `dist/native/index.d.ts` → `interface AudioState`
+
+**フィールド:**
+
+| フィールド | 型 | デフォルト | 意味 |
+|---|---|---|---|
+| `channels` | `number` | `2` | チャンネル数 |
+| `sampleRate` | `number` | `44100` | サンプルレート（Hz） |
+| `bitDepth` | `number` | `16` | ビット深度 |
+
+**Store上の名称:** `audioState: AudioState`
+
+---
+
+## Managers（src/native/src/managers/）
+
+**定義:** ネイティブ層のステート管理を集約したモジュール群。
+
+**モジュール構成:**
+
+| モジュール | 役割 |
+|---|---|
+| `managers/store_manager.rs` | ストア状態（`SyncableState`）の読み書き |
+| `managers/config_manager.rs` | アプリケーション設定の読み書き |
+| `managers/audio_manager.rs` | 音声バッファ・CPAL ストリーム管理 |
+| `managers/wrappers/` | Python向けラッパー（`PyManagers` など） |
+
+**`PyManagers`:** Python側へ渡すマネージャー群のコンテナ。`AperioManager.__init__` の引数 `managers: PyManagers` として受け取る。`aperio_plugin.manager`（`AperioManager` インスタンス）を通じて各マネージャーにアクセスできる。
+
+---
+
+## PyAudioLoader
+
+**定義:** 音声ファイルのデコード・サンプル取得を担う Python クラス。内部的に C++ の avloader を利用する。
+
+**型定義:**
+- Rust: `src/native/src/python/modules/avloader.rs`
+- Python スタブ: `src-python/out/aperio/avloader.pyi` → `class PyAudioLoader`
+
+**API:**
+
+| メソッド/プロパティ | 型 | 意味 |
+|---|---|---|
+| `PyAudioLoader(path)` | — | 音声ファイルを開く |
+| `sampling_rate` | `int` | サンプルレート（Hz） |
+| `chs` | `int` | チャンネル数 |
+| `bit_depth` | `int` | ビット深度 |
+| `duration` | `float` | 全体の長さ（秒） |
+| `get_audio(time, duration)` | `ndarray` | 指定区間のサンプルを取得 |
+
+---
+
+## Window IPC API（音声関連）
+
+**定義:** レンダラプロセスから音声再生を制御するための IPC ブリッジ。`window.audio` 経由でアクセスする。
+
+**型定義:** `src/renderer/types.d.ts`
+
+| メソッド | 意味 |
+|---|---|
+| `window.audio.play(audioStructure, sampleRate, channels, startTime, duration)` | Audio アイテムを生成・再生する |
+| `window.audio.stop()` | 再生を停止する |
+| `window.audio.getPendingSamples()` | バッファ済みサンプル数を取得する |
+
+**対応する Python メソッド:** `AperioManager.play_audio(audio_structure, sample_rate, channels, start_time, duration)`
+
+---
+
 ## GeneratorEvent
 
 **定義:** プラグインのイベント種別を識別するenum。Rustで定義しPyO3・napi経由でPython・TypeScriptに公開する。両言語間の手動同期は不要。
 
 **型定義:**
-- Rust: `src/native/src/structs/frame_structure.rs` → `pub enum GeneratorEvent`
-- Python: `aperio.frame_structure.GeneratorEvent`（PyO3経由、スタブは `src-python/out/aperio/frame_structure.pyi`）
+- Rust: `src/native/src/structs/item_structures.rs` → `pub enum GeneratorEvent`
+- Python: `aperio.item_structures.GeneratorEvent`（PyO3経由、スタブは `src-python/out/aperio/item_structures.pyi`）
 
 | バリアント | 意味 |
 |---|---|
@@ -226,9 +388,9 @@
 **定義:** プラグインイベント（`GeneratorEvent.New` および `GeneratorEvent.RequestStructure`）の共通戻り値型。プラグインの表示名・初期デュレーション・フレーム範囲・パラメータ構造をまとめて返す。
 
 **型定義:**
-- Rust: `src/native/src/structs/frame_structure.rs` → `pub struct GeneratorInformation`
+- Rust: `src/native/src/structs/item_structures.rs` → `pub struct GeneratorInformation`
 - TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface GeneratorInformation`
-- Python: `src/native/src/structs/frame_structure.rs`（pyo3 で定義、スタブは `src-python/out/aperio/frame_structure.pyi`）→ `class GeneratorInformation`
+- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class GeneratorInformation`
 
 | TypeScript フィールド | Python フィールド | TypeScript 型 | Python 型 | 意味 |
 |---|---|---|---|---|
@@ -280,7 +442,7 @@
 **用途:**
 - `item.object.name` — プラグインレジストリの検索キー（`object_plugins[name]` で引く）
 - `effect.name` — エフェクトプラグインの検索キー（`effect_plugins[name]` で引く）
-- TS側では `getPluginNames()` の戻り値 `basePlugin`・`objectPlugins`・`effectPlugins` のキーとして使われる
+- TS側では `getPluginNames()` の戻り値 `basePlugin`・`videoObjectPlugins`・`videoEffectPlugins` のキーとして使われる
 - エフェクトメニューでは `effectId.startsWith(baseId + ".")` でフィルタリングしている
 
 **注意:**
@@ -332,13 +494,19 @@
 
 | 概念 | TypeScript変数/型 | 複数形 |
 |---|---|---|
-| タイムライン上の要素 | `item: ItemStructure` | `timelineItems` |
+| タイムライン上の要素（Video/Audio混在） | `item: ItemStructure` | `timelineItems` |
+| 映像アイテム | `item: ItemStructure` (`type === "Video"`) | `getCurrentVideoItems()` |
+| 音声アイテム | `item: ItemStructure` (`type === "Audio"`) | `getCurrentAudioItems(duration)` |
 | 選択中IDリスト | `selectedItemIds: string[]` | — |
 | メイン選択ID | `mainSelectedItemId: string \| null` | — |
 | z-index位置 | `item.layer: number` | — |
+| 開始・終了フレーム | `item.start`, `item.end` | — |
 | オブジェクト本体 | `item.object: GenerateStructure` | — |
 | エフェクト | `effect: GenerateStructure` | `item.effects` |
 | パラメータ値辞書 | `params: Record<string, ConfigableValue>` | — |
 | パラメータ定義リスト | `structures: RequestStructureParameter[]` | — |
 | native ブリッジ型（TS/Rust/Python） | `ItemStructure` | — |
 | フレームレンダリング結果 | `ItemResult` | `frameResults: Record<string, ItemResult>` |
+| 音声設定 | `audioState: AudioState` | — |
+| 映像プラグイン一覧 | `PluginNameInfo.videoObjectPlugins` / `videoEffectPlugins` | — |
+| 音声プラグイン一覧 | `PluginNameInfo.audioObjectPlugins` / `audioEffectPlugins` | — |

@@ -6,12 +6,12 @@ import traceback
 from typing import Callable, ClassVar
 
 from aperio import logger
-from aperio.frame_structure import PluginNameInfo
+from aperio.item_structures import PluginNameInfo
 
 from .plugin_base import MainPluginBase, SubPluginBase
-from .plugin_base.generator_base import EffectGeneratorBase, ObjectGeneratorBase
+from .plugin_base.generator_base import *
 
-
+# TODO: PluginLoaderに改名、ファイル名も改名
 class PluginManager:
     """
     プラグインの登録・読み込み・追加を管理するクラス。
@@ -20,15 +20,19 @@ class PluginManager:
 
     __plugins: ClassVar[dict[str, type[MainPluginBase]]] = {}
     plugins: dict[str, MainPluginBase]
-    object_plugins: dict[str, ObjectGeneratorBase]
-    effect_plugins: dict[str, EffectGeneratorBase]
+    video_object_plugins: dict[str, VideoObjectGeneratorBase]
+    video_effect_plugins: dict[str, VideoEffectGeneratorBase]
+    audio_object_plugins: dict[str, AudioObjectGeneratorBase]
+    audio_effect_plugins: dict[str, AudioEffectGeneratorBase]
 
     def __init__(self, data_dir: str, plugin_dir_name: str = "plugins"):
         self.data_dir = data_dir
         self.plugin_dir_name = plugin_dir_name
         self.plugins = {}
-        self.object_plugins = {}
-        self.effect_plugins = {}
+        self.video_object_plugins = {}
+        self.video_effect_plugins = {}
+        self.audio_object_plugins = {}
+        self.audio_effect_plugins = {}
 
         dirs = glob.glob(f"{self.data_dir}/{self.plugin_dir_name}/*")
 
@@ -56,7 +60,7 @@ class PluginManager:
         """
         for name, plugin_cls in self.__plugins.items():
             if name in self.plugins:
-                logger.info(f"Plugin {name} is already registered. Skipping.")
+                logger.warning(f"Plugin {name} is already registered. Skipping.")
                 continue
 
             try:
@@ -71,16 +75,32 @@ class PluginManager:
         logger.info(
             "\n".join(
                 [
-                    f"{n}(Object)- {p.get_display_info()}"
-                    for n, p in self.object_plugins.items()
+                    f"{n}(Video Object)- {p.get_display_info()}"
+                    for n, p in self.video_object_plugins.items()
                 ]
             )
         )
         logger.info(
             "\n".join(
                 [
-                    f"{n}(Effect)- {p.get_display_info()}"
-                    for n, p in self.effect_plugins.items()
+                    f"{n}(Video Effect)- {p.get_display_info()}"
+                    for n, p in self.video_effect_plugins.items()
+                ]
+            )
+        )
+        logger.info(
+            "\n".join(
+                [
+                    f"{n}(Audio Object)- {p.get_display_info()}"
+                    for n, p in self.audio_object_plugins.items()
+                ]
+            )
+        )
+        logger.info(
+            "\n".join(
+                [
+                    f"{n}(Audio Effect)- {p.get_display_info()}"
+                    for n, p in self.audio_effect_plugins.items()
                 ]
             )
         )
@@ -120,10 +140,14 @@ class PluginManager:
                 "Please rename the plugin or check the master plugin name."
             )
 
-        if isinstance(plugin, ObjectGeneratorBase):
-            self.object_plugins[plugin.name] = plugin
-        elif isinstance(plugin, EffectGeneratorBase):
-            self.effect_plugins[plugin.name] = plugin
+        if isinstance(plugin, VideoObjectGeneratorBase):
+            self.video_object_plugins[plugin.name] = plugin
+        elif isinstance(plugin, VideoEffectGeneratorBase):
+            self.video_effect_plugins[plugin.name] = plugin
+        elif isinstance(plugin, AudioObjectGeneratorBase):
+            self.audio_object_plugins[plugin.name] = plugin
+        elif isinstance(plugin, AudioEffectGeneratorBase):
+            self.audio_effect_plugins[plugin.name] = plugin
         else:
             raise TypeError(
                 "The plugin must be a subclass of ObjectGeneratorBase or EffectGeneratorBase"
@@ -200,6 +224,8 @@ class PluginManager:
         """
         return PluginNameInfo(
             base_plugin={plugin.name: plugin.display_name for plugin in self.plugins.values()},
-            object_plugins={name: plugin.display_name for name, plugin in self.object_plugins.items()},
-            effect_plugins={name: plugin.display_name for name, plugin in self.effect_plugins.items()},
+            video_object_plugins={name: plugin.display_name for name, plugin in self.video_object_plugins.items()},
+            video_effect_plugins={name: plugin.display_name for name, plugin in self.video_effect_plugins.items()},
+            audio_object_plugins={name: plugin.display_name for name, plugin in self.audio_object_plugins.items()},
+            audio_effect_plugins={name: plugin.display_name for name, plugin in self.audio_effect_plugins.items()},
         )
