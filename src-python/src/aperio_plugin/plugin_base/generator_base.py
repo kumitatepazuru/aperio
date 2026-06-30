@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from aperio.item_structures import ItemStructure
+from aperio.item_structures import ItemResult, ItemStructure
 from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerateBuilder
 import numpy as np
 import numpy.typing as npt
@@ -11,31 +11,27 @@ from . import SubPluginBase
 class GeneratorWgslReturn:
     compiled: PyCompiledWgsl
     params: bytes
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 
 @dataclass
 class GeneratorFuncReturn:
     compiled: PyCompiledFunc
     params: object
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 
 @dataclass
 class GeneratorTextureReturn:
     compiled: PyCompiledTextureFunc
     params: object
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 
 @dataclass
 class GeneratorBuilderReturn:
     builder: PyImageGenerateBuilder
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 
 @dataclass

@@ -2,35 +2,31 @@ import numpy as np
 import numpy.typing as npt
 from . import SubPluginBase as SubPluginBase
 from aperio.gpu_util import PyCompiledFunc as PyCompiledFunc, PyCompiledTextureFunc as PyCompiledTextureFunc, PyCompiledWgsl as PyCompiledWgsl, PyImageGenerateBuilder as PyImageGenerateBuilder
-from aperio.item_structures import ItemStructure as ItemStructure
+from aperio.item_structures import ItemResult as ItemResult, ItemStructure as ItemStructure
 from dataclasses import dataclass
 
 @dataclass
 class GeneratorWgslReturn:
     compiled: PyCompiledWgsl
     params: bytes
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 @dataclass
 class GeneratorFuncReturn:
     compiled: PyCompiledFunc
     params: object
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 @dataclass
 class GeneratorTextureReturn:
     compiled: PyCompiledTextureFunc
     params: object
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 @dataclass
 class GeneratorBuilderReturn:
     builder: PyImageGenerateBuilder
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 @dataclass
 class VideoGenerateParameters:

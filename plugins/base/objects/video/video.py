@@ -3,7 +3,7 @@ import os
 
 import aperio_plugin
 from aperio.avloader import PyVideoLoader
-from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
+from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, VideoGenerateParameters, VideoObjectGeneratorBase
@@ -73,6 +73,5 @@ class VideoObject(VideoObjectGeneratorBase):
         return GeneratorTextureReturn(
             compiled=compiled_func,
             params=(video_frame_number, aperio_plugin.store_manager.get_state().frame_state.fps),
-            output_width=video_loader.width,
-            output_height=video_loader.height,
+            item_result=ItemResult(video_loader.width, video_loader.height),
         )

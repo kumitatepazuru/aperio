@@ -3,7 +3,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
@@ -37,7 +37,6 @@ class BlurEffect(VideoEffectGeneratorBase):
                     default_value=5,
                     suffix="px",
                     min=0,
-                    max=None,
                 )
             ],
         )
@@ -60,4 +59,4 @@ class BlurEffect(VideoEffectGeneratorBase):
             .add_wgsl(self.blur_v_shader, v_params, new_width, new_height)
         )
 
-        return GeneratorBuilderReturn(builder, new_width, new_height)
+        return GeneratorBuilderReturn(builder, ItemResult(new_width, new_height))

@@ -183,30 +183,27 @@ class AperioManager(PluginManager, EventManager):
                 layer_frame = obj_plugin.generate(params)
                 if layer_frame is None:
                     continue
-                frame_results[layer_id] = ItemResult(
-                    width=layer_frame.output_width,
-                    height=layer_frame.output_height,
-                )
+                frame_results[layer_id] = layer_frame.item_result
                 if isinstance(layer_frame, GeneratorWgslReturn):
                     layer_builder = layer_builder.add_wgsl(
                         layer_frame.compiled,
                         layer_frame.params,
-                        layer_frame.output_width,
-                        layer_frame.output_height,
+                        layer_frame.item_result.width,
+                        layer_frame.item_result.height,
                     )
                 elif isinstance(layer_frame, GeneratorFuncReturn):
                     layer_builder = layer_builder.add_func(
                         layer_frame.compiled,
                         layer_frame.params,
-                        layer_frame.output_width,
-                        layer_frame.output_height,
+                        layer_frame.item_result.width,
+                        layer_frame.item_result.height,
                     )
                 elif isinstance(layer_frame, GeneratorTextureReturn):
                     layer_builder = layer_builder.add_texture_func(
                         layer_frame.compiled,
                         layer_frame.params,
-                        layer_frame.output_width,
-                        layer_frame.output_height,
+                        layer_frame.item_result.width,
+                        layer_frame.item_result.height,
                     )
                 elif isinstance(layer_frame, GeneratorBuilderReturn):
                     layer_builder = layer_builder.add_builder(layer_frame.builder)
@@ -220,36 +217,33 @@ class AperioManager(PluginManager, EventManager):
                         frame_number=frame_number,
                         layer=layer,
                         args=effect["parameters"],
-                        width=layer_frame.output_width,
-                        height=layer_frame.output_height,
+                        width=layer_frame.item_result.width,
+                        height=layer_frame.item_result.height,
                     )
                     layer_frame = effect_plugin.generate(params)
                     if layer_frame is None:
                         break
-                    frame_results[layer_id] = ItemResult(
-                        width=layer_frame.output_width,
-                        height=layer_frame.output_height,
-                    )
+                    frame_results[layer_id] = layer_frame.item_result
                     if isinstance(layer_frame, GeneratorWgslReturn):
                         layer_builder = layer_builder.add_wgsl(
                             layer_frame.compiled,
                             layer_frame.params,
-                            layer_frame.output_width,
-                            layer_frame.output_height,
+                            layer_frame.item_result.width,
+                            layer_frame.item_result.height,
                         )
                     elif isinstance(layer_frame, GeneratorFuncReturn):
                         layer_builder = layer_builder.add_func(
                             layer_frame.compiled,
                             layer_frame.params,
-                            layer_frame.output_width,
-                            layer_frame.output_height,
+                            layer_frame.item_result.width,
+                            layer_frame.item_result.height,
                         )
                     elif isinstance(layer_frame, GeneratorTextureReturn):
                         layer_builder = layer_builder.add_texture_func(
                             layer_frame.compiled,
                             layer_frame.params,
-                            layer_frame.output_width,
-                            layer_frame.output_height,
+                            layer_frame.item_result.width,
+                            layer_frame.item_result.height,
                         )
                     elif isinstance(layer_frame, GeneratorBuilderReturn):
                         layer_builder = layer_builder.add_builder(layer_frame.builder)
@@ -259,16 +253,24 @@ class AperioManager(PluginManager, EventManager):
                 layer_builders.append(layer_builder)
 
                 # params準備
+                result = frame_results[layer_id]
+                eff_x = layer.x + (result.x or 0)
+                eff_y = layer.y + (result.y or 0)
+                eff_rotation = layer.rotation + (result.rotate or 0.0)
+                eff_center_x = result.center_x or 0
+                eff_center_y = result.center_y or 0
+
                 # 回転をラジアンに変換してから回転行列を計算
-                rotation_rad = math.radians(layer.rotation)
+                rotation_rad = math.radians(eff_rotation)
                 cos_theta = math.cos(rotation_rad)
                 sin_theta = math.sin(rotation_rad)
                 alpha = layer.alpha / 100  # 0-100 -> 0-1
                 rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
 
                 fmt = "<iiff"  # x, y, scale, alpha
-                fmt += "4f"  # rotation_matrix (2x2 floats)
-                params_bytes = struct.pack(fmt, layer.x, layer.y, layer.scale / 100, alpha, *rotation_matrix)
+                fmt += "4f"    # rotation_matrix (2x2 floats)
+                fmt += "ii"    # center_x, center_y
+                params_bytes = struct.pack(fmt, eff_x, eff_y, layer.scale / 100, alpha, *rotation_matrix, eff_center_x, eff_center_y)
                 generator_params.append(params_bytes)
 
             if len(layer_builders) == 0:

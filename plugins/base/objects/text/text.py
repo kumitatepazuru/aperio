@@ -1,5 +1,5 @@
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc
 from aperio.text_rendering import PyTextRenderer, PyTextSpec
 from aperio_plugin.event_manager import event
@@ -34,7 +34,7 @@ class TextObject(VideoObjectGeneratorBase):
                 RequestStructureParameter.Textarea("text", "文字", "ここにテキストを入力"),
                 RequestStructureParameter.Color("color", "色", (1.0, 1.0, 1.0, 1.0), use_alpha=True),
                 RequestStructureParameter.Font("font", "フォント"),
-                RequestStructureParameter.Int("font_size", "フォントサイズ", 48, suffix="px", min=1, max=None),
+                RequestStructureParameter.Int("font_size", "フォントサイズ", 48, suffix="px", min=1),
             ],
         )
 
@@ -62,6 +62,5 @@ class TextObject(VideoObjectGeneratorBase):
         return GeneratorTextureReturn(
             compiled=self.compiled_func,
             params=prepared,
-            output_width=prepared.width,
-            output_height=prepared.height,
+            item_result=ItemResult(prepared.width, prepared.height),
         )

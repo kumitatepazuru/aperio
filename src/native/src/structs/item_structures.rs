@@ -16,16 +16,54 @@ pub struct FileFilter {
 
 #[napi(object)]
 #[pyclass(from_py_object, get_all, eq)]
-#[derive(Clone, PartialEq, Debug, PyDataclass)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct ItemResult {
     pub width: i32,
     pub height: i32,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub center_x: Option<i32>,
+    pub center_y: Option<i32>,
+    pub rotate: Option<f64>,
+}
+
+#[pymethods]
+impl ItemResult {
+    #[new]
+    #[pyo3(signature = (width, height, x=None, y=None, center_x=None, center_y=None, rotate=None))]
+    fn new(
+        width: i32,
+        height: i32,
+        x: Option<i32>,
+        y: Option<i32>,
+        center_x: Option<i32>,
+        center_y: Option<i32>,
+        rotate: Option<f64>,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            x,
+            y,
+            center_x,
+            center_y,
+            rotate,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ItemResult(width={:?}, height={:?}, x={:?}, y={:?}, center_x={:?}, center_y={:?}, rotate={:?})",
+            self.width, self.height, self.x, self.y, self.center_x, self.center_y, self.rotate
+        )
+    }
 }
 
 #[napi]
 #[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum RequestStructureParameter {
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Float {
         id: String,
         title: String,
@@ -34,6 +72,7 @@ pub enum RequestStructureParameter {
         min: Option<f64>,
         max: Option<f64>,
     },
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Int {
         id: String,
         title: String,
@@ -47,6 +86,7 @@ pub enum RequestStructureParameter {
         title: String,
         default_value: bool,
     },
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Vec2Int {
         id: String,
         title: String,
@@ -55,6 +95,7 @@ pub enum RequestStructureParameter {
         min: Option<i32>,
         max: Option<i32>,
     },
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Vec2Float {
         id: String,
         title: String,
@@ -63,6 +104,7 @@ pub enum RequestStructureParameter {
         min: Option<f64>,
         max: Option<f64>,
     },
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Vec3Int {
         id: String,
         title: String,
@@ -71,6 +113,7 @@ pub enum RequestStructureParameter {
         min: Option<i32>,
         max: Option<i32>,
     },
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Vec3Float {
         id: String,
         title: String,
@@ -79,6 +122,7 @@ pub enum RequestStructureParameter {
         min: Option<f64>,
         max: Option<f64>,
     },
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Vec4Int {
         id: String,
         title: String,
@@ -87,6 +131,7 @@ pub enum RequestStructureParameter {
         min: Option<i32>,
         max: Option<i32>,
     },
+    #[pyo3(constructor = (id, title, default_value, suffix=None, min=None, max=None))]
     Vec4Float {
         id: String,
         title: String,
@@ -148,10 +193,10 @@ pub enum ItemStructure {
     Video {
         id: String,
         layer: i32,
-        start: i32,                      // アイテムの開始フレーム
-        end: i32,                        // アイテムの終了フレーム
-        min: Option<i32>,                // アイテムの有効な最小フレーム（省略可能）
-        max: Option<i32>,                // アイテムの有効な最大フレーム（省略可能）
+        start: i32,       // アイテムの開始フレーム
+        end: i32,         // アイテムの終了フレーム
+        min: Option<i32>, // アイテムの有効な最小フレーム（省略可能）
+        max: Option<i32>, // アイテムの有効な最大フレーム（省略可能）
         x: i32,
         y: i32,
         scale: f64,
@@ -163,8 +208,8 @@ pub enum ItemStructure {
     Audio {
         id: String,
         layer: i32,
-        start: i32,                      // アイテムの開始フレーム
-        end: i32,                        // アイテムの終了フレーム
+        start: i32, // アイテムの開始フレーム
+        end: i32,   // アイテムの終了フレーム
         min: Option<i32>,
         max: Option<i32>,
         volume: f64,

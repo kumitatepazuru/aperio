@@ -1,10 +1,12 @@
 // 各レイヤーのメタ情報を格納する構造体
 struct LayerParams {
-  x: i32,     // レイヤーの中心のx座標
-  y: i32,     // レイヤーの中心のy座標
-  scale: f32,  // レイヤーの拡大・縮小率
-  alpha: f32,  // レイヤーの透明度 (0.0〜1.0)
+  x: i32,                       // レイヤーの中心のx座標 (出力中央原点)
+  y: i32,                       // レイヤーの中心のy座標 (出力中央原点)
+  scale: f32,                   // レイヤーの拡大・縮小率
+  alpha: f32,                   // レイヤーの透明度 (0.0〜1.0)
   rotation_matrix: mat2x2<f32>, // レイヤーの回転行列
+  center_x: i32,                // 回転・拡縮の基点オフセットX (レイヤーテクスチャ中心からのピクセル数)
+  center_y: i32,                // 回転・拡縮の基点オフセットY (レイヤーテクスチャ中心からのピクセル数)
 };
 
 // --- リソースのバインディング定義 ---
@@ -53,8 +55,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // 事前に計算された回転行列を適用 (中心基準)
     let rotated_coord = params.rotation_matrix * relative_coord;
 
-    // スケールを適用し、テクスチャ中央を原点とした座標をピクセル座標に変換
-    let src_coord_pixel = rotated_coord / params.scale + layer_dims_f * 0.5;
+    // スケールを適用し、基点オフセットを加えてテクスチャピクセル座標に変換
+    let src_coord_pixel = rotated_coord / params.scale + layer_dims_f * 0.5 + vec2<f32>(f32(params.center_x), f32(params.center_y));
 
     if (src_coord_pixel.x >= 0.0 && src_coord_pixel.x < layer_dims_f.x &&
         src_coord_pixel.y >= 0.0 && src_coord_pixel.y < layer_dims_f.y) {
