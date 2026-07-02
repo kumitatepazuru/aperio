@@ -2,11 +2,10 @@ import os
 import struct
 
 import aperio_plugin
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 
 class ColorAdjustmentEffect(VideoEffectGeneratorBase):
@@ -72,7 +71,7 @@ class ColorAdjustmentEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
         args = params.args
         brightness = args.get("brightness", 100)
         contrast = args.get("contrast", 100)
@@ -89,9 +88,4 @@ class ColorAdjustmentEffect(VideoEffectGeneratorBase):
             float(saturation),
         )
 
-        builder = (
-            gpu_util.PyImageGenerateBuilder()
-            .add_wgsl(self.color_shader, shader_params, params.width, params.height)
-        )
-
-        return GeneratorBuilderReturn(builder, ItemResult(params.width, params.height))
+        return GeneratorWgslReturn(self.color_shader, shader_params, ItemResult(params.width, params.height))
