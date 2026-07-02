@@ -1,7 +1,8 @@
 struct BlurParams {
     radius: i32,
     new_width: i32,
-    new_height: i32
+    new_height: i32,
+    fixed_size: i32,
 };
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
@@ -23,8 +24,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    // 水平オフセット: 出力は入力より左右それぞれ radius 分広い
-    let in_coord = out_coord - vec2<i32>(radius, 0);
+    // サイズ固定時はオフセットなし、通常は出力が左右 radius 分広い
+    let x_offset = select(radius, 0, params_array.fixed_size != 0);
+    let in_coord = out_coord - vec2<i32>(x_offset, 0);
 
     if (radius <= 0) {
         // 垂直パスのためにプリマルチプライドアルファで出力
@@ -41,14 +43,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     for (var dx = -radius; dx <= radius; dx++) {
         let weight = exp(-f32(dx * dx) / sigma2);
         weight_sum += weight;
-        let sample_coord = in_coord + vec2<i32>(dx, 0);
-        if (sample_coord.x >= 0 && sample_coord.x < in_dims.x &&
-            sample_coord.y >= 0 && sample_coord.y < in_dims.y) {
-            let s = textureLoad(tex, sample_coord, 0);
-            // プリマルチプライドアルファで蓄積: 透明ピクセルの RGB が混入しない
+        let raw_coord = in_coord + vec2<i32>(dx, 0);
+        if (params_array.fixed_size != 0) {
+            // サイズ固定時はエッジピクセルをクランプして透明化を防ぐ
+            let sc = clamp(raw_coord, vec2<i32>(0, 0), in_dims - vec2<i32>(1, 1));
+            let s = textureLoad(tex, sc, 0);
+            color += vec4(s.rgb * s.a, s.a) * weight;
+        } else if (raw_coord.x >= 0 && raw_coord.x < in_dims.x &&
+                   raw_coord.y >= 0 && raw_coord.y < in_dims.y) {
+            let s = textureLoad(tex, raw_coord, 0);
             color += vec4(s.rgb * s.a, s.a) * weight;
         }
-        // 境界外は vec4(0) 扱い、ただし weight_sum には加算 → エッジが透明にフェード
+        // 境界外(サイズ非固定時)は vec4(0) 扱い → エッジが透明にフェード
     }
 
     // プリマルチプライドアルファのまま出力 (垂直パスへの中間テクスチャ)

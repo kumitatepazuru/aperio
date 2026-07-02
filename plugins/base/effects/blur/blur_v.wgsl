@@ -1,7 +1,9 @@
 struct BlurParams {
     radius: i32,
     new_width: i32,
-    new_height: i32
+    new_height: i32,
+    light_intensity: i32,
+    fixed_size: i32,
 };
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
@@ -23,15 +25,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    // 垂直オフセット: 出力は入力より上下それぞれ radius 分高い
-    let in_coord = out_coord - vec2<i32>(0, radius);
+    // サイズ固定時はオフセットなし、通常は出力が上下 radius 分高い
+    let y_offset = select(radius, 0, params_array.fixed_size != 0);
+    let in_coord = out_coord - vec2<i32>(0, y_offset);
+
+    let light_factor = 1.0 + f32(params_array.light_intensity) / 30.0;
 
     if (radius <= 0) {
         // 水平パスからのプリマルチプライドを un-premultiply して出力
         let premul = textureLoad(tex, in_coord, 0);
         var out_color: vec4<f32>;
         if (premul.a > 1e-6) {
-            out_color = vec4(premul.rgb / premul.a, premul.a);
+            out_color = vec4(premul.rgb / premul.a * light_factor, premul.a);
         } else {
             out_color = vec4(0.0);
         }
@@ -49,19 +54,22 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     for (var dy = -radius; dy <= radius; dy++) {
         let weight = exp(-f32(dy * dy) / sigma2);
         weight_sum += weight;
-        let sample_coord = in_coord + vec2<i32>(0, dy);
-        if (sample_coord.x >= 0 && sample_coord.x < in_dims.x &&
-            sample_coord.y >= 0 && sample_coord.y < in_dims.y) {
-            // 入力はすでにプリマルチプライド済みなのでそのまま加算
-            color += textureLoad(tex, sample_coord, 0) * weight;
+        let raw_coord = in_coord + vec2<i32>(0, dy);
+        if (params_array.fixed_size != 0) {
+            // サイズ固定時はエッジピクセルをクランプして透明化を防ぐ
+            let sc = clamp(raw_coord, vec2<i32>(0, 0), in_dims - vec2<i32>(1, 1));
+            color += textureLoad(tex, sc, 0) * weight;
+        } else if (raw_coord.x >= 0 && raw_coord.x < in_dims.x &&
+                   raw_coord.y >= 0 && raw_coord.y < in_dims.y) {
+            color += textureLoad(tex, raw_coord, 0) * weight;
         }
-        // 境界外は vec4(0) 扱い、ただし weight_sum には加算 → エッジが透明にフェード
+        // 境界外(サイズ非固定時)は vec4(0) 扱い → エッジが透明にフェード
     }
 
     let premul = color / weight_sum;
     var out_color: vec4<f32>;
     if (premul.a > 1e-6) {
-        out_color = vec4(premul.rgb / premul.a, premul.a);
+        out_color = vec4(premul.rgb / premul.a * light_factor, premul.a);
     } else {
         out_color = vec4(0.0);
     }
