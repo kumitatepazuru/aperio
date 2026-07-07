@@ -4,6 +4,7 @@ from aperio_plugin.plugin_base import MainPluginBase
 
 
 from .effects.blur.blur import BlurEffect
+from .effects.boundary_blur.blur import BoundaryBlurEffect
 from .effects.adjustments.color import ColorAdjustmentEffect
 from .effects.clip.clip import ClipEffect
 from .objects.audio.audio import AudioObject
@@ -22,6 +23,7 @@ class AperioBasePlugin(MainPluginBase):
         self.author = "Aperio"
 
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
+        aperio_plugin.manager.register_sub_plugin(self, BoundaryBlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, ColorAdjustmentEffect())
         aperio_plugin.manager.register_sub_plugin(self, ClipEffect())
         aperio_plugin.manager.register_sub_plugin(self, AudioObject())
