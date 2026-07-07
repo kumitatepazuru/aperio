@@ -29,24 +29,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let y_offset = select(radius, 0, params_array.fixed_size != 0);
     let in_coord = out_coord - vec2<i32>(0, y_offset);
 
-    let light_factor = 1.0 + f32(params_array.light_intensity) / 30.0;
-
-    if (radius <= 0) {
-        // 水平パスからのプリマルチプライドを un-premultiply して出力
-        let premul = textureLoad(tex, in_coord, 0);
-        var out_color: vec4<f32>;
-        if (premul.a > 1e-6) {
-            out_color = vec4(premul.rgb / premul.a * light_factor, premul.a);
-        } else {
-            out_color = vec4(0.0);
-        }
-        textureStore(outputTex, out_coord, out_color);
-        return;
-    }
+    // output = (GaussianBlur_sigma(orig^n))^(1/n), n = 1 + 0.103 * 光の強さ ^ 1.2
+    let n = 1.0 + 0.103 * pow(f32(params_array.light_intensity), 1.2);
 
     // 入力は水平パスからのプリマルチプライドアルファ
     // そのまま蓄積してから最後に un-premultiply する
-    let sigma2 = 2.0 * pow(f32(radius) / 3.0, 2.0);
+    let sigma2 = pow(f32(radius), 2.0) / (4.0 * log(2.0));
 
     var color = vec4<f32>(0.0);
     var weight_sum = 0.0;
@@ -69,7 +57,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let premul = color / weight_sum;
     var out_color: vec4<f32>;
     if (premul.a > 1e-6) {
-        out_color = vec4(premul.rgb / premul.a * light_factor, premul.a);
+        let unpremul = premul.rgb / premul.a;
+        out_color = vec4(pow(max(unpremul, vec3<f32>(0.0)), vec3<f32>(1.0 / n)), premul.a);
     } else {
         out_color = vec4(0.0);
     }

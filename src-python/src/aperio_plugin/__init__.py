@@ -220,9 +220,11 @@ class AperioManager(PluginManager, EventManager):
                         width=layer_frame.item_result.width,
                         height=layer_frame.item_result.height,
                     )
-                    layer_frame = effect_plugin.generate(params)
-                    if layer_frame is None:
-                        break
+                    tmp_layer_frame = effect_plugin.generate(params)
+                    if tmp_layer_frame is None:
+                        continue
+                    layer_frame = tmp_layer_frame
+
                     frame_results[layer_id] = layer_frame.item_result
                     if isinstance(layer_frame, GeneratorWgslReturn):
                         layer_builder = layer_builder.add_wgsl(
@@ -248,8 +250,6 @@ class AperioManager(PluginManager, EventManager):
                     elif isinstance(layer_frame, GeneratorBuilderReturn):
                         layer_builder = layer_builder.add_builder(layer_frame.builder)
 
-                if layer_frame is None:
-                    continue
                 layer_builders.append(layer_builder)
 
                 # params準備

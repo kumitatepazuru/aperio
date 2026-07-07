@@ -2,6 +2,7 @@ struct BlurParams {
     radius: i32,
     new_width: i32,
     new_height: i32,
+    light_intensity: i32,
     fixed_size: i32,
 };
 
@@ -28,14 +29,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let x_offset = select(radius, 0, params_array.fixed_size != 0);
     let in_coord = out_coord - vec2<i32>(x_offset, 0);
 
-    if (radius <= 0) {
-        // 垂直パスのためにプリマルチプライドアルファで出力
-        let s = textureLoad(tex, in_coord, 0);
-        textureStore(outputTex, out_coord, vec4(s.rgb * s.a, s.a));
-        return;
-    }
+    // output = (GaussianBlur_sigma(orig^n))^(1/n), n = 1 + 0.103 * 光の強さ ^ 1.2
+    // ここでは orig^n を計算してからぼかしを畳み込む (べき乗を戻すのは垂直パスの最後)
+    let n = 1.0 + 0.103 * pow(f32(params_array.light_intensity), 1.2);
 
-    let sigma2 = 2.0 * pow(f32(radius) / 3.0, 2.0);
+    let sigma2 = pow(f32(radius), 2.0) / (4.0 * log(2.0));
 
     var color = vec4<f32>(0.0);
     var weight_sum = 0.0;
@@ -48,11 +46,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             // サイズ固定時はエッジピクセルをクランプして透明化を防ぐ
             let sc = clamp(raw_coord, vec2<i32>(0, 0), in_dims - vec2<i32>(1, 1));
             let s = textureLoad(tex, sc, 0);
-            color += vec4(s.rgb * s.a, s.a) * weight;
+            let powered = pow(max(s.rgb, vec3<f32>(0.0)), vec3<f32>(n));
+            color += vec4(powered * s.a, s.a) * weight;
         } else if (raw_coord.x >= 0 && raw_coord.x < in_dims.x &&
                    raw_coord.y >= 0 && raw_coord.y < in_dims.y) {
             let s = textureLoad(tex, raw_coord, 0);
-            color += vec4(s.rgb * s.a, s.a) * weight;
+            let powered = pow(max(s.rgb, vec3<f32>(0.0)), vec3<f32>(n));
+            color += vec4(powered * s.a, s.a) * weight;
         }
         // 境界外(サイズ非固定時)は vec4(0) 扱い → エッジが透明にフェード
     }

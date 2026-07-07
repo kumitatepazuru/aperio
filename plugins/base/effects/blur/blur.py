@@ -60,7 +60,7 @@ class BlurEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
         blur_radius = max(0, args.get("blur_radius", 5))
         aspect = max(-100, min(100, args.get("aspect", 0)))
@@ -68,14 +68,17 @@ class BlurEffect(VideoEffectGeneratorBase):
         fixed_size = bool(args.get("fixed_size", False))
         fixed_size_int = 1 if fixed_size else 0
 
-        # aspect > 0: 縦方向のみに近づく → 横半径を縮小
-        # aspect < 0: 横方向のみに近づく → 縦半径を縮小
+        # aspect > 0: 横方向のみに近づく → 縦半径を縮小
+        # aspect < 0: 縦方向のみに近づく → 横半径を縮小
         if aspect >= 0:
-            h_radius = int(blur_radius * (1 - aspect / 100))
-            v_radius = blur_radius
-        else:
             h_radius = blur_radius
-            v_radius = int(blur_radius * (1 + aspect / 100))
+            v_radius = int(blur_radius * (1 - aspect / 100))
+        else:
+            h_radius = int(blur_radius * (1 + aspect / 100))
+            v_radius = blur_radius
+
+        if h_radius == 0 and v_radius == 0:
+            return None
 
         if fixed_size:
             new_width = params.width
@@ -86,7 +89,7 @@ class BlurEffect(VideoEffectGeneratorBase):
         inter_width = new_width
         inter_height = params.height
 
-        h_params = struct.pack("iiii", h_radius, inter_width, inter_height, fixed_size_int)
+        h_params = struct.pack("iiiii", h_radius, inter_width, inter_height, light_intensity, fixed_size_int)
         v_params = struct.pack("iiiii", v_radius, new_width, new_height, light_intensity, fixed_size_int)
 
         builder = (
