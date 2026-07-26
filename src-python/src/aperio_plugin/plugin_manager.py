@@ -2,6 +2,7 @@ import glob
 import hashlib
 import os.path
 import shutil
+import time
 import traceback
 from typing import Callable, ClassVar
 
@@ -58,6 +59,8 @@ class PluginManager:
         既に同じ名前のプラグインが存在する場合はスキップする。
         self.generator / self.text_renderer は AperioManager.__init__ で設定済みであること。
         """
+        logger.info("Beginning to load plugins...")
+        t = time.perf_counter()
         for name, plugin_cls in self.__plugins.items():
             if name in self.plugins:
                 logger.warning(f"Plugin {name} is already registered. Skipping.")
@@ -70,6 +73,8 @@ class PluginManager:
             except Exception as e:
                 logger.error(traceback.format_exc())
                 logger.error(f"Failed to load plugin {name}: {e}")
+        logger.info(f"Total plugins loaded: {len(self.plugins)}, including {len(self.video_object_plugins)} video object plugins, {len(self.video_effect_plugins)} video effect plugins, {len(self.audio_object_plugins)} audio object plugins, and {len(self.audio_effect_plugins)} audio effect plugins.")
+        logger.info(f"it takes {time.perf_counter() - t:.2f} seconds.")
 
         logger.info("Loaded Plugins ---")
         logger.info(

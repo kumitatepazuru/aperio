@@ -1,4 +1,3 @@
-import math
 import os
 import struct
 
@@ -10,10 +9,11 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 
-def _radius_to_sigma2(radius: int) -> float:
-    """common/gaussian_{h,v}.wgslが元々内部で計算していたsigma2をそのまま踏襲する。
-    radius(見た目のぼかし半径)をこの式でsigma2に変換すると挙動が変わらない。"""
-    return (radius**2) / (4.0 * math.log(2.0))
+def _split_radius(radius: int) -> tuple[int, int]:
+    """半径を2つのボックスパスに分割する。合成カーネルが三角形(半径が奇数なら
+    上底3の台形)になる、実機ぼかしフィルタの分割方法(README手順2・3)。
+    r_hi = ceil(r/2), r_lo = floor(r/2)。"""
+    return radius - radius // 2, radius // 2
 
 
 class BlurEffect(VideoEffectGeneratorBase):
@@ -23,11 +23,28 @@ class BlurEffect(VideoEffectGeneratorBase):
         self.display_name = "ぼかし"
         self.description = "Applies a blur effect to the input frame."
 
-        common_dir = os.path.join(os.path.dirname(__file__), "..", "common")
-        with open(os.path.join(common_dir, "gaussian_h.wgsl"), "r") as f:
-            self.blur_h_shader = PyCompiledWgsl("blur_h", f.read(), aperio_plugin.image_generator, None)
-        with open(os.path.join(common_dir, "gaussian_v.wgsl"), "r") as f:
-            self.blur_v_shader = PyCompiledWgsl("blur_v", f.read(), aperio_plugin.image_generator, None)
+        current_dir = os.path.dirname(__file__)
+        common_dir = os.path.join(current_dir, "..", "common")
+
+        def load(path: str) -> str:
+            with open(path, "r") as f:
+                return f.read()
+
+        self.box_blur_h_shader = PyCompiledWgsl(
+            "box_blur_h", load(os.path.join(common_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
+        )
+        self.box_blur_v_shader = PyCompiledWgsl(
+            "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
+        )
+        self.curve_shader = PyCompiledWgsl(
+            "curve", load(os.path.join(common_dir, "curve.wgsl")), aperio_plugin.image_generator, None
+        )
+        self.ycbcr_encode_shader = PyCompiledWgsl(
+            "blur_ycbcr_encode", load(os.path.join(current_dir, "ycbcr_encode.wgsl")), aperio_plugin.image_generator, None
+        )
+        self.ycbcr_decode_shader = PyCompiledWgsl(
+            "blur_ycbcr_decode", load(os.path.join(current_dir, "ycbcr_decode.wgsl")), aperio_plugin.image_generator, None
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -73,7 +90,6 @@ class BlurEffect(VideoEffectGeneratorBase):
         aspect = max(-100, min(100, args.get("aspect", 0)))
         light_intensity = max(0, min(60, args.get("light_intensity", 0)))
         fixed_size = bool(args.get("fixed_size", False))
-        fixed_size_int = 1 if fixed_size else 0
 
         # aspect > 0: 横方向のみに近づく → 縦半径を縮小
         # aspect < 0: 縦方向のみに近づく → 横半径を縮小
@@ -87,26 +103,57 @@ class BlurEffect(VideoEffectGeneratorBase):
         if h_radius == 0 and v_radius == 0:
             return None
 
-        if fixed_size:
-            new_width = params.width
-            new_height = params.height
-        else:
-            new_width = params.width + 2 * h_radius
-            new_height = params.height + 2 * v_radius
-        inter_width = new_width
-        inter_height = params.height
+        width, height = params.width, params.height
 
-        h_params = struct.pack(
-            "iiiiif", h_radius, inter_width, inter_height, light_intensity, fixed_size_int, _radius_to_sigma2(h_radius)
-        )
-        v_params = struct.pack(
-            "iiiiif", v_radius, new_width, new_height, light_intensity, fixed_size_int, _radius_to_sigma2(v_radius)
-        )
+        # サイズ固定オフ(キャンバスが伸びる)は常にカーネル幅で割ってフェード
+        # させ(divisor_mode=0)、サイズ固定オンは有効サンプル数で再正規化する
+        # (divisor_mode=1)。境界は常にゼロパディング(border_mode=1、実機挙動)。
+        divisor_mode = 1 if fixed_size else 0
+        border_mode = 1
 
-        builder = (
-            gpu_util.PyImageGenerateBuilder()
-            .add_wgsl(self.blur_h_shader, h_params, inter_width, inter_height)
-            .add_wgsl(self.blur_v_shader, v_params, new_width, new_height)
-        )
+        builder = gpu_util.PyImageGenerateBuilder()
 
-        return GeneratorBuilderReturn(builder, ItemResult(new_width, new_height))
+        use_curve = light_intensity > 0
+        curve_base = 1.0
+        if use_curve:
+            curve_base = 1.0 + max(1, min(100, light_intensity)) * 0.001
+            builder = builder.add_wgsl(self.ycbcr_encode_shader, None, width, height)
+            builder = builder.add_wgsl(self.curve_shader, struct.pack("fii", curve_base, 0, 2), width, height)
+
+        cur_w, cur_h = width, height
+
+        def h_pass(b: gpu_util.PyImageGenerateBuilder, radius: int) -> gpu_util.PyImageGenerateBuilder:
+            nonlocal cur_w
+            if radius <= 0:
+                return b
+            offset = 0 if fixed_size else radius
+            new_w = cur_w if fixed_size else cur_w + 2 * radius
+            shader_params = struct.pack("iiiiii", radius, new_w, cur_h, offset, border_mode, divisor_mode)
+            b = b.add_wgsl(self.box_blur_h_shader, shader_params, new_w, cur_h)
+            cur_w = new_w
+            return b
+
+        def v_pass(b: gpu_util.PyImageGenerateBuilder, radius: int) -> gpu_util.PyImageGenerateBuilder:
+            nonlocal cur_h
+            if radius <= 0:
+                return b
+            offset = 0 if fixed_size else radius
+            new_h = cur_h if fixed_size else cur_h + 2 * radius
+            shader_params = struct.pack("iiiiii", radius, cur_w, new_h, offset, border_mode, divisor_mode)
+            b = b.add_wgsl(self.box_blur_v_shader, shader_params, cur_w, new_h)
+            cur_h = new_h
+            return b
+
+        rx_hi, rx_lo = _split_radius(h_radius)
+        ry_hi, ry_lo = _split_radius(v_radius)
+
+        builder = h_pass(builder, rx_hi)
+        builder = h_pass(builder, rx_lo)
+        builder = v_pass(builder, ry_hi)
+        builder = v_pass(builder, ry_lo)
+
+        if use_curve:
+            builder = builder.add_wgsl(self.curve_shader, struct.pack("fii", curve_base, 1, 2), cur_w, cur_h)
+            builder = builder.add_wgsl(self.ycbcr_decode_shader, None, cur_w, cur_h)
+
+        return GeneratorBuilderReturn(builder, ItemResult(cur_w, cur_h))

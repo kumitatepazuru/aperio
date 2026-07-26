@@ -47,6 +47,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
         self.description = "Extracts bright areas, diffuses them with a multi-scale blur, and blends them back as a colored glow."
 
         current_dir = os.path.dirname(__file__)
+        common_dir = os.path.join(current_dir, "..", "common")
 
         def load(path: str) -> str:
             with open(path, "r") as f:
@@ -56,7 +57,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
             "luminous_threshold", load(os.path.join(current_dir, "threshold.wgsl")), aperio_plugin.image_generator, None
         )
         self.curve_shader = PyCompiledWgsl(
-            "luminous_curve", load(os.path.join(current_dir, "curve.wgsl")), aperio_plugin.image_generator, None
+            "curve", load(os.path.join(common_dir, "curve.wgsl")), aperio_plugin.image_generator, None
         )
         self.expand_shader = PyCompiledWgsl(
             "luminous_expand", load(os.path.join(current_dir, "expand.wgsl")), aperio_plugin.image_generator, None
@@ -65,10 +66,10 @@ class LuminousEffect(VideoEffectGeneratorBase):
             "luminous_merge", load(os.path.join(current_dir, "merge.wgsl")), aperio_plugin.image_generator, None
         )
         self.box_blur_h_shader = PyCompiledWgsl(
-            "luminous_box_blur_h", load(os.path.join(current_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
+            "box_blur_h", load(os.path.join(common_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
         )
         self.box_blur_v_shader = PyCompiledWgsl(
-            "luminous_box_blur_v", load(os.path.join(current_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
+            "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
         )
         self.select_shader = PyCompiledWgsl(
             "luminous_select", load(os.path.join(current_dir, "select.wgsl")), aperio_plugin.image_generator, None
@@ -280,10 +281,16 @@ class LuminousEffect(VideoEffectGeneratorBase):
             return (
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(
-                    self.box_blur_h_shader, struct.pack("iii", r_h, new_width, new_height), new_width, new_height
+                    self.box_blur_h_shader,
+                    struct.pack("iiiiii", r_h, new_width, new_height, 0, 0, 0),
+                    new_width,
+                    new_height,
                 )
                 .add_wgsl(
-                    self.box_blur_v_shader, struct.pack("iii", r_v, new_width, new_height), new_width, new_height
+                    self.box_blur_v_shader,
+                    struct.pack("iiiiii", r_v, new_width, new_height, 0, 0, 0),
+                    new_width,
+                    new_height,
                 )
             )
 
@@ -306,8 +313,18 @@ class LuminousEffect(VideoEffectGeneratorBase):
             return (
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
-                .add_wgsl(self.box_blur_h_shader, struct.pack("iii", rs_h, small_w, small_h), small_w, small_h)
-                .add_wgsl(self.box_blur_v_shader, struct.pack("iii", rs_v, small_w, small_h), small_w, small_h)
+                .add_wgsl(
+                    self.box_blur_h_shader,
+                    struct.pack("iiiiii", rs_h, small_w, small_h, 0, 0, 0),
+                    small_w,
+                    small_h,
+                )
+                .add_wgsl(
+                    self.box_blur_v_shader,
+                    struct.pack("iiiiii", rs_v, small_w, small_h, 0, 0, 0),
+                    small_w,
+                    small_h,
+                )
                 .add_wgsl(self.upsample_shader, struct.pack("iii", factor, new_width, new_height), new_width, new_height)
             )
 
@@ -404,7 +421,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
             # a=y_finalに戻し、色差はそのままreconstructへ渡す。
             finalize_luma = gpu_util.PyImageGenerateBuilder().add_wgsl(
                 self.select_shader, struct.pack("i", 1), new_width, new_height
-            ).add_wgsl(self.curve_shader, struct.pack("fi", curve_base, 1), new_width, new_height)
+            ).add_wgsl(self.curve_shader, struct.pack("fii", curve_base, 1, 3), new_width, new_height)
             finalize_chroma = gpu_util.PyImageGenerateBuilder().add_wgsl(
                 self.select_shader, struct.pack("i", 2), new_width, new_height
             )
