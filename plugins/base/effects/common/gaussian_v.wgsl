@@ -1,16 +1,20 @@
-struct BlurParams {
+struct SeparableBlurParams {
     radius: i32,
     new_width: i32,
     new_height: i32,
     light_intensity: i32,
     fixed_size: i32,
+    // exp(-dy^2 / sigma2) の分母。sigma2 = 2 * sigma^2 (sigmaは通常のガウス標準偏差)。
+    // radiusから逆算せず呼び出し側で明示的に渡すことで、
+    // 「ぼかし半径(見た目のradius)」と「ガウスの広がり(sigma)」を独立に制御できる。
+    sigma2: f32,
 };
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(2) var linear_sampler: sampler;
 
-@group(1) @binding(0) var<storage, read> params_array: BlurParams;
+@group(1) @binding(0) var<storage, read> params_array: SeparableBlurParams;
 
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -34,7 +38,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // 入力は水平パスからのプリマルチプライドアルファ
     // そのまま蓄積してから最後に un-premultiply する
-    let sigma2 = pow(f32(radius), 2.0) / (4.0 * log(2.0));
+    let sigma2 = params_array.sigma2;
 
     var color = vec4<f32>(0.0);
     var weight_sum = 0.0;

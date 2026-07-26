@@ -1,3 +1,4 @@
+import math
 import os
 import struct
 
@@ -9,6 +10,12 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 
+def _radius_to_sigma2(radius: int) -> float:
+    """common/gaussian_{h,v}.wgslが元々内部で計算していたsigma2をそのまま踏襲する。
+    radius(見た目のぼかし半径)をこの式でsigma2に変換すると挙動が変わらない。"""
+    return (radius**2) / (4.0 * math.log(2.0))
+
+
 class BlurEffect(VideoEffectGeneratorBase):
     def __init__(self) -> None:
         super().__init__()
@@ -16,10 +23,10 @@ class BlurEffect(VideoEffectGeneratorBase):
         self.display_name = "ぼかし"
         self.description = "Applies a blur effect to the input frame."
 
-        current_dir = os.path.dirname(__file__)
-        with open(os.path.join(current_dir, "blur_h.wgsl"), "r") as f:
+        common_dir = os.path.join(os.path.dirname(__file__), "..", "common")
+        with open(os.path.join(common_dir, "gaussian_h.wgsl"), "r") as f:
             self.blur_h_shader = PyCompiledWgsl("blur_h", f.read(), aperio_plugin.image_generator, None)
-        with open(os.path.join(current_dir, "blur_v.wgsl"), "r") as f:
+        with open(os.path.join(common_dir, "gaussian_v.wgsl"), "r") as f:
             self.blur_v_shader = PyCompiledWgsl("blur_v", f.read(), aperio_plugin.image_generator, None)
 
     @event(type=GeneratorEvent.New)
@@ -89,8 +96,12 @@ class BlurEffect(VideoEffectGeneratorBase):
         inter_width = new_width
         inter_height = params.height
 
-        h_params = struct.pack("iiiii", h_radius, inter_width, inter_height, light_intensity, fixed_size_int)
-        v_params = struct.pack("iiiii", v_radius, new_width, new_height, light_intensity, fixed_size_int)
+        h_params = struct.pack(
+            "iiiiif", h_radius, inter_width, inter_height, light_intensity, fixed_size_int, _radius_to_sigma2(h_radius)
+        )
+        v_params = struct.pack(
+            "iiiiif", v_radius, new_width, new_height, light_intensity, fixed_size_int, _radius_to_sigma2(v_radius)
+        )
 
         builder = (
             gpu_util.PyImageGenerateBuilder()

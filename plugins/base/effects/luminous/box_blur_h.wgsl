@@ -1,8 +1,7 @@
-struct BlurParams {
+struct BoxBlurParams {
     radius: i32,
     new_width: i32,
     new_height: i32,
-    light_intensity: i32,
     fixed_size: i32,
 };
 
@@ -10,8 +9,14 @@ struct BlurParams {
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(2) var linear_sampler: sampler;
 
-@group(1) @binding(0) var<storage, read> params_array: BlurParams;
+@group(1) @binding(0) var<storage, read> params_array: BoxBlurParams;
 
+// AviUtl版の発光フィルタが実際に使っているのは、窓内すべてを同じ重みで
+// 合算するボックス(矩形)ぼかしであり、ガウシアン核ではないことが
+// exedit.aufの命令列から確定している(README手順4・手順9、
+// verify_blur_chain.py/verify_diffusion_speed_boxsum.py)。common/gaussian_h.wgsl
+// と同じ構造(プリマルチプライドアルファ、fixed_size時のエッジクランプ)を
+// 踏襲しつつ、重みだけを一律1.0にしたもの。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];
@@ -29,30 +34,24 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let x_offset = select(radius, 0, params_array.fixed_size != 0);
     let in_coord = out_coord - vec2<i32>(x_offset, 0);
 
-    // output = (GaussianBlur_sigma(orig^n))^(1/n), n = 1 + 0.103 * 光の強さ ^ 1.2
-    // ここでは orig^n を計算してからぼかしを畳み込む (べき乗を戻すのは垂直パスの最後)
-    let n = 1.0 + 0.103 * pow(f32(params_array.light_intensity), 1.2);
-
-    let sigma2 = pow(f32(radius), 2.0) / (4.0 * log(2.0));
-
     var color = vec4<f32>(0.0);
     var weight_sum = 0.0;
 
     for (var dx = -radius; dx <= radius; dx++) {
-        let weight = exp(-f32(dx * dx) / sigma2);
+        let weight = 1.0;
         weight_sum += weight;
         let raw_coord = in_coord + vec2<i32>(dx, 0);
         if (params_array.fixed_size != 0) {
             // サイズ固定時はエッジピクセルをクランプして透明化を防ぐ
             let sc = clamp(raw_coord, vec2<i32>(0, 0), in_dims - vec2<i32>(1, 1));
             let s = textureLoad(tex, sc, 0);
-            let powered = pow(max(s.rgb, vec3<f32>(0.0)), vec3<f32>(n));
-            color += vec4(powered * s.a, s.a) * weight;
+            let clamped = max(s.rgb, vec3<f32>(0.0));
+            color += vec4(clamped * s.a, s.a) * weight;
         } else if (raw_coord.x >= 0 && raw_coord.x < in_dims.x &&
                    raw_coord.y >= 0 && raw_coord.y < in_dims.y) {
             let s = textureLoad(tex, raw_coord, 0);
-            let powered = pow(max(s.rgb, vec3<f32>(0.0)), vec3<f32>(n));
-            color += vec4(powered * s.a, s.a) * weight;
+            let clamped = max(s.rgb, vec3<f32>(0.0));
+            color += vec4(clamped * s.a, s.a) * weight;
         }
         // 境界外(サイズ非固定時)は vec4(0) 扱い → エッジが透明にフェード
     }
