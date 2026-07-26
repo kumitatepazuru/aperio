@@ -1,6 +1,5 @@
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
-@group(0) @binding(2) var linear_sampler: sampler;
 
 // 輝度アキュムレータ(inputTex[0])と色差アキュムレータ(inputTex[1])を
 // BT.601フルレンジの逆変換で合成し、最終色(プリマルチプライドをun-premultiply

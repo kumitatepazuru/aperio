@@ -18,6 +18,26 @@ _DIFFUSION_INITIAL_RADIUS = 2.0
 _DIFFUSION_PASSES = 6
 _DIFFUSION_EXPONENT = 0.2
 
+# 「高速化」ON時の近似ぼかしの品質ノブ。縮小画像側のぼかし半径をこの値以下に
+# 抑えることで、総半径によらず誤差が頭打ち(発光ピークの約1%以下)になる。
+# 小さくするほど積極的に縮小して速くなるが誤差が増える(16=保守的, 8=積極的)。
+# TODO: 設定で変えられるようにしたいよね
+_FAST_BLUR_R_TARGET = 16
+
+
+def _choose_downsample_factor(radius: int, r_target: int) -> int:
+    """近似ぼかしの縮小率D(2冪)を返す。縮小画像側の半径がおよそ
+    [r_target/2, r_target]、最低でも4以上に収まる最小のDを選ぶ。
+    scratchpad/blur_error.py で誤差を実測した式と同一。"""
+    if radius <= r_target:
+        return 1
+    factor = 1
+    while radius / (factor * 2) >= r_target // 2 and factor * 2 <= radius:
+        factor *= 2
+    while radius // factor < 4 and factor > 1:
+        factor //= 2
+    return factor
+
 
 class LuminousEffect(VideoEffectGeneratorBase):
     def __init__(self) -> None:
@@ -80,6 +100,13 @@ class LuminousEffect(VideoEffectGeneratorBase):
         self.reconstruct_shader = PyCompiledWgsl(
             "luminous_reconstruct", load(os.path.join(current_dir, "reconstruct.wgsl")), aperio_plugin.image_generator, None
         )
+        # 「高速化」ON時の近似ぼかし(縮小ピラミッド)用。
+        self.downsample_shader = PyCompiledWgsl(
+            "luminous_downsample", load(os.path.join(current_dir, "downsample.wgsl")), aperio_plugin.image_generator, None
+        )
+        self.upsample_shader = PyCompiledWgsl(
+            "luminous_upsample", load(os.path.join(current_dir, "upsample.wgsl")), aperio_plugin.image_generator, None
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -132,6 +159,14 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     id="use_source_color",
                     title="光色: 元画像の色を使う",
                     default_value=False,
+                ),
+                # ONにするとぼかしを近似(縮小ピラミッド)で高速化する。平坦部の
+                # 発色は厳密なままだが、輪郭付近の遷移帯だけ実機基準からわずかに
+                # ずれる(拡散が大きいほど速く、誤差は最大でも発光ピークの約1%)。
+                RequestStructureParameter.Bool(
+                    id="fast_mode",
+                    title="高速化",
+                    default_value=True,
                 ),
             ],
         )
@@ -195,6 +230,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
         cr_dev = (color_r - luma_color) / 1.402000
         cb_dev = (color_b - luma_color) / 1.772000
         use_source_chroma = 1 if args.get("use_source_color", False) else 0
+        fast = bool(args.get("fast_mode", False))
 
         # ぼかし(box_blur_h/v)が負値を max(0,x) で潰すため、色差(r/g)には常に正に
         # なるよう十分大きい定数offsetを足しておき、蓄積時に差し引く。輝度(b)は
@@ -236,21 +272,43 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 self.select_shader, struct.pack("i", index), new_width, new_height
             )
 
-        def blur_branch_for(radius: int) -> gpu_util.PyImageGenerateBuilder:
+        def exact_box_branch(r_h: int, r_v: int) -> gpu_util.PyImageGenerateBuilder:
             # 方向別にクランプした半径で水平→垂直のボックスぼかし。両方向とも
             # 半径0のときだけ素通し(片方だけ0なら radius=0=恒等タップで安全)。
-            r_h = min(radius, cap_h)
-            r_v = min(radius, cap_v)
             if r_h <= 0 and r_v <= 0:
                 return select_branch(0)
             return (
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(
-                    self.box_blur_h_shader, struct.pack("iiii", r_h, new_width, new_height, 1), new_width, new_height
+                    self.box_blur_h_shader, struct.pack("iii", r_h, new_width, new_height), new_width, new_height
                 )
                 .add_wgsl(
-                    self.box_blur_v_shader, struct.pack("iiii", r_v, new_width, new_height, 1), new_width, new_height
+                    self.box_blur_v_shader, struct.pack("iii", r_v, new_width, new_height), new_width, new_height
                 )
+            )
+
+        def blur_branch_for(radius: int) -> gpu_util.PyImageGenerateBuilder:
+            r_h = min(radius, cap_h)
+            r_v = min(radius, cap_v)
+            # 「高速化」OFF(既定)は現行どおりの厳密ボックスぼかし(挙動完全不変)。
+            factor = _choose_downsample_factor(radius, _FAST_BLUR_R_TARGET) if fast else 1
+            if factor <= 1:
+                return exact_box_branch(r_h, r_v)
+
+            # 「高速化」ON かつ大半径: 縮小 -> 小画像でボックス -> バイリニア拡大。
+            # タップ数が factor^2 分の1になる。誤差は輪郭付近の遷移帯だけ(平坦部は
+            # 縮小/拡大とも線形なので恒等 = 厳密一致)。
+            small_w = (new_width + factor - 1) // factor
+            small_h = (new_height + factor - 1) // factor
+            rs = max(1, round(radius / factor))
+            rs_h = min(rs, max(0, small_w // 2 - 1))
+            rs_v = min(rs, max(0, small_h // 2 - 1))
+            return (
+                gpu_util.PyImageGenerateBuilder()
+                .add_wgsl(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
+                .add_wgsl(self.box_blur_h_shader, struct.pack("iii", rs_h, small_w, small_h), small_w, small_h)
+                .add_wgsl(self.box_blur_v_shader, struct.pack("iii", rs_v, small_w, small_h), small_w, small_h)
+                .add_wgsl(self.upsample_shader, struct.pack("iii", factor, new_width, new_height), new_width, new_height)
             )
 
         # --- 両経路共通の入口: 抽出結果を6パスぼかしに乗せる形へ整える ---

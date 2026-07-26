@@ -1,61 +1,36 @@
 struct BoxBlurParams {
     radius: i32,
-    new_width: i32,
-    new_height: i32,
-    fixed_size: i32,
+    out_width: i32,
+    out_height: i32,
 };
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
-@group(0) @binding(2) var linear_sampler: sampler;
 
 @group(1) @binding(0) var<storage, read> params_array: BoxBlurParams;
 
-// AviUtl版の発光フィルタが実際に使っているのは、窓内すべてを同じ重みで
-// 合算するボックス(矩形)ぼかしであり、ガウシアン核ではないことが
-// exedit.aufの命令列から確定している(README手順4・手順9、
-// verify_blur_chain.py/verify_diffusion_speed_boxsum.py)。common/gaussian_h.wgsl
-// と同じ構造(プリマルチプライドアルファ、fixed_size時のエッジクランプ)を
-// 踏襲しつつ、重みだけを一律1.0にしたもの。
+// AviUtl版の発光フィルタが実際に使っているのは一様重みのボックス(矩形)ぼかしで
+// あり、ガウシアン核ではないことが exedit.auf の命令列から確定している(README
+// 手順4・9)。水平パス。入力・出力は同サイズで、窓が画像端をはみ出す分はエッジ
+// 画素をクランプして拾う。プリマルチプライドのまま出力し、垂直パス側で
+// un-premultiply する。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];
     let in_dims = vec2<i32>(textureDimensions(tex));
     let out_coord = vec2<i32>(global_id.xy);
-
     let radius = params_array.radius;
-    let out_dims = vec2<i32>(params_array.new_width, params_array.new_height);
 
-    if (out_coord.x >= out_dims.x || out_coord.y >= out_dims.y) {
+    if (out_coord.x >= params_array.out_width || out_coord.y >= params_array.out_height) {
         return;
     }
 
-    // サイズ固定時はオフセットなし、通常は出力が左右 radius 分広い
-    let x_offset = select(radius, 0, params_array.fixed_size != 0);
-    let in_coord = out_coord - vec2<i32>(x_offset, 0);
-
     var color = vec4<f32>(0.0);
-    var weight_sum = 0.0;
-
     for (var dx = -radius; dx <= radius; dx++) {
-        let weight = 1.0;
-        weight_sum += weight;
-        let raw_coord = in_coord + vec2<i32>(dx, 0);
-        if (params_array.fixed_size != 0) {
-            // サイズ固定時はエッジピクセルをクランプして透明化を防ぐ
-            let sc = clamp(raw_coord, vec2<i32>(0, 0), in_dims - vec2<i32>(1, 1));
-            let s = textureLoad(tex, sc, 0);
-            let clamped = max(s.rgb, vec3<f32>(0.0));
-            color += vec4(clamped * s.a, s.a) * weight;
-        } else if (raw_coord.x >= 0 && raw_coord.x < in_dims.x &&
-                   raw_coord.y >= 0 && raw_coord.y < in_dims.y) {
-            let s = textureLoad(tex, raw_coord, 0);
-            let clamped = max(s.rgb, vec3<f32>(0.0));
-            color += vec4(clamped * s.a, s.a) * weight;
-        }
-        // 境界外(サイズ非固定時)は vec4(0) 扱い → エッジが透明にフェード
+        let sc = clamp(out_coord + vec2<i32>(dx, 0), vec2<i32>(0, 0), in_dims - vec2<i32>(1, 1));
+        let s = textureLoad(tex, sc, 0);
+        color += vec4<f32>(max(s.rgb, vec3<f32>(0.0)) * s.a, s.a);
     }
 
-    // プリマルチプライドアルファのまま出力 (垂直パスへの中間テクスチャ)
-    textureStore(outputTex, out_coord, color / weight_sum);
+    textureStore(outputTex, out_coord, color / f32(2 * radius + 1));
 }

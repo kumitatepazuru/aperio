@@ -7,7 +7,6 @@ struct CombinedInitParams {
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
-@group(0) @binding(2) var linear_sampler: sampler;
 
 @group(1) @binding(0) var<storage, read> params: CombinedInitParams;
 
