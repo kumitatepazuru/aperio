@@ -89,6 +89,9 @@ pub(crate) type ProcessingState = Vec<StepOutput>;
 pub struct ImageGenerator {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
+    /// このデバイスで確保できる2Dテクスチャの最大辺長（px）。
+    /// キャンバスを広げるエフェクトが拡張量を切り詰める上限として使う。
+    pub maximum_texture_size: u32,
     // 後処理用のパイプラインと関連リソース
     pub(crate) post_process_pipeline: ComputePipeline,
     pub(crate) blit_f32_to_f16_pipeline: RenderPipeline,
@@ -149,6 +152,7 @@ impl ImageGenerator {
         device.set_device_lost_callback(|reason, msg| {
             eprintln!("DEVICE LOST: {reason:?} msg={msg}");
         });
+        let maximum_texture_size = device.limits().max_texture_dimension_2d;
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
@@ -246,6 +250,7 @@ impl ImageGenerator {
         Ok(Self {
             device,
             queue,
+            maximum_texture_size,
             post_process_pipeline,
             blit_f32_to_f16_pipeline,
             blit_f32_to_bgra8_pipeline,

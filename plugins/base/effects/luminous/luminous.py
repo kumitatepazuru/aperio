@@ -60,7 +60,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
             "curve", load(os.path.join(common_dir, "curve.wgsl")), aperio_plugin.image_generator, None
         )
         self.expand_shader = PyCompiledWgsl(
-            "luminous_expand", load(os.path.join(current_dir, "expand.wgsl")), aperio_plugin.image_generator, None
+            "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
         )
         self.merge_shader = PyCompiledWgsl(
             "luminous_merge", load(os.path.join(current_dir, "merge.wgsl")), aperio_plugin.image_generator, None

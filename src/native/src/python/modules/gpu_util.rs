@@ -340,6 +340,13 @@ impl PyImageGenerator {
         Ok(Self { inner, rt })
     }
 
+    /// このデバイスで確保できる2Dテクスチャの最大辺長（px）。
+    /// キャンバスを広げるエフェクトが拡張量を切り詰める上限として使う。
+    #[getter]
+    pub fn maximum_texture_size(&self) -> u32 {
+        self.inner.maximum_texture_size
+    }
+
     pub fn generate_buf(
         &self,
         builder: &PyImageGenerateBuilder,
