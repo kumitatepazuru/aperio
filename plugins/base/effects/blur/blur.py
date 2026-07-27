@@ -40,10 +40,10 @@ class BlurEffect(VideoEffectGeneratorBase):
             "curve", load(os.path.join(common_dir, "curve.wgsl")), aperio_plugin.image_generator, None
         )
         self.ycbcr_encode_shader = PyCompiledWgsl(
-            "blur_ycbcr_encode", load(os.path.join(current_dir, "ycbcr_encode.wgsl")), aperio_plugin.image_generator, None
+            "ycbcr_encode", load(os.path.join(common_dir, "ycbcr_encode.wgsl")), aperio_plugin.image_generator, None
         )
         self.ycbcr_decode_shader = PyCompiledWgsl(
-            "blur_ycbcr_decode", load(os.path.join(current_dir, "ycbcr_decode.wgsl")), aperio_plugin.image_generator, None
+            "ycbcr_decode", load(os.path.join(common_dir, "ycbcr_decode.wgsl")), aperio_plugin.image_generator, None
         )
 
     @event(type=GeneratorEvent.New)

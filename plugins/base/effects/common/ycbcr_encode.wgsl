@@ -1,10 +1,11 @@
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
 
-// 光の強さ>0のときだけ使う前処理。RGB(ストレートアルファ)をBT.601の
-// 輝度Y・色差Cr/Cbへ変換し、{r=Cr偏差, g=Cb偏差, b=Y, a=alpha} に詰め替える
-// (README手順6)。alphaは素通し。カーブ自体はこの後段のcommon/curve.wgsl
-// (channel=2)が担当する。
+// RGB(ストレートアルファ)をBT.601の輝度Y・色差Cr/Cbへ変換し、
+// {r=Cr偏差, g=Cb偏差, b=Y, a=alpha} に詰め替える。alphaは素通し。
+// common/box_blur_h.wgsl・box_blur_v.wgsl はチャンネルを区別せず
+// アルファ加重平均するだけなので、このYCbCr表現のままボックスぼかしを
+// 通してもRGBのまま通すのと同じ結果になる。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];

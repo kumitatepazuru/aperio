@@ -2,8 +2,7 @@
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
 
 // ycbcr_encode.wgsl の逆変換。{r=Cr偏差, g=Cb偏差, b=Y} からBT.601でRGBを
-// 復元する。呼び出し側でYは既にcommon/curve.wgsl(channel=2, inverse)で
-// 逆変換済みであることを前提とする。alphaは素通し。
+// 復元する。alphaは素通し。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];
