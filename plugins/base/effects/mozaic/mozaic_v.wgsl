@@ -22,8 +22,6 @@ fn floor_div(a: i32, b: i32) -> i32 {
     return q;
 }
 
-const BORDER_STRENGTH: f32 = 0.6;
-
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let out_coord = vec2<i32>(global_id.xy);
@@ -61,18 +59,46 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     if (params_array.tile_mode != 0) {
-        // ブロック境界の1pxを暗くし、タイルの輪郭をはっきりさせる
+        // タイル風: 左上辺にハイライト、右下辺にシャドウを付けるベベル。
+        // 辺の判定はクリップ前のブロック範囲(画像外にはみ出しうる)から行う
+        // ―― でないと画像端で切れたセルに本来出ないはずの縁取りが出てしまう。
         let dx = out_coord.x - params_array.center_x;
         let kx = floor_div(dx, size);
         let block_start_x = params_array.center_x + kx * size;
-        let start_x = max(block_start_x, 0);
-        let end_x = min(block_start_x + size, width);
 
-        let on_x_edge = (out_coord.x == start_x || out_coord.x == end_x - 1);
-        let on_y_edge = (out_coord.y == start_y || out_coord.y == end_y - 1);
+        let x_first = block_start_x;
+        let x_last = block_start_x + size - 1;
+        let y_first = block_start_y;
+        let y_last = block_start_y + size - 1;
 
-        if (on_x_edge || on_y_edge) {
-            out_color = vec4(out_color.rgb * BORDER_STRENGTH, out_color.a);
+        // DARK(右下辺)がBRIGHT(左上辺)より優先される。1px幅のセルは
+        // BRIGHTではなくDARKになる
+        let is_dark = (out_coord.x == x_last || out_coord.y == y_last);
+        let is_bright = !is_dark && (out_coord.x == x_first || out_coord.y == y_first);
+
+        if (is_dark || is_bright) {
+            let y = dot(out_color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+            let cr = (out_color.r - y) / 1.402000;
+            let cb = (out_color.b - y) / 1.772000;
+
+            var y2 = y;
+            var cr2 = cr;
+            var cb2 = cb;
+            if (is_bright) {
+                // ハイライトは輝度のみ1.25倍
+                y2 = y + y * 0.25;
+            } else {
+                // シャドウは輝度・色差とも0.75倍
+                y2 = y - y * 0.25;
+                cr2 = cr - cr * 0.25;
+                cb2 = cb - cb * 0.25;
+            }
+
+            // クランプなし(実機と同じく満輝度を超えた値もそのまま書き込む)
+            let r = y2 + 1.402000 * cr2;
+            let g = y2 - 0.344136 * cb2 - 0.714136 * cr2;
+            let b = y2 + 1.772000 * cb2;
+            out_color = vec4(r, g, b, out_color.a);
         }
     }
 

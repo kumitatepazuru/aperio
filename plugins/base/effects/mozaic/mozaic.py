@@ -34,7 +34,7 @@ class MozaicEffect(VideoEffectGeneratorBase):
                 RequestStructureParameter.Int(
                     id="size",
                     title="サイズ",
-                    default_value=10,
+                    default_value=12,
                     suffix="px",
                     min=1,
                 ),
@@ -48,8 +48,12 @@ class MozaicEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        size = max(1, args.get("size", 10))
+        size = max(1, args.get("size", 12))
         tile = bool(args.get("tile", False))
+
+        # サイズ2未満は完全な無処理(実機は画像に触れずにTRUEを返す)。
+        if size < 2:
+            return None
 
         width, height = params.width, params.height
 
