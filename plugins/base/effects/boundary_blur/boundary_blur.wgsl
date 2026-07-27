@@ -10,11 +10,16 @@ struct BoundaryBlurParams {
 
 const PI: f32 = 3.14159265358979323846;
 
-fn fade_factor(dist: f32, R: f32) -> f32 {
-    if (R <= 0.0) {
-        return 1.0;
-    }
-    return sin(PI / 2.0 * clamp(dist / R, 0.0, 1.0));
+// 実機の cos イーズテーブル table[i] = 2048*(1-cos(i*pi/4096)) を [0,1] へ
+// 正規化した連続版(README 3.1)。
+fn ease(x: f32) -> f32 {
+    return 0.5 * (1.0 - cos(x * PI));
+}
+
+// 縁からの距離e(0=縁)を軸ランプ値(0..0.5)へ変換する。README 3.2の3フェーズ
+// 書き込み(上端/中間ゼロ/下端)を1本の式にまとめたもので、e>=rで自動的に0になる。
+fn axis_ramp(e: f32, r: f32) -> f32 {
+    return max(r - e, 0.0) / (2.0 * r + 1.0);
 }
 
 @compute @workgroup_size(16, 16, 1)
@@ -31,16 +36,22 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let R = f32(params.radius);
     let A = f32(params.aspect);
-    let Rx = R * min(1.0, 1.0 + A / 100.0);
-    let Ry = R * min(1.0, 1.0 - A / 100.0);
+    var Rx = R * min(1.0, 1.0 + A / 100.0);
+    var Ry = R * min(1.0, 1.0 - A / 100.0);
+    // README 2: rx/ry は独立に幅/高さの半分でクランプされる(hi/lo分割は無い)
+    Rx = min(Rx, f32(W) * 0.5);
+    Ry = min(Ry, f32(H) * 0.5);
 
-    // テクスチャ境界モード: 画像の端からの距離でフェード
     let dx = f32(min(coord.x, W - 1 - coord.x));
     let dy = f32(min(coord.y, H - 1 - coord.y));
-    let fx = fade_factor(dx, Rx);
-    let fy = fade_factor(dy, Ry);
 
-    let alpha_factor = fx * fy;
+    // README 3.2/3.3: 軸ごとのランプをイーズテーブルへ通し、ユークリッド和
+    // (sqrt(v²+h²))を侵食量として元のアルファから線形に引く。
+    let v = ease(axis_ramp(dy, Ry));
+    let h = ease(axis_ramp(dx, Rx));
+    let dist = sqrt(v * v + h * h);
+
     let color = textureLoad(tex, coord, 0);
-    textureStore(outputTex, coord, vec4<f32>(color.rgb, color.a * alpha_factor));
+    let alpha = max(color.a - 2.0 * dist, 0.0);
+    textureStore(outputTex, coord, vec4<f32>(color.rgb, alpha));
 }
