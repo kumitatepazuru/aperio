@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct CurveParams {
     base: f32,
     inverse: i32,

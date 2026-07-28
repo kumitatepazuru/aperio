@@ -14,13 +14,14 @@ rayon = "1.11.0"
 bytemuck = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 anyhow = { workspace = true }
+naga_oil = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.178"
 ash = "0.38"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D12",
 ] }

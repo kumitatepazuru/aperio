@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct AccumulateLumaCombinedParams {
     is_first: i32,
 };

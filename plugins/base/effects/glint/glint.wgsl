@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct GlintParams {
     // 拡張後キャンバスの左上が、元オブジェクト座標のどこにあたるか(常に<=0)
     x0: i32,

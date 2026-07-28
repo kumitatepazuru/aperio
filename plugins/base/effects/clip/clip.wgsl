@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct ClipParams {
     clip_left: i32,
     clip_top: i32,

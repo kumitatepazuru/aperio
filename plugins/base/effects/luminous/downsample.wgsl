@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct DownsampleParams {
     factor: i32,
     out_width: i32,

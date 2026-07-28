@@ -121,10 +121,10 @@ impl ImageGenerator {
         } else {
             bail!("Unsupported OS for ImageGenerator");
         };
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
             flags: wgpu::InstanceFlags::advanced_debugging(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions::default())
@@ -510,8 +510,8 @@ impl ImageGenerator {
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some(&format!("PL for {}", key.id)),
-                bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(),
-                push_constant_ranges: &[],
+                bind_group_layouts: &bind_group_layouts.iter().map(Some).collect::<Vec<_>>(),
+                immediate_size: 0,
             });
 
         let pipeline = Arc::new(self.device.create_compute_pipeline(

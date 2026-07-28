@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct BoundaryBlurParams {
     radius: i32,
     aspect: i32,

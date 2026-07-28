@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct MergeParams {
     // 0 = 前方に合成(加算)、1 = 後方に合成(通常)
     blend_mode: i32,

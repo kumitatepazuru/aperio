@@ -270,6 +270,8 @@ fn create_texture_from_dmabuf(
                         | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },
+                // 直後に LoadOp::Clear で描き込むため、初期状態は未定義扱いでよい
+                wgpu::TextureUses::UNINITIALIZED,
             );
 
         Ok(texture)

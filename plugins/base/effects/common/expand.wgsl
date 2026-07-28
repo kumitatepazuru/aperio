@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct ExpandParams {
     offset_x: i32,
     offset_y: i32,

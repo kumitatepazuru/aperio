@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct ColorParams {
     brightness: f32,
     contrast: f32,

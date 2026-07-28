@@ -9,6 +9,7 @@ use aperio_derive::register_submodules;
 use pyo3::{prelude::*, types::PyDict};
 
 pub mod avloader;
+pub mod compose_wgsl;
 pub mod gpu_util;
 pub mod logger;
 pub mod text_rendering;

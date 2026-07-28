@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct MozaicHParams {
     size: i32,
     center_x: i32,

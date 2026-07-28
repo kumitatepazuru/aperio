@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct AccumulateSaturatingParams {
     offset: f32,
     is_first: i32,

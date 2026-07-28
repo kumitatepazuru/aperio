@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct BoxBlurParams {
     radius: i32,
     out_width: i32,

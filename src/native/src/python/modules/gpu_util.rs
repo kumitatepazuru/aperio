@@ -13,6 +13,10 @@ use gpu_util::image_generate_builder::ImageGenerateBuilder;
 use gpu_util::image_generator;
 use gpu_util::{compiled_wgsl, image_generate_builder, SharedTextureFormat};
 
+use crate::python::modules::compose_wgsl::{
+    PyComposableModuleDescriptor, PyNagaModuleDescriptor,
+};
+
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
 #[cfg(target_os = "windows")]
@@ -199,6 +203,32 @@ impl PyCompiledWgsl {
         let inner = compiled_wgsl::CompiledWgsl::new(
             id,
             wgsl_code,
+            &generator.inner.device,
+            sampler_options.map(|s| &s.inner),
+        )?;
+
+        Ok(Self { inner })
+    }
+
+    /// composable module 群を naga_oil で合成し、その naga IR からシェーダーを作る。
+    ///
+    /// `id` はパイプラインキャッシュのキーにもなるため、同じシェーダーを異なる
+    /// `shader_defs` で合成する場合は必ず別の `id` を渡すこと。
+    #[staticmethod]
+    #[pyo3(signature = (id, composable_modules, naga_module, generator, sampler_options=None))]
+    pub fn compose_new(
+        id: &str,
+        composable_modules: Vec<PyRef<'_, PyComposableModuleDescriptor>>,
+        naga_module: &PyNagaModuleDescriptor,
+        generator: &PyImageGenerator,
+        sampler_options: Option<&PySamplerOptions>,
+    ) -> Result<Self, PyErr> {
+        let composable_modules: Vec<_> = composable_modules.iter().map(|m| &m.inner).collect();
+
+        let inner = compiled_wgsl::CompiledWgsl::compose_new(
+            id,
+            &composable_modules,
+            &naga_module.inner,
             &generator.inner.device,
             sampler_options.map(|s| &s.inner),
         )?;
@@ -405,4 +435,12 @@ pub mod gpu_util_register {
     use super::PyTexture;
     #[pymodule_export]
     use super::WrappedSharedTextureFormat;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::create_composable_module;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::create_naga_module;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::PyComposableModuleDescriptor;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::PyNagaModuleDescriptor;
 }

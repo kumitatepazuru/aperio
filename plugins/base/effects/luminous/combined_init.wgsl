@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct CombinedInitParams {
     base: f32,
     offset: f32,

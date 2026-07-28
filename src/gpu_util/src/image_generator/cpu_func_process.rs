@@ -55,7 +55,7 @@ async fn download_gpu_texture(
     })?;
     rx.await??;
 
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range()?;
 
     // パディングを外して詰め直し
     let mut pixels = vec![0u8; (row_size * height) as usize];

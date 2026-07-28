@@ -16,8 +16,9 @@ napi = { version = "3.0.0", features = ["async", "serde-json", "error_anyhow"] }
 napi-derive = "3.0.0"
 serde_json = "1.0.145"
 serde = { version = "1.0.228", features = ["derive"] }
-wgpu = "27.0.1"
+wgpu = { version = "30", features = ["naga-ir"] }
 bytemuck = "1"
+naga_oil = "0.23.0"
 
 [profile.release]
 lto = true

@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct ThresholdParams {
     gain: f32,
     overflow: f32,

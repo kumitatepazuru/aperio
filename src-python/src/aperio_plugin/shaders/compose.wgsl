@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 // 各レイヤーのメタ情報を格納する構造体
 struct LayerParams {
   x: i32,                       // レイヤーの中心のx座標 (出力中央原点)

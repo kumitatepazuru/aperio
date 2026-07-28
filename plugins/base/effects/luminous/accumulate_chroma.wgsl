@@ -1,3 +1,5 @@
+enable wgpu_binding_array;
+
 struct AccumulateChromaParams {
     offset: f32,
     is_first: i32,

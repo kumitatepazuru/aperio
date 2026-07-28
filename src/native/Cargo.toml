@@ -28,6 +28,7 @@ env_logger = "0.11.8"
 log = { workspace = true }
 wgpu = { workspace = true }
 cpal = "0.17.3"
+naga_oil = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.178"
