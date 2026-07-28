@@ -1,0 +1,45 @@
+enable wgpu_binding_array;
+
+struct BoxAverageDirParams {
+    radius: i32,
+    // サンプルを進める方向(1ステップあたりの画素オフセット)。斜め方向を渡すと
+    // 対角線ぶん(実距離で√2倍)サンプル間隔が伸びる(exedit-inspect glow README §5.2)。
+    step_x: i32,
+    step_y: i32,
+    out_width: i32,
+    out_height: i32,
+};
+
+@group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
+@group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
+
+@group(1) @binding(0) var<storage, read> params: BoxAverageDirParams;
+
+// 方向ベクトルに沿った素のボックス平均。alphaは無視し、範囲外はゼロ埋めのまま
+// 固定幅 (2*radius+1) で割る(=境界で自然にフェードする、実機の「カーネル幅で割る
+// 素のボックス平均」と同じ挙動)。グローの `通常` 形状の垂直パスと、仕上げ`ぼかし`
+// (README §6)の2ラウンド4パスに使う。
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let tex = inputTex[0];
+    let in_dims = vec2<i32>(textureDimensions(tex));
+    let coord = vec2<i32>(global_id.xy);
+
+    if (coord.x >= params.out_width || coord.y >= params.out_height) {
+        return;
+    }
+
+    let step = vec2<i32>(params.step_x, params.step_y);
+    let radius = params.radius;
+
+    var sum_rgb = vec3<f32>(0.0);
+    for (var k = -radius; k <= radius; k++) {
+        let sc = coord + step * k;
+        if (sc.x >= 0 && sc.x < in_dims.x && sc.y >= 0 && sc.y < in_dims.y) {
+            sum_rgb += textureLoad(tex, sc, 0).rgb;
+        }
+    }
+
+    let divisor = f32(2 * radius + 1);
+    textureStore(outputTex, coord, vec4<f32>(sum_rgb / divisor, 0.0));
+}
