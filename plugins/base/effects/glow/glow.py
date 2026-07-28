@@ -35,6 +35,7 @@ class GlowEffect(VideoEffectGeneratorBase):
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
         color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        glow_common_module = gpu_util.create_composable_module(os.path.join(current_dir, "common.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
@@ -46,12 +47,15 @@ class GlowEffect(VideoEffectGeneratorBase):
             gpu_util.create_naga_module(os.path.join(current_dir, "extract.wgsl")),
             aperio_plugin.image_generator,
         )
-        self.box_average_dir_shader = PyCompiledWgsl(
-            "glow_box_average_dir", load(os.path.join(current_dir, "box_average_dir.wgsl")), aperio_plugin.image_generator, None
+        self.box_average_dir_shader = PyCompiledWgsl.compose_new(
+            "glow_box_average_dir",
+            [glow_common_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "box_average_dir.wgsl")),
+            aperio_plugin.image_generator,
         )
         self.line_accumulate_shader = PyCompiledWgsl.compose_new(
             "glow_line_accumulate",
-            [color_module],
+            [color_module, glow_common_module],
             gpu_util.create_naga_module(os.path.join(current_dir, "line_accumulate.wgsl")),
             aperio_plugin.image_generator,
         )
@@ -62,7 +66,7 @@ class GlowEffect(VideoEffectGeneratorBase):
             aperio_plugin.image_generator,
         )
         self.select_shader = PyCompiledWgsl(
-            "glow_select", load(os.path.join(current_dir, "select.wgsl")), aperio_plugin.image_generator, None
+            "glow_select", load(os.path.join(common_dir, "select.wgsl")), aperio_plugin.image_generator, None
         )
         self.expand_shader = PyCompiledWgsl(
             "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None

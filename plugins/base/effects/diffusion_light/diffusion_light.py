@@ -30,16 +30,17 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
         color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
                 return f.read()
 
-        self.box_blur_h_shader = PyCompiledWgsl(
-            "box_blur_h", load(os.path.join(common_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.box_blur_v_shader = PyCompiledWgsl(
-            "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
+        self.box_blur_dir_shader = PyCompiledWgsl.compose_new(
+            "box_blur_dir",
+            [blur_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "box_blur_dir.wgsl")),
+            aperio_plugin.image_generator,
         )
         self.expand_shader = PyCompiledWgsl(
             "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
@@ -123,14 +124,14 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
             blur_branch = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(
-                    self.box_blur_v_shader,
-                    struct.pack("iiiiii", radius, cur_w, new_h, offset, border_mode, divisor_mode),
+                    self.box_blur_dir_shader,
+                    struct.pack("iiiiiiii", radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode),
                     cur_w,
                     new_h,
                 )
                 .add_wgsl(
-                    self.box_blur_h_shader,
-                    struct.pack("iiiiii", radius, new_w, new_h, offset, border_mode, divisor_mode),
+                    self.box_blur_dir_shader,
+                    struct.pack("iiiiiiii", radius, 1, 0, new_w, new_h, offset, border_mode, divisor_mode),
                     new_w,
                     new_h,
                 )

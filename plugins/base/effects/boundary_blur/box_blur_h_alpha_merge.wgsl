@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::blur::{box_sum}
+
 struct BoxBlurAlphaMergeParams {
     radius: i32,
     out_width: i32,
@@ -14,18 +16,17 @@ struct BoxBlurAlphaMergeParams {
 
 @group(1) @binding(0) var<storage, read> params: BoxBlurAlphaMergeParams;
 
-// common/box_blur_h.wgsl の水平パスと alpha_merge.wgsl の非線形しきい値合成を
-// 1シェーダーに統合したもの(境界ぼかしの透明度境界モード専用。共有される
-// common/box_blur_h.wgsl 自体は他エフェクトに影響が出ないよう変更しない)。
-// alpha_merge.wgsl が読むのはぼかし後の.aだけなので、rgbの加重和は省いてある。
+// common/lib/blur.wgsl の box_sum (common/box_blur_dir.wgsl と共用) の水平パスと
+// alpha_merge.wgsl の非線形しきい値合成を1シェーダーに統合したもの(境界ぼかしの
+// 透明度境界モード専用)。alpha_merge.wgsl が読むのはぼかし後の.aだけなので、
+// box_sumが返すsum_rgbはここでは使わない。
 //
-// inputTex[0]: 垂直パス済みのアルファ(box_blur_v通過後。ry<=0なら元画像そのもの)
+// inputTex[0]: 垂直パス済みのアルファ(box_blur_dir通過後。ry<=0なら元画像そのもの)
 // inputTex[1]: 元画像(色 + 元のアルファA)
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];
     let orig_tex = inputTex[1];
-    let in_dims = vec2<i32>(textureDimensions(tex));
     let out_coord = vec2<i32>(global_id.xy);
     let radius = params.radius;
 
@@ -35,26 +36,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let in_coord = out_coord - vec2<i32>(params.offset, 0);
 
-    var sum_weight = 0.0;
-    var valid_count = 0;
+    let r = box_sum(tex, in_coord, vec2<i32>(1, 0), radius, params.border_mode);
 
-    for (var dx = -radius; dx <= radius; dx++) {
-        let raw = in_coord + vec2<i32>(dx, 0);
-        if (params.border_mode == 0) {
-            let sc = clamp(raw, vec2<i32>(0, 0), in_dims - vec2<i32>(1, 1));
-            let s = textureLoad(tex, sc, 0);
-            sum_weight += max(s.a, 0.0);
-            valid_count++;
-        } else if (raw.x >= 0 && raw.x < in_dims.x && raw.y >= 0 && raw.y < in_dims.y) {
-            let s = textureLoad(tex, raw, 0);
-            sum_weight += max(s.a, 0.0);
-            valid_count++;
-        }
-        // border_mode==1で範囲外: 寄与ゼロ(有効サンプル数にも数えない)
-    }
-
-    let divisor = select(f32(2 * radius + 1), f32(max(valid_count, 1)), params.divisor_mode != 0);
-    let b = sum_weight / divisor;
+    let divisor = select(f32(2 * radius + 1), f32(max(r.valid_count, 1)), params.divisor_mode != 0);
+    let b = r.sum_weight / divisor;
 
     // README 4: 単純なボックスぼかし結果をそのまま使うのではなく、非線形なしきい値
     // カーブで再合成する(実機の12bit整数演算 t=((A*B)>>11)-4096;

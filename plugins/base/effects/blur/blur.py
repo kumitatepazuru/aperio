@@ -27,16 +27,17 @@ class BlurEffect(VideoEffectGeneratorBase):
         common_dir = os.path.join(current_dir, "..", "common")
         color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
         math_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "math.wgsl"))
+        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
                 return f.read()
 
-        self.box_blur_h_shader = PyCompiledWgsl(
-            "box_blur_h", load(os.path.join(common_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.box_blur_v_shader = PyCompiledWgsl(
-            "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
+        self.box_blur_dir_shader = PyCompiledWgsl.compose_new(
+            "box_blur_dir",
+            [blur_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "box_blur_dir.wgsl")),
+            aperio_plugin.image_generator,
         )
         self.curve_shader = PyCompiledWgsl.compose_new(
             "curve",
@@ -139,8 +140,8 @@ class BlurEffect(VideoEffectGeneratorBase):
                 return b
             offset = 0 if fixed_size else radius
             new_w = cur_w if fixed_size else cur_w + 2 * radius
-            shader_params = struct.pack("iiiiii", radius, new_w, cur_h, offset, border_mode, divisor_mode)
-            b = b.add_wgsl(self.box_blur_h_shader, shader_params, new_w, cur_h)
+            shader_params = struct.pack("iiiiiiii", radius, 1, 0, new_w, cur_h, offset, border_mode, divisor_mode)
+            b = b.add_wgsl(self.box_blur_dir_shader, shader_params, new_w, cur_h)
             cur_w = new_w
             return b
 
@@ -150,8 +151,8 @@ class BlurEffect(VideoEffectGeneratorBase):
                 return b
             offset = 0 if fixed_size else radius
             new_h = cur_h if fixed_size else cur_h + 2 * radius
-            shader_params = struct.pack("iiiiii", radius, cur_w, new_h, offset, border_mode, divisor_mode)
-            b = b.add_wgsl(self.box_blur_v_shader, shader_params, cur_w, new_h)
+            shader_params = struct.pack("iiiiiiii", radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode)
+            b = b.add_wgsl(self.box_blur_dir_shader, shader_params, cur_w, new_h)
             cur_h = new_h
             return b
 

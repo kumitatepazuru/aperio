@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::glow::{directional_box_sum}
+
 struct BoxAverageDirParams {
     radius: i32,
     // サンプルを進める方向(1ステップあたりの画素オフセット)。斜め方向を渡すと
@@ -22,7 +24,6 @@ struct BoxAverageDirParams {
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];
-    let in_dims = vec2<i32>(textureDimensions(tex));
     let coord = vec2<i32>(global_id.xy);
 
     if (coord.x >= params.out_width || coord.y >= params.out_height) {
@@ -32,13 +33,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let step = vec2<i32>(params.step_x, params.step_y);
     let radius = params.radius;
 
-    var sum_rgb = vec3<f32>(0.0);
-    for (var k = -radius; k <= radius; k++) {
-        let sc = coord + step * k;
-        if (sc.x >= 0 && sc.x < in_dims.x && sc.y >= 0 && sc.y < in_dims.y) {
-            sum_rgb += textureLoad(tex, sc, 0).rgb;
-        }
-    }
+    let sum_rgb = directional_box_sum(tex, coord, step, radius);
 
     let divisor = f32(2 * radius + 1);
     textureStore(outputTex, coord, vec4<f32>(sum_rgb / divisor, 0.0));

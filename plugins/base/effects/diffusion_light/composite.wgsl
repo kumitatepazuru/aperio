@@ -10,7 +10,7 @@ struct CompositeParams {
 @group(1) @binding(0) var<storage, read> params: CompositeParams;
 
 // inputTex[0]: このラウンドのボックスぼかし結果(YCbCr+alpha、ストレート、
-//              common/box_blur_h.wgsl・box_blur_v.wgsl通過済み)
+//              common/box_blur_dir.wgsl通過済み)
 // inputTex[1]: このラウンド開始時点の「現在の画像」を common/expand.wgsl で
 //              同じキャンバスへ再配置したもの(同じくYCbCr+alpha、ストレート)
 //

@@ -30,6 +30,7 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
 
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
+        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
@@ -38,14 +39,17 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         self.shader = PyCompiledWgsl(
             "boundary_blur", load(os.path.join(current_dir, "boundary_blur.wgsl")), aperio_plugin.image_generator, None
         )
-        self.box_blur_v_shader = PyCompiledWgsl(
-            "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.box_blur_h_alpha_merge_shader = PyCompiledWgsl(
-            "boundary_blur_box_blur_h_alpha_merge",
-            load(os.path.join(current_dir, "box_blur_h_alpha_merge.wgsl")),
+        self.box_blur_dir_shader = PyCompiledWgsl.compose_new(
+            "box_blur_dir",
+            [blur_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "box_blur_dir.wgsl")),
             aperio_plugin.image_generator,
-            None,
+        )
+        self.box_blur_h_alpha_merge_shader = PyCompiledWgsl.compose_new(
+            "boundary_blur_box_blur_h_alpha_merge",
+            [blur_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "box_blur_h_alpha_merge.wgsl")),
+            aperio_plugin.image_generator,
         )
 
     @event(type=GeneratorEvent.New)
@@ -104,8 +108,8 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
 
         box_blur_v_branch = gpu_util.PyImageGenerateBuilder()
         if ry > 0:
-            v_params = struct.pack("iiiiii", ry, width, height, 0, 1, 0)
-            box_blur_v_branch = box_blur_v_branch.add_wgsl(self.box_blur_v_shader, v_params, width, height)
+            v_params = struct.pack("iiiiiiii", ry, 0, 1, width, height, 0, 1, 0)
+            box_blur_v_branch = box_blur_v_branch.add_wgsl(self.box_blur_dir_shader, v_params, width, height)
 
         # box_blur_h + alpha_merge を1シェーダーに統合(box_blur_h_alpha_merge.wgsl)。
         # radius=0の水平パスは単一タップ=恒等になるため、rx=0でも特別扱い不要。

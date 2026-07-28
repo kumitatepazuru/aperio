@@ -50,6 +50,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
         common_dir = os.path.join(current_dir, "..", "common")
         color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
         math_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "math.wgsl"))
+        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
@@ -70,14 +71,14 @@ class LuminousEffect(VideoEffectGeneratorBase):
         self.expand_shader = PyCompiledWgsl(
             "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
         )
-        self.box_blur_h_shader = PyCompiledWgsl(
-            "box_blur_h", load(os.path.join(common_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.box_blur_v_shader = PyCompiledWgsl(
-            "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
+        self.box_blur_dir_shader = PyCompiledWgsl.compose_new(
+            "box_blur_dir",
+            [blur_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "box_blur_dir.wgsl")),
+            aperio_plugin.image_generator,
         )
         self.select_shader = PyCompiledWgsl(
-            "luminous_select", load(os.path.join(current_dir, "select.wgsl")), aperio_plugin.image_generator, None
+            "luminous_select", load(os.path.join(common_dir, "select.wgsl")), aperio_plugin.image_generator, None
         )
         self.accumulate_saturating_shader = PyCompiledWgsl(
             "luminous_accumulate_saturating",
@@ -227,8 +228,8 @@ class LuminousEffect(VideoEffectGeneratorBase):
         # 半径は方向別にクランプする(実機は垂直パスを h/2-1、水平パスを w/2-1 で
         # 個別にクランプする。README手順4)。拡張後キャンバスの幅・高さで割るので、
         # 非正方キャンバスでは縦横で別々の上限になる。
-        cap_h = max(0, new_width // 2 - 1)   # 水平パス(box_blur_h)の半径上限
-        cap_v = max(0, new_height // 2 - 1)  # 垂直パス(box_blur_v)の半径上限
+        cap_h = max(0, new_width // 2 - 1)   # 水平パス(box_blur_dir, step=(1,0))の半径上限
+        cap_v = max(0, new_height // 2 - 1)  # 垂直パス(box_blur_dir, step=(0,1))の半径上限
 
         # 注: 強さ/しきい値は UI*10=raw(ui/100 が raw/1000 に一致)として扱う一方、
         # 拡散だけは UI をそのまま raw として半径計算に渡している。README手順10の
@@ -244,7 +245,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
         use_source_chroma = 1 if args.get("use_source_color", False) else 0
         fast = bool(args.get("fast_mode", False))
 
-        # ぼかし(box_blur_h/v)が負値を max(0,x) で潰すため、色差(r/g)には常に正に
+        # ぼかし(box_blur_dir)が負値を max(0,x) で潰すため、色差(r/g)には常に正に
         # なるよう十分大きい定数offsetを足しておき、蓄積時に差し引く。輝度(b)は
         # 非負なのでoffset不要。
         chroma_offset = 8.0
@@ -292,14 +293,14 @@ class LuminousEffect(VideoEffectGeneratorBase):
             return (
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(
-                    self.box_blur_h_shader,
-                    struct.pack("iiiiii", r_h, new_width, new_height, 0, 0, 0),
+                    self.box_blur_dir_shader,
+                    struct.pack("iiiiiiii", r_h, 1, 0, new_width, new_height, 0, 0, 0),
                     new_width,
                     new_height,
                 )
                 .add_wgsl(
-                    self.box_blur_v_shader,
-                    struct.pack("iiiiii", r_v, new_width, new_height, 0, 0, 0),
+                    self.box_blur_dir_shader,
+                    struct.pack("iiiiiiii", r_v, 0, 1, new_width, new_height, 0, 0, 0),
                     new_width,
                     new_height,
                 )
@@ -325,14 +326,14 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
                 .add_wgsl(
-                    self.box_blur_h_shader,
-                    struct.pack("iiiiii", rs_h, small_w, small_h, 0, 0, 0),
+                    self.box_blur_dir_shader,
+                    struct.pack("iiiiiiii", rs_h, 1, 0, small_w, small_h, 0, 0, 0),
                     small_w,
                     small_h,
                 )
                 .add_wgsl(
-                    self.box_blur_v_shader,
-                    struct.pack("iiiiii", rs_v, small_w, small_h, 0, 0, 0),
+                    self.box_blur_dir_shader,
+                    struct.pack("iiiiiiii", rs_v, 0, 1, small_w, small_h, 0, 0, 0),
                     small_w,
                     small_h,
                 )

@@ -7,7 +7,7 @@ enable wgpu_binding_array;
 
 // RGB(ストレートアルファ)をBT.601の輝度Y・色差Cr/Cbへ変換し、
 // {r=Cr偏差, g=Cb偏差, b=Y, a=alpha} に詰め替える。alphaは素通し。
-// common/box_blur_h.wgsl・box_blur_v.wgsl はチャンネルを区別せず
+// common/box_blur_dir.wgsl はチャンネルを区別せず
 // アルファ加重平均するだけなので、このYCbCr表現のままボックスぼかしを
 // 通してもRGBのまま通すのと同じ結果になる。
 @compute @workgroup_size(16, 16, 1)
