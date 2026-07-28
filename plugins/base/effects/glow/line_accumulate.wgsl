@@ -1,7 +1,7 @@
 enable wgpu_binding_array;
 
 #import aperio::color::{bt601_luma}
-#import aperio::glow::{directional_box_sum}
+#import aperio::blur::{plain_box_sum}
 
 struct LineAccumulateParams {
     radius: i32,
@@ -41,7 +41,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let step = vec2<i32>(params.step_x, params.step_y);
     let radius = params.radius;
 
-    let sum_rgb = directional_box_sum(tex, coord, step, radius);
+    let sum_rgb = plain_box_sum(tex, coord, step, radius).rgb;
 
     var old_rgb = vec3<f32>(0.0);
     if (params.is_first == 0) {

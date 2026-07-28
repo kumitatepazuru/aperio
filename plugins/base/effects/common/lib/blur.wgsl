@@ -41,3 +41,20 @@ fn box_sum(tex: texture_2d<f32>, in_coord: vec2<i32>, step: vec2<i32>, radius: i
 
     return BoxSumResult(sum_rgb, sum_weight, valid_count);
 }
+
+// 一様重みのボックス(矩形)ぼかしの、方向ベクトルに沿ったalpha非加重サンプル和。
+// 範囲外はゼロ埋め(寄与ゼロ)。box_sum と違い全チャンネル(rgba)をそのまま合計するので、
+// 色以外の任意のスカラー/ベクトル値(グローの発光量、クロマキーのマップなど)を
+// 詰めたテクスチャにも使える。common/box_average_dir.wgsl・glow/line_accumulate.wgsl・
+// chroma_key の境界補正パスが共通で使う。
+fn plain_box_sum(tex: texture_2d<f32>, coord: vec2<i32>, step: vec2<i32>, radius: i32) -> vec4<f32> {
+    let in_dims = vec2<i32>(textureDimensions(tex));
+    var sum = vec4<f32>(0.0);
+    for (var k = -radius; k <= radius; k++) {
+        let sc = coord + step * k;
+        if (sc.x >= 0 && sc.x < in_dims.x && sc.y >= 0 && sc.y < in_dims.y) {
+            sum += textureLoad(tex, sc, 0);
+        }
+    }
+    return sum;
+}

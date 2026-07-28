@@ -1,6 +1,6 @@
 enable wgpu_binding_array;
 
-#import aperio::glow::{directional_box_sum}
+#import aperio::blur::{plain_box_sum}
 
 struct BoxAverageDirParams {
     radius: i32,
@@ -17,10 +17,10 @@ struct BoxAverageDirParams {
 
 @group(1) @binding(0) var<storage, read> params: BoxAverageDirParams;
 
-// 方向ベクトルに沿った素のボックス平均。alphaは無視し、範囲外はゼロ埋めのまま
-// 固定幅 (2*radius+1) で割る(=境界で自然にフェードする、実機の「カーネル幅で割る
-// 素のボックス平均」と同じ挙動)。グローの `通常` 形状の垂直パスと、仕上げ`ぼかし`
-// (README §6)の2ラウンド4パスに使う。
+// 方向ベクトルに沿った素のボックス平均(rgba全チャンネル、alpha非加重)。範囲外は
+// ゼロ埋めのまま固定幅 (2*radius+1) で割る(=境界で自然にフェードする、実機の
+// 「カーネル幅で割る素のボックス平均」と同じ挙動)。グローの`通常`形状の垂直パス・
+// 仕上げ`ぼかし`(README §6)と、クロマキーの`境界補正`の垂直パスが共通で使う。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];
@@ -33,8 +33,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let step = vec2<i32>(params.step_x, params.step_y);
     let radius = params.radius;
 
-    let sum_rgb = directional_box_sum(tex, coord, step, radius);
+    let sum = plain_box_sum(tex, coord, step, radius);
 
     let divisor = f32(2 * radius + 1);
-    textureStore(outputTex, coord, vec4<f32>(sum_rgb / divisor, 0.0));
+    textureStore(outputTex, coord, sum / divisor);
 }

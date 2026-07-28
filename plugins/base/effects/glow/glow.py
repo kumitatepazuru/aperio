@@ -35,7 +35,7 @@ class GlowEffect(VideoEffectGeneratorBase):
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
         color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
-        glow_common_module = gpu_util.create_composable_module(os.path.join(current_dir, "common.wgsl"))
+        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
@@ -49,13 +49,13 @@ class GlowEffect(VideoEffectGeneratorBase):
         )
         self.box_average_dir_shader = PyCompiledWgsl.compose_new(
             "glow_box_average_dir",
-            [glow_common_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "box_average_dir.wgsl")),
+            [blur_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "box_average_dir.wgsl")),
             aperio_plugin.image_generator,
         )
         self.line_accumulate_shader = PyCompiledWgsl.compose_new(
             "glow_line_accumulate",
-            [color_module, glow_common_module],
+            [color_module, blur_module],
             gpu_util.create_naga_module(os.path.join(current_dir, "line_accumulate.wgsl")),
             aperio_plugin.image_generator,
         )
