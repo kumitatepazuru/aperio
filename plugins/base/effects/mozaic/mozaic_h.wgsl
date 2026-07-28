@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::math::{floor_div}
+
 struct MozaicHParams {
     size: i32,
     center_x: i32,
@@ -12,16 +14,6 @@ struct MozaicHParams {
 @group(0) @binding(2) var linear_sampler: sampler;
 
 @group(1) @binding(0) var<storage, read> params_array: MozaicHParams;
-
-// 中心を基準にしたブロック境界を求めるための負数対応floor除算
-fn floor_div(a: i32, b: i32) -> i32 {
-    var q = a / b;
-    let r = a % b;
-    if (r != 0 && ((r < 0) != (b < 0))) {
-        q = q - 1;
-    }
-    return q;
-}
 
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {

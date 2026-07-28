@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::color::{bt601_decode}
+
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
 
@@ -16,13 +18,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let s = textureLoad(tex, coord, 0);
-    let cr = s.r;
-    let cb = s.g;
-    let y = s.b;
+    let rgb = bt601_decode(s.r, s.g, s.b);
 
-    let r = y + 1.402000 * cr;
-    let g = y - 0.344136 * cb - 0.714136 * cr;
-    let b = y + 1.772000 * cb;
-
-    textureStore(outputTex, coord, vec4<f32>(r, g, b, s.a));
+    textureStore(outputTex, coord, vec4<f32>(rgb, s.a));
 }

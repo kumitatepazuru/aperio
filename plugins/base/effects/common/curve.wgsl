@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::math::{curve_forward, curve_inverse}
+
 struct CurveParams {
     base: f32,
     inverse: i32,
@@ -44,9 +46,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let r_in = dot(s, mask);
     var r = r_in;
     if (params.inverse == 0) {
-        r = pow(params.base, r * 256.0) - 1.0;
+        r = curve_forward(params.base, r);
     } else {
-        r = log(max(r + 1.0, 1e-6)) / (256.0 * log(params.base));
+        r = curve_inverse(params.base, r);
     }
     let out = s + mask * (r - r_in);
 

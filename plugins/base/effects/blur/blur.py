@@ -25,6 +25,8 @@ class BlurEffect(VideoEffectGeneratorBase):
 
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
+        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        math_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "math.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
@@ -36,14 +38,23 @@ class BlurEffect(VideoEffectGeneratorBase):
         self.box_blur_v_shader = PyCompiledWgsl(
             "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
         )
-        self.curve_shader = PyCompiledWgsl(
-            "curve", load(os.path.join(common_dir, "curve.wgsl")), aperio_plugin.image_generator, None
+        self.curve_shader = PyCompiledWgsl.compose_new(
+            "curve",
+            [math_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "curve.wgsl")),
+            aperio_plugin.image_generator,
         )
-        self.ycbcr_encode_shader = PyCompiledWgsl(
-            "ycbcr_encode", load(os.path.join(common_dir, "ycbcr_encode.wgsl")), aperio_plugin.image_generator, None
+        self.ycbcr_encode_shader = PyCompiledWgsl.compose_new(
+            "ycbcr_encode",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_encode.wgsl")),
+            aperio_plugin.image_generator,
         )
-        self.ycbcr_decode_shader = PyCompiledWgsl(
-            "ycbcr_decode", load(os.path.join(common_dir, "ycbcr_decode.wgsl")), aperio_plugin.image_generator, None
+        self.ycbcr_decode_shader = PyCompiledWgsl.compose_new(
+            "ycbcr_decode",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_decode.wgsl")),
+            aperio_plugin.image_generator,
         )
 
     @event(type=GeneratorEvent.New)

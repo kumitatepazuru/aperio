@@ -17,10 +17,22 @@ class MozaicEffect(VideoEffectGeneratorBase):
         self.description = "Applies a mosaic effect to the input frame, aligned to the center."
 
         current_dir = os.path.dirname(__file__)
-        with open(os.path.join(current_dir, "mozaic_h.wgsl"), "r") as f:
-            self.mozaic_h_shader = PyCompiledWgsl("mozaic_h", f.read(), aperio_plugin.image_generator, None)
-        with open(os.path.join(current_dir, "mozaic_v.wgsl"), "r") as f:
-            self.mozaic_v_shader = PyCompiledWgsl("mozaic_v", f.read(), aperio_plugin.image_generator, None)
+        common_dir = os.path.join(current_dir, "..", "common")
+        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        math_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "math.wgsl"))
+
+        self.mozaic_h_shader = PyCompiledWgsl.compose_new(
+            "mozaic_h",
+            [math_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "mozaic_h.wgsl")),
+            aperio_plugin.image_generator,
+        )
+        self.mozaic_v_shader = PyCompiledWgsl.compose_new(
+            "mozaic_v",
+            [math_module, color_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "mozaic_v.wgsl")),
+            aperio_plugin.image_generator,
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)

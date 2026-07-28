@@ -48,22 +48,27 @@ class LuminousEffect(VideoEffectGeneratorBase):
 
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
+        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        math_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "math.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
                 return f.read()
 
-        self.threshold_shader = PyCompiledWgsl(
-            "luminous_threshold", load(os.path.join(current_dir, "threshold.wgsl")), aperio_plugin.image_generator, None
+        self.threshold_shader = PyCompiledWgsl.compose_new(
+            "luminous_threshold",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "threshold.wgsl")),
+            aperio_plugin.image_generator,
         )
-        self.curve_shader = PyCompiledWgsl(
-            "curve", load(os.path.join(common_dir, "curve.wgsl")), aperio_plugin.image_generator, None
+        self.curve_shader = PyCompiledWgsl.compose_new(
+            "curve",
+            [math_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "curve.wgsl")),
+            aperio_plugin.image_generator,
         )
         self.expand_shader = PyCompiledWgsl(
             "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.merge_shader = PyCompiledWgsl(
-            "luminous_merge", load(os.path.join(current_dir, "merge.wgsl")), aperio_plugin.image_generator, None
         )
         self.box_blur_h_shader = PyCompiledWgsl(
             "box_blur_h", load(os.path.join(common_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
@@ -80,11 +85,11 @@ class LuminousEffect(VideoEffectGeneratorBase):
             aperio_plugin.image_generator,
             None,
         )
-        self.combined_init_shader = PyCompiledWgsl(
+        self.combined_init_shader = PyCompiledWgsl.compose_new(
             "luminous_combined_init",
-            load(os.path.join(current_dir, "combined_init.wgsl")),
+            [math_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "combined_init.wgsl")),
             aperio_plugin.image_generator,
-            None,
         )
         self.accumulate_chroma_shader = PyCompiledWgsl(
             "luminous_accumulate_chroma",
@@ -98,15 +103,21 @@ class LuminousEffect(VideoEffectGeneratorBase):
             aperio_plugin.image_generator,
             None,
         )
-        self.reconstruct_shader = PyCompiledWgsl(
-            "luminous_reconstruct", load(os.path.join(current_dir, "reconstruct.wgsl")), aperio_plugin.image_generator, None
+        self.reconstruct_shader = PyCompiledWgsl.compose_new(
+            "luminous_reconstruct",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "reconstruct.wgsl")),
+            aperio_plugin.image_generator,
         )
         # 「高速化」ON時の近似ぼかし(縮小ピラミッド)用。
         self.downsample_shader = PyCompiledWgsl(
             "luminous_downsample", load(os.path.join(current_dir, "downsample.wgsl")), aperio_plugin.image_generator, None
         )
-        self.upsample_shader = PyCompiledWgsl(
-            "luminous_upsample", load(os.path.join(current_dir, "upsample.wgsl")), aperio_plugin.image_generator, None
+        self.upsample_shader = PyCompiledWgsl.compose_new(
+            "luminous_upsample",
+            [math_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "upsample.wgsl")),
+            aperio_plugin.image_generator,
         )
 
     @event(type=GeneratorEvent.New)
@@ -371,11 +382,13 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 combined_cont = combined_cont.add_parallel_wgsl([select_branch(0), accumulate_branch])
                 state_len = 2
 
-            # state = [chain(不要), accum]。accumを両入力(inputTex[0].a=Σy,
-            # inputTex[1].r/g=Σcr/Σcb)としてreconstructへ渡す。
+            # state = [chain(不要), accum]。accumを両入力(inputTex[1].a=Σy,
+            # inputTex[2].r/g=Σcr/Σcb)としてreconstructへ渡す。reconstruct_shader
+            # 自体の呼び出しは最上位のparallel(base_branchとの合流、旧mergeパス
+            # 統合済み)で行うので、ここではparallelステップで終わらせておく。
             glow_branch = combined_cont.add_parallel_wgsl(
                 [select_branch(1), select_branch(1)]
-            ).add_wgsl(self.reconstruct_shader, None, new_width, new_height)
+            )
         else:
             # 拡散速度>0: 輝度(exp/log空間の単純加算)と色差(毎パス2032/4096クランプ)は
             # 蓄積方式が異なるため独立したアキュムレータを持つ。輝度・色差は同じ
@@ -418,23 +431,23 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 combined_state_len = 2
 
             # state = [chain(不要), luma_accum, chroma_accum]。輝度だけカーブ逆変換で
-            # a=y_finalに戻し、色差はそのままreconstructへ渡す。
+            # a=y_finalに戻し、色差はそのままreconstructへ渡す(reconstruct_shader
+            # 自体の呼び出しは最上位のparallelで行う)。
             finalize_luma = gpu_util.PyImageGenerateBuilder().add_wgsl(
                 self.select_shader, struct.pack("i", 1), new_width, new_height
             ).add_wgsl(self.curve_shader, struct.pack("fii", curve_base, 1, 3), new_width, new_height)
             finalize_chroma = gpu_util.PyImageGenerateBuilder().add_wgsl(
                 self.select_shader, struct.pack("i", 2), new_width, new_height
             )
-            glow_branch = (
-                combined_cont
-                .add_parallel_wgsl([finalize_luma, finalize_chroma])
-                .add_wgsl(self.reconstruct_shader, None, new_width, new_height)
-            )
+            glow_branch = combined_cont.add_parallel_wgsl([finalize_luma, finalize_chroma])
 
+        # parallel_process.rs はサブビルダーの結果をリスト順にフラット結合するため、
+        # inputTex[0]=base、[1]=luma_accum、[2]=chroma_accum としてreconstruct_shaderに
+        # 渡る(旧luminous/merge.wglをreconstruct.wgslへ統合済み。2パス→1パス)。
         builder = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel_wgsl([base_branch, glow_branch])
-            .add_wgsl(self.merge_shader, None, new_width, new_height)
+            .add_wgsl(self.reconstruct_shader, None, new_width, new_height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(new_width, new_height))

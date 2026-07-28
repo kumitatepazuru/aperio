@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::color::{bt601_encode}
+
 struct ThresholdParams {
     gain: f32,
     overflow: f32,
@@ -46,7 +48,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let color = textureLoad(tex, coord, 0);
-    let y_src = dot(color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    let ycc = bt601_encode(color.rgb);
+    let y_src = ycc.z;
     let luminance = y_src * color.a;
 
     var amount = 0.0;
@@ -59,8 +62,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var luma_coeff = params.luma_color;
     if (params.use_source_chroma != 0) {
         // 指定なし: 元画素自身の色差(アルファ非加重の素の色から算出)、輝度係数=1.0
-        cr_coeff = (color.r - y_src) / 1.402000;
-        cb_coeff = (color.b - y_src) / 1.772000;
+        cr_coeff = ycc.x;
+        cb_coeff = ycc.y;
         luma_coeff = 1.0;
     }
 

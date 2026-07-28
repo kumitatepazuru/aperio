@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::math::{bilinear4_load}
+
 struct UpsampleParams {
     factor: i32,
     out_width: i32,
@@ -25,25 +27,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let tex = inputTex[0];
-    let small_dims = vec2<i32>(textureDimensions(tex));
     let f = f32(params.factor);
 
     let src = (vec2<f32>(out_coord) - vec2<f32>((f - 1.0) * 0.5)) / f;
-    let s0 = floor(src);
-    let frac = src - s0;
-    let i0 = vec2<i32>(s0);
-    let i1 = i0 + vec2<i32>(1, 1);
-
-    let lo = vec2<i32>(0, 0);
-    let hi = small_dims - vec2<i32>(1, 1);
-    let c00 = textureLoad(tex, clamp(vec2<i32>(i0.x, i0.y), lo, hi), 0);
-    let c10 = textureLoad(tex, clamp(vec2<i32>(i1.x, i0.y), lo, hi), 0);
-    let c01 = textureLoad(tex, clamp(vec2<i32>(i0.x, i1.y), lo, hi), 0);
-    let c11 = textureLoad(tex, clamp(vec2<i32>(i1.x, i1.y), lo, hi), 0);
-
-    let top = mix(c00, c10, frac.x);
-    let bottom = mix(c01, c11, frac.x);
-    let result = mix(top, bottom, frac.y);
+    let result = bilinear4_load(tex, src);
 
     textureStore(outputTex, out_coord, result);
 }

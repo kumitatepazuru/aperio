@@ -38,15 +38,12 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         self.shader = PyCompiledWgsl(
             "boundary_blur", load(os.path.join(current_dir, "boundary_blur.wgsl")), aperio_plugin.image_generator, None
         )
-        self.box_blur_h_shader = PyCompiledWgsl(
-            "box_blur_h", load(os.path.join(common_dir, "box_blur_h.wgsl")), aperio_plugin.image_generator, None
-        )
         self.box_blur_v_shader = PyCompiledWgsl(
             "box_blur_v", load(os.path.join(common_dir, "box_blur_v.wgsl")), aperio_plugin.image_generator, None
         )
-        self.alpha_merge_shader = PyCompiledWgsl(
-            "boundary_blur_alpha_merge",
-            load(os.path.join(current_dir, "alpha_merge.wgsl")),
+        self.box_blur_h_alpha_merge_shader = PyCompiledWgsl(
+            "boundary_blur_box_blur_h_alpha_merge",
+            load(os.path.join(current_dir, "box_blur_h_alpha_merge.wgsl")),
             aperio_plugin.image_generator,
             None,
         )
@@ -105,18 +102,18 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         rx = min(rx, width // 2)
         ry = min(ry, height // 2)
 
-        blurred = gpu_util.PyImageGenerateBuilder()
+        box_blur_v_branch = gpu_util.PyImageGenerateBuilder()
         if ry > 0:
             v_params = struct.pack("iiiiii", ry, width, height, 0, 1, 0)
-            blurred = blurred.add_wgsl(self.box_blur_v_shader, v_params, width, height)
-        if rx > 0:
-            h_params = struct.pack("iiiiii", rx, width, height, 0, 1, 0)
-            blurred = blurred.add_wgsl(self.box_blur_h_shader, h_params, width, height)
+            box_blur_v_branch = box_blur_v_branch.add_wgsl(self.box_blur_v_shader, v_params, width, height)
 
+        # box_blur_h + alpha_merge を1シェーダーに統合(box_blur_h_alpha_merge.wgsl)。
+        # radius=0の水平パスは単一タップ=恒等になるため、rx=0でも特別扱い不要。
+        h_params = struct.pack("iiiiii", rx, width, height, 0, 1, 0)
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([gpu_util.PyImageGenerateBuilder(), blurred])
-            .add_wgsl(self.alpha_merge_shader, None, width, height)
+            .add_parallel_wgsl([box_blur_v_branch, gpu_util.PyImageGenerateBuilder()])
+            .add_wgsl(self.box_blur_h_alpha_merge_shader, h_params, width, height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(width, height))

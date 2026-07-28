@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::color::{bt601_luma}
+
 struct GlintParams {
     // 拡張後キャンバスの左上が、元オブジェクト座標のどこにあたるか(常に<=0)
     x0: i32,
@@ -19,6 +21,8 @@ struct GlintParams {
     color_r: f32,
     color_g: f32,
     color_b: f32,
+    // 0 = 前方に合成(加算)、1 = 後方に合成(通常)、2 = 光成分のみ
+    mode: i32,
 };
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
@@ -87,90 +91,125 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         len = len * m;
     }
 
-    // 中心画素の経路。実機の借り物アルファは再現せず透明にする
-    if (n < 2 || len < 2) {
-        textureStore(outputTex, out_coord, vec4<f32>(0.0));
-        return;
-    }
+    // 中心画素の経路。実機の借り物アルファは再現せず透明にする。以降、光の色が
+    // 求まらない経路はすべてこの light=0 のまま後段の合成へ進む(旧実装は
+    // ここでtextureStoreして即returnしていたが、mode!=2ではその画素にも
+    // 元オブジェクトだけは描く必要があるため、早期returnはできない)。
+    var light = vec4<f32>(0.0);
 
-    // 実機は16.16固定小数でステップを切り捨ててから累算するが、ここでは float の
-    // ステップを i 倍して求める(累積誤差が乗らないぶんこちらの方が素直で、
-    // 差はサンプル位置で高々0.1画素未満)。
-    let ray_step = vec2<f32>(dxf, dyf) / f32(n);
-    let start = vec2<f32>(f32(x), f32(y)) + 0.5;
+    if (n >= 2 && len >= 2) {
+        // 実機は16.16固定小数でステップを切り捨ててから累算するが、ここでは float の
+        // ステップを i 倍して求める(累積誤差が乗らないぶんこちらの方が素直で、
+        // 差はサンプル位置で高々0.1画素未満)。
+        let ray_step = vec2<f32>(dxf, dyf) / f32(n);
+        let start = vec2<f32>(f32(x), f32(y)) + 0.5;
 
-    // 光線と元画像矩形の交差だけをループする。結果は変わらない純粋な最適化で、
-    // これが無いと拡張キャンバス外周の画素が「1サンプルも当たらない光線」を最後まで
-    // 回してしまう。浮動小数の丸めで1サンプルずれても壊れないよう範囲は±1広げ、
-    // 実際の範囲判定はループ内に残してある。
-    let src_size = vec2<f32>(src_dims);
-    // ステップが極端に小さいと t が i32 に収まらない大きさになるので、
-    // 変換前に [-1, len+1] へ丸めておく(どのみち下で [0, len] に潰される)。
-    let t_min = -1.0;
-    let t_max = f32(len) + 1.0;
-    var lo = 0;
-    var hi = len;
+        // 光線と元画像矩形の交差だけをループする。結果は変わらない純粋な最適化で、
+        // これが無いと拡張キャンバス外周の画素が「1サンプルも当たらない光線」を最後まで
+        // 回してしまう。浮動小数の丸めで1サンプルずれても壊れないよう範囲は±1広げ、
+        // 実際の範囲判定はループ内に残してある。
+        let src_size = vec2<f32>(src_dims);
+        // ステップが極端に小さいと t が i32 に収まらない大きさになるので、
+        // 変換前に [-1, len+1] へ丸めておく(どのみち下で [0, len] に潰される)。
+        let t_min = -1.0;
+        let t_max = f32(len) + 1.0;
+        var lo = 0;
+        var hi = len;
 
-    if (abs(ray_step.x) < 1e-9) {
-        if (start.x < 0.0 || start.x >= src_size.x) {
-            hi = 0;
-        }
-    } else {
-        let tx0 = (0.0 - start.x) / ray_step.x;
-        let tx1 = (src_size.x - start.x) / ray_step.x;
-        lo = max(lo, i32(floor(clamp(min(tx0, tx1), t_min, t_max))) - 1);
-        hi = min(hi, i32(ceil(clamp(max(tx0, tx1), t_min, t_max))) + 1);
-    }
-
-    if (abs(ray_step.y) < 1e-9) {
-        if (start.y < 0.0 || start.y >= src_size.y) {
-            hi = 0;
-        }
-    } else {
-        let ty0 = (0.0 - start.y) / ray_step.y;
-        let ty1 = (src_size.y - start.y) / ray_step.y;
-        lo = max(lo, i32(floor(clamp(min(ty0, ty1), t_min, t_max))) - 1);
-        hi = min(hi, i32(ceil(clamp(max(ty0, ty1), t_min, t_max))) + 1);
-    }
-
-    let light_color = vec3<f32>(params.color_r, params.color_g, params.color_b);
-    var acc = vec3<f32>(0.0);
-    for (var i = lo; i < hi; i++) {
-        let p = start + ray_step * f32(i);
-        let c = vec2<i32>(floor(p));
-        if (c.x < 0 || c.x >= src_dims.x || c.y < 0 || c.y >= src_dims.y) {
-            continue;
-        }
-        let s = textureLoad(src, c, 0);
-        // 実機の (c * a) >> 12 = プリマルチプライ。範囲外・アルファ0のサンプルは
-        // 読み飛ばすだけで、割る数は常に len のまま(黒として平均されるのと同じ)。
-        if (params.use_source_color != 0) {
-            acc += s.rgb * s.a;
+        if (abs(ray_step.x) < 1e-9) {
+            if (start.x < 0.0 || start.x >= src_size.x) {
+                hi = 0;
+            }
         } else {
-            acc += light_color * s.a;
+            let tx0 = (0.0 - start.x) / ray_step.x;
+            let tx1 = (src_size.x - start.x) / ray_step.x;
+            lo = max(lo, i32(floor(clamp(min(tx0, tx1), t_min, t_max))) - 1);
+            hi = min(hi, i32(ceil(clamp(max(tx0, tx1), t_min, t_max))) + 1);
+        }
+
+        if (abs(ray_step.y) < 1e-9) {
+            if (start.y < 0.0 || start.y >= src_size.y) {
+                hi = 0;
+            }
+        } else {
+            let ty0 = (0.0 - start.y) / ray_step.y;
+            let ty1 = (src_size.y - start.y) / ray_step.y;
+            lo = max(lo, i32(floor(clamp(min(ty0, ty1), t_min, t_max))) - 1);
+            hi = min(hi, i32(ceil(clamp(max(ty0, ty1), t_min, t_max))) + 1);
+        }
+
+        let light_color = vec3<f32>(params.color_r, params.color_g, params.color_b);
+        var acc = vec3<f32>(0.0);
+        for (var i = lo; i < hi; i++) {
+            let p = start + ray_step * f32(i);
+            let c = vec2<i32>(floor(p));
+            if (c.x < 0 || c.x >= src_dims.x || c.y < 0 || c.y >= src_dims.y) {
+                continue;
+            }
+            let s = textureLoad(src, c, 0);
+            // 実機の (c * a) >> 12 = プリマルチプライ。範囲外・アルファ0のサンプルは
+            // 読み飛ばすだけで、割る数は常に len のまま(黒として平均されるのと同じ)。
+            if (params.use_source_color != 0) {
+                acc += s.rgb * s.a;
+            } else {
+                acc += light_color * s.a;
+            }
+        }
+
+        let avg = acc / f32(len);
+        let avg_y = bt601_luma(avg);
+
+        // しきい値。実機は色差にも (avgY-T)/avgY を掛けてから 4096/(avgY-T) を掛けるが、
+        // 掛け合わせると T が完全に約分されるので、残るのは「輝度で割って明るさを
+        // アルファへ移すアンプリマルチプライ」だけになる(README手順5)。
+        let out_a = avg_y - params.threshold;
+        if (out_a > 0.0 && avg_y > 0.0) {
+            // out_a >= 1 ではアルファが飽和し、超過分は輝度側が持つ(超白)。
+            //
+            // ここで rgb を [0,1] にクランプしてはいけない。アンプリマルチプライは
+            // 「輝度で割って明るさをアルファへ移す」変換なので、彩度の高い色ほど
+            // ストレート色はガモット外へ出るのが正常な状態で(純赤なら 1/0.299 = 3.34 倍)、
+            // 合成時にアルファを掛け戻したところで初めて元のプリマルチプライド値に戻る。
+            // 潰すと掛け戻しが効かず、色指定時の光が実機よりはっきり薄くなる。実機も
+            // YC のまま合成して、RGB へのクリップは最後の表示時にしか行わない。
+            let rgb = avg / avg_y * max(out_a, 1.0);
+            light = vec4<f32>(rgb, min(out_a, 1.0));
         }
     }
 
-    let avg = acc / f32(len);
-    let avg_y = dot(avg, vec3<f32>(0.299, 0.587, 0.114));
-
-    // しきい値。実機は色差にも (avgY-T)/avgY を掛けてから 4096/(avgY-T) を掛けるが、
-    // 掛け合わせると T が完全に約分されるので、残るのは「輝度で割って明るさを
-    // アルファへ移すアンプリマルチプライ」だけになる(README手順5)。
-    let out_a = avg_y - params.threshold;
-    if (out_a <= 0.0 || avg_y <= 0.0) {
-        textureStore(outputTex, out_coord, vec4<f32>(0.0));
+    if (params.mode == 2) {
+        textureStore(outputTex, out_coord, light);
         return;
     }
 
-    // out_a >= 1 ではアルファが飽和し、超過分は輝度側が持つ(超白)。
-    //
-    // ここで rgb を [0,1] にクランプしてはいけない。アンプリマルチプライは
-    // 「輝度で割って明るさをアルファへ移す」変換なので、彩度の高い色ほど
-    // ストレート色はガモット外へ出るのが正常な状態で(純赤なら 1/0.299 = 3.34 倍)、
-    // 合成時にアルファを掛け戻したところで初めて元のプリマルチプライド値に戻る。
-    // 潰すと掛け戻しが効かず、色指定時の光が実機よりはっきり薄くなる。実機も
-    // YC のまま合成して、RGB へのクリップは最後の表示時にしか行わない。
-    let rgb = avg / avg_y * max(out_a, 1.0);
-    textureStore(outputTex, out_coord, vec4<f32>(rgb, min(out_a, 1.0)));
+    // 元オブジェクトを、拡張後の正しい位置に置き直す(旧common/expand.wgsl相当)。
+    // このシェーダーは冒頭で既に元オブジェクト座標(x, y)を求めており、これは
+    // expand.wgslの逆写像 in_coord = out_coord - offset (offset=(-x0,-y0)) と
+    // 完全に一致するので、追加の入力テクスチャなしに同じsrcから直接読める。
+    var base = vec4<f32>(0.0);
+    if (x >= 0 && x < src_dims.x && y >= 0 && y < src_dims.y) {
+        base = textureLoad(src, vec2<i32>(x, y), 0);
+    }
+
+    // 光のバッファの上に元オブジェクトを描き直す合成(旧merge.wgsl)。
+    // 前方に合成 = 加算、後方に合成 = 通常合成。
+    var out_alpha = 0.0;
+    var premul = vec3<f32>(0.0);
+    if (params.mode == 0) {
+        out_alpha = base.a + light.a - base.a * light.a;
+        premul = base.rgb * base.a + light.rgb * light.a;
+    } else {
+        out_alpha = base.a + light.a * (1.0 - base.a);
+        premul = base.rgb * base.a + light.rgb * light.a * (1.0 - base.a);
+    }
+
+    // 光のストレート色はガモット外に出ていることがある(上のコメント参照)。
+    // ここでクランプすると掛け戻しが効かなくなるので、プリマルチプライドで合成して
+    // 割り戻すだけにする。RGBへのクリップは実機と同じく最後の表示側に任せる。
+    var out_rgb = vec3<f32>(0.0);
+    if (out_alpha > 1e-6) {
+        out_rgb = premul / out_alpha;
+    }
+
+    textureStore(outputTex, out_coord, vec4<f32>(out_rgb, clamp(out_alpha, 0.0, 1.0)));
 }

@@ -1,5 +1,8 @@
 enable wgpu_binding_array;
 
+#import aperio::math::{floor_div}
+#import aperio::color::{bt601_encode, bt601_decode}
+
 struct MozaicVParams {
     size: i32,
     center_x: i32,
@@ -14,15 +17,6 @@ struct MozaicVParams {
 @group(0) @binding(2) var linear_sampler: sampler;
 
 @group(1) @binding(0) var<storage, read> params_array: MozaicVParams;
-
-fn floor_div(a: i32, b: i32) -> i32 {
-    var q = a / b;
-    let r = a % b;
-    if (r != 0 && ((r < 0) != (b < 0))) {
-        q = q - 1;
-    }
-    return q;
-}
 
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -79,9 +73,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let is_bright = !is_dark && (out_coord.x == x_first || out_coord.y == y_first);
 
         if (is_dark || is_bright) {
-            let y = dot(out_color.rgb, vec3<f32>(0.299, 0.587, 0.114));
-            let cr = (out_color.r - y) / 1.402000;
-            let cb = (out_color.b - y) / 1.772000;
+            let ycc = bt601_encode(out_color.rgb);
+            let y = ycc.z;
+            let cr = ycc.x;
+            let cb = ycc.y;
 
             var y2 = y;
             var cr2 = cr;
@@ -97,10 +92,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             }
 
             // クランプなし(実機と同じく満輝度を超えた値もそのまま書き込む)
-            let r = y2 + 1.402000 * cr2;
-            let g = y2 - 0.344136 * cb2 - 0.714136 * cr2;
-            let b = y2 + 1.772000 * cb2;
-            out_color = vec4(r, g, b, out_color.a);
+            out_color = vec4(bt601_decode(cr2, cb2, y2), out_color.a);
         }
     }
 

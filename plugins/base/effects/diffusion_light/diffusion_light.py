@@ -29,6 +29,7 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
 
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
+        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
 
         def load(path: str) -> str:
             with open(path, "r") as f:
@@ -43,11 +44,17 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
         self.expand_shader = PyCompiledWgsl(
             "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
         )
-        self.ycbcr_encode_shader = PyCompiledWgsl(
-            "ycbcr_encode", load(os.path.join(common_dir, "ycbcr_encode.wgsl")), aperio_plugin.image_generator, None
+        self.ycbcr_encode_shader = PyCompiledWgsl.compose_new(
+            "ycbcr_encode",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_encode.wgsl")),
+            aperio_plugin.image_generator,
         )
-        self.ycbcr_decode_shader = PyCompiledWgsl(
-            "ycbcr_decode", load(os.path.join(common_dir, "ycbcr_decode.wgsl")), aperio_plugin.image_generator, None
+        self.ycbcr_decode_shader = PyCompiledWgsl.compose_new(
+            "ycbcr_decode",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_decode.wgsl")),
+            aperio_plugin.image_generator,
         )
         self.composite_shader = PyCompiledWgsl(
             "diffusion_light_composite", load(os.path.join(current_dir, "composite.wgsl")), aperio_plugin.image_generator, None

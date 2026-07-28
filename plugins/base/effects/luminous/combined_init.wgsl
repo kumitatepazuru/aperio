@@ -1,5 +1,7 @@
 enable wgpu_binding_array;
 
+#import aperio::math::{curve_forward}
+
 struct CombinedInitParams {
     base: f32,
     offset: f32,
@@ -38,7 +40,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let cb = src.g + params.offset;
     var luma = src.b;
     if (params.apply_curve != 0) {
-        luma = pow(params.base, src.b * 256.0) - 1.0;
+        luma = curve_forward(params.base, src.b);
     }
 
     textureStore(outputTex, coord, vec4<f32>(cr, cb, luma, 1.0));

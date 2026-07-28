@@ -2,6 +2,7 @@ import os
 import struct
 
 import aperio_plugin
+from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
@@ -16,8 +17,15 @@ class ColorAdjustmentEffect(VideoEffectGeneratorBase):
         self.description = "Adjusts brightness, contrast, hue, luminance, and saturation."
 
         current_dir = os.path.dirname(__file__)
-        with open(os.path.join(current_dir, "color.wgsl"), "r") as f:
-            self.color_shader = PyCompiledWgsl("color", f.read(), aperio_plugin.image_generator, None)
+        common_dir = os.path.join(current_dir, "..", "common")
+        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+
+        self.color_shader = PyCompiledWgsl.compose_new(
+            "color",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "color.wgsl")),
+            aperio_plugin.image_generator,
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)

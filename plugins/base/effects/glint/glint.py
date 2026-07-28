@@ -32,19 +32,13 @@ class GlintEffect(VideoEffectGeneratorBase):
 
         current_dir = os.path.dirname(__file__)
         common_dir = os.path.join(current_dir, "..", "common")
+        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
 
-        def load(path: str) -> str:
-            with open(path, "r") as f:
-                return f.read()
-
-        self.glint_shader = PyCompiledWgsl(
-            "glint", load(os.path.join(current_dir, "glint.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.merge_shader = PyCompiledWgsl(
-            "glint_merge", load(os.path.join(current_dir, "merge.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.expand_shader = PyCompiledWgsl(
-            "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
+        self.glint_shader = PyCompiledWgsl.compose_new(
+            "glint",
+            [color_module],
+            gpu_util.create_naga_module(os.path.join(current_dir, "glint.wgsl")),
+            aperio_plugin.image_generator,
         )
 
     @event(type=GeneratorEvent.New)
@@ -159,39 +153,30 @@ class GlintEffect(VideoEffectGeneratorBase):
 
         ow, oh = x1 - x0, y1 - y0
 
+        # mode: 0=前方に合成(加算)、1=後方に合成(通常)、2=光成分のみ。
+        # glint.wgsl は元オブジェクト座標(x, y)を自前で計算済みなので、旧
+        # expand.wgsl の逆写像と一致するその座標からベースピクセルを直接読み、
+        # 旧merge.wgslのブレンド式もそのまま内部で適用する(拡張・合成の
+        # 2パスを削って1ディスパッチにまとめてある)。
+        if blend_mode == "light_only":
+            mode = 2
+        elif blend_mode == "back":
+            mode = 1
+        else:
+            mode = 0
+
         glint_params = struct.pack(
-            "iiiiiiififff",
+            "iiiiiiififffi",
             x0, y0, ow, oh,
             cx, cy,
             sample_cap,
             threshold,
             1 if use_source_color else 0,
             color[0], color[1], color[2],
+            mode,
         )
 
-        light_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.glint_shader, glint_params, ow, oh)
-
-        if blend_mode == "light_only":
-            builder = light_branch
-        else:
-            # 光のバッファの上に元オブジェクトを、拡張後の正しい位置に置き直す。
-            # 前方に合成 = 加算、後方に合成 = 通常合成(merge.wgsl の冒頭を参照)。
-            base_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
-                self.expand_shader,
-                struct.pack("iiiiffff", -x0, -y0, ow, oh, 0.0, 0.0, 0.0, 0.0),
-                ow,
-                oh,
-            )
-            builder = (
-                gpu_util.PyImageGenerateBuilder()
-                .add_parallel_wgsl([base_branch, light_branch])
-                .add_wgsl(
-                    self.merge_shader,
-                    struct.pack("i", 1 if blend_mode == "back" else 0),
-                    ow,
-                    oh,
-                )
-            )
+        builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.glint_shader, glint_params, ow, oh)
 
         # 拡張後キャンバスの中心に対するオブジェクト中心のずれを打ち消して、
         # オブジェクトを元の位置に留める(実機のfpip+0xD4/+0xD8の補正と同じ式)。
