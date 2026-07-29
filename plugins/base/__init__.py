@@ -29,6 +29,7 @@ class AperioBasePlugin(MainPluginBase):
         self.description = "This is a plugin that provides basic effects/objects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
+        self.num_sub_plugins = 15
 
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, BoundaryBlurEffect())

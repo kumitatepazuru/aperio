@@ -11,6 +11,7 @@ from aperio.item_structures import PluginNameInfo
 
 from .plugin_base import MainPluginBase, SubPluginBase
 from .plugin_base.generator_base import *
+from .plugin_load_progress import PluginLoadProgressWindow
 
 # TODO: PluginLoaderに改名、ファイル名も改名
 class PluginManager:
@@ -35,7 +36,13 @@ class PluginManager:
         self.audio_object_plugins = {}
         self.audio_effect_plugins = {}
 
+        self._progress: PluginLoadProgressWindow | None = PluginLoadProgressWindow()
+        self._bar3_master: MainPluginBase | None = None
+
         dirs = glob.glob(f"{self.data_dir}/{self.plugin_dir_name}/*")
+
+        self._progress.set_bar1(50, "プラグインを登録中")
+        self._progress.start_bar2(len(dirs), "")
 
         for dir in dirs:
             plugin_name = os.path.basename(dir)
@@ -43,6 +50,7 @@ class PluginManager:
                 logger.warning(
                     f"Plugin {plugin_name} does not have an __init__.py file. Skipping."
                 )
+                self._progress.step_bar2(plugin_name)
                 continue
 
             try:
@@ -51,7 +59,12 @@ class PluginManager:
                 logger.error(traceback.format_exc())
                 logger.error(f"Failed to import plugin {plugin_name}: {e}")
 
+            self._progress.step_bar2(plugin_name)
+
         self.__load_plugins()
+
+        self._progress.close()
+        self._progress = None
 
     def __load_plugins(self):
         """
@@ -61,10 +74,21 @@ class PluginManager:
         """
         logger.info("Beginning to load plugins...")
         t = time.perf_counter()
+
+        if self._progress:
+            self._progress.set_bar1(100, "サブプラグインを登録中")
+            self._progress.start_bar2(len(self.__plugins), "")
+
         for name, plugin_cls in self.__plugins.items():
+            if self._progress:
+                self._progress.step_bar2(name)
             if name in self.plugins:
                 logger.warning(f"Plugin {name} is already registered. Skipping.")
                 continue
+
+            self._bar3_master = None
+            if self._progress:
+                self._progress.hide_bar3()
 
             try:
                 plugin_instance = plugin_cls()
@@ -121,7 +145,18 @@ class PluginManager:
         if not issubclass(func, MainPluginBase):
             raise TypeError("The decorated class must be a subclass of MainPluginBase")
 
-        cls.__plugins[func.__name__] = func
+        if func.__name__ in cls.__plugins:
+            logger.warning(
+                f"A plugin with the name '{func.__name__}' is already registered."
+            )
+            index = 1
+            for name in cls.__plugins.keys():
+                if name.startswith(func.__name__):
+                    index += 1
+
+            cls.__plugins[f"{func.__name__}_{index}"] = func
+        else:
+            cls.__plugins[func.__name__] = func
 
         def wrapper(*_args, **_kwargs):
             raise RuntimeError(
@@ -158,6 +193,12 @@ class PluginManager:
                 "The plugin must be a subclass of ObjectGeneratorBase or EffectGeneratorBase"
             )
 
+        if self._progress and master.num_sub_plugins >= 1:
+            if self._bar3_master is not master:
+                self._progress.start_bar3(master.num_sub_plugins, plugin.display_name)
+                self._bar3_master = master
+            self._progress.step_bar3(plugin.display_name)
+
     def check_plugin_exists(self, plugin_name: str) -> bool:
         """
         指定された名前のプラグインが存在するかどうかを確認する。
@@ -183,42 +224,52 @@ class PluginManager:
         """
         # TODO: URLからのダウンロードや、zipファイルの解凍などもここで行う
 
-        if not os.path.exists(plugin_dir) or not os.path.isdir(plugin_dir):
-            logger.error(f"Plugin directory {plugin_dir} does not exist.")
-            return False
-
-        plugin_name = os.path.basename(plugin_dir)
-        if plugin_name in self.plugins:
-            # 既に登録されている場合は__init__.pyのハッシュ値を比較して、異なる場合のみ更新する
-            # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
-            logger.info(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
-            if not os.path.exists(f"{plugin_dir}/__init__.py"):
-                logger.warning(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+        self._progress = PluginLoadProgressWindow()
+        self._bar3_master = None
+        try:
+            if not os.path.exists(plugin_dir) or not os.path.isdir(plugin_dir):
+                logger.error(f"Plugin directory {plugin_dir} does not exist.")
                 return False
 
-            with open(f"{plugin_dir}/__init__.py", "rb") as f:
-                new_hash = hashlib.sha256(f.read()).hexdigest()
-                with open(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py", "rb") as ef:
-                    existing_hash = hashlib.sha256(ef.read()).hexdigest()
-                    if new_hash == existing_hash:
-                        logger.info(f"Plugin {plugin_name} is completely same. Skipping.")
-                        return True
+            plugin_name = os.path.basename(plugin_dir)
+            self._progress.set_bar1(50, "プラグインを登録中")
+            self._progress.start_bar2(1, plugin_name)
 
-        shutil.copytree(plugin_dir, f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}", dirs_exist_ok=True)
+            if plugin_name in self.plugins:
+                # 既に登録されている場合は__init__.pyのハッシュ値を比較して、異なる場合のみ更新する
+                # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
+                logger.info(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
+                if not os.path.exists(f"{plugin_dir}/__init__.py"):
+                    logger.warning(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
+                    return False
 
-        # プラグインを再読み込みして登録する
-        if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
-            logger.warning(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
-            return False
-        try:
-            __import__(f"{self.plugin_dir_name}.{plugin_name}")
-        except Exception as e:
-            logger.error(f"Failed to import plugin {plugin_name}: {e}")
-            return False
-        
-        logger.info(f"Plugin {plugin_name} has been added/updated.")
-        self.__load_plugins()
-        return True
+                with open(f"{plugin_dir}/__init__.py", "rb") as f:
+                    new_hash = hashlib.sha256(f.read()).hexdigest()
+                    with open(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py", "rb") as ef:
+                        existing_hash = hashlib.sha256(ef.read()).hexdigest()
+                        if new_hash == existing_hash:
+                            logger.info(f"Plugin {plugin_name} is completely same. Skipping.")
+                            return True
+
+            shutil.copytree(plugin_dir, f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}", dirs_exist_ok=True)
+
+            # プラグインを再読み込みして登録する
+            if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
+                logger.warning(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
+                return False
+            try:
+                __import__(f"{self.plugin_dir_name}.{plugin_name}")
+            except Exception as e:
+                logger.error(f"Failed to import plugin {plugin_name}: {e}")
+                return False
+
+            self._progress.step_bar2(plugin_name)
+            logger.info(f"Plugin {plugin_name} has been added/updated.")
+            self.__load_plugins()
+            return True
+        finally:
+            self._progress.close()
+            self._progress = None
 
     def get_plugin_names(self) -> PluginNameInfo:
         """

@@ -43,6 +43,7 @@ class MainPluginBase(PluginBase):
         super().__init__()
         self.version = "0.1.0"
         self.author = "Your Name"
+        self.num_sub_plugins = -1
 
     def get_display_info(self) -> str:
         """
