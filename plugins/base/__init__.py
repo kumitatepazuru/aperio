@@ -1,5 +1,5 @@
 import aperio_plugin
-from aperio_plugin import PluginManager
+from aperio_plugin.plugin_manager import PluginManager
 from aperio_plugin.plugin_base import MainPluginBase
 
 
