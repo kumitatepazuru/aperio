@@ -6,6 +6,7 @@ from aperio_plugin.plugin_base import MainPluginBase
 from .effects.blur.blur import BlurEffect
 from .effects.boundary_blur.blur import BoundaryBlurEffect
 from .effects.chroma_key.chroma_key import ChromaKeyEffect
+from .effects.color_key.color_key import ColorKeyEffect
 from .effects.adjustments.color import ColorAdjustmentEffect
 from .effects.clip.clip import ClipEffect
 from .effects.diffusion_light.diffusion_light import DiffusionLightEffect
@@ -31,6 +32,7 @@ class AperioBasePlugin(MainPluginBase):
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, BoundaryBlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, ChromaKeyEffect())
+        aperio_plugin.manager.register_sub_plugin(self, ColorKeyEffect())
         aperio_plugin.manager.register_sub_plugin(self, ColorAdjustmentEffect())
         aperio_plugin.manager.register_sub_plugin(self, ClipEffect())
         aperio_plugin.manager.register_sub_plugin(self, DiffusionLightEffect())

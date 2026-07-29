@@ -1,7 +1,7 @@
 enable wgpu_binding_array;
 
 #import aperio::color::{bt601_encode, bt601_decode}
-#import aperio::blur::{plain_box_sum}
+#import aperio::blur::{plain_box_sum, border_stretch}
 #import aperio::chroma_key::{unmix_factor, unmix}
 
 struct ChromaKeyBorderPass3Params {
@@ -52,17 +52,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // README: 「ブレンドではなく積」。二重ボックス平均した値と、このピクセル自身の
     // 生の map_b との積を取ることで、キー側(map_b=0)は平均後もにじまず0のまま保たれる。
-    let v = avg_b * map_b;
     let r_f = f32(radius);
-    let t = (v - params.a_const) * r_f + params.b_const;
+    let bs = border_stretch(avg_b, map_b, r_f, params.a_const, params.b_const);
 
     let src = textureLoad(orig_tex, coord, 0);
-    var alpha = src.a;
-    if (v <= 0.0 || t <= 0.0) {
-        alpha = 0.0;
-    } else {
-        alpha = alpha * clamp(t, 0.0, 1.0);
-    }
+    var alpha = src.a * bs.factor;
 
     let ycc = bt601_encode(src.rgb);
     let cr = ycc.x;
@@ -70,7 +64,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let y = ycc.z;
     let sat = max(abs(cb), abs(cr));
 
-    var base_term = t;
+    var base_term = bs.t;
     if (params.color_correction != 0) {
         base_term = map_c;
     }
