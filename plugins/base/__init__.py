@@ -12,6 +12,7 @@ from .effects.clip.clip import ClipEffect
 from .effects.diffusion_light.diffusion_light import DiffusionLightEffect
 from .effects.glint.glint import GlintEffect
 from .effects.glow.glow import GlowEffect
+from .effects.luma_key.luma_key import LumaKeyEffect
 from .effects.luminous.luminous import LuminousEffect
 from .effects.mozaic.mozaic import MozaicEffect
 from .objects.audio.audio import AudioObject
@@ -38,6 +39,7 @@ class AperioBasePlugin(MainPluginBase):
         aperio_plugin.manager.register_sub_plugin(self, DiffusionLightEffect())
         aperio_plugin.manager.register_sub_plugin(self, GlintEffect())
         aperio_plugin.manager.register_sub_plugin(self, GlowEffect())
+        aperio_plugin.manager.register_sub_plugin(self, LumaKeyEffect())
         aperio_plugin.manager.register_sub_plugin(self, LuminousEffect())
         aperio_plugin.manager.register_sub_plugin(self, MozaicEffect())
         aperio_plugin.manager.register_sub_plugin(self, AudioObject())
