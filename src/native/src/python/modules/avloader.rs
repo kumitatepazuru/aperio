@@ -1,4 +1,5 @@
-use avloader::{AudioLoader, ColorFormat, VideoLoader};
+use avloader::{AudioLoader, ColorFormat, ImageLoader, VideoLoader};
+use half::f16;
 use numpy::{ndarray::Array2, ndarray::Array3, IntoPyArray, PyArray2, PyArray3};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -28,6 +29,24 @@ impl From<ColorFormat> for PyColorFormat {
     }
 }
 
+/// リトルエンディアン f16 のタイトパック済みバイト列を `(height, width, channels)`
+/// の numpy 配列（dtype `float16`）に変換する。VideoLoader/ImageLoader 共通。
+fn f16_bytes_to_pyarray<'py>(
+    py: Python<'py>,
+    bytes: &[u8],
+    height: usize,
+    width: usize,
+    channels: usize,
+) -> PyResult<Bound<'py, PyArray3<f16>>> {
+    let half_data: Vec<f16> = bytes
+        .chunks_exact(2)
+        .map(|b| f16::from_le_bytes([b[0], b[1]]))
+        .collect();
+    let arr = Array3::<f16>::from_shape_vec((height, width, channels), half_data)
+        .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
+    Ok(arr.into_pyarray(py))
+}
+
 // ─────────────────────────────────────────────────────────────
 //  VideoLoader ラッパー
 // ─────────────────────────────────────────────────────────────
@@ -37,7 +56,7 @@ impl From<ColorFormat> for PyColorFormat {
 /// ```python
 /// loader = VideoLoader("/path/to/video.mp4", 30.0, image_generator)
 ///
-/// # shape: (height, width, channels) dtype: uint8
+/// # shape: (height, width, channels) dtype: float16
 /// frame = loader.get_frame(1)
 ///
 /// # GPU テクスチャ (Rgba8Unorm)
@@ -96,16 +115,14 @@ impl PyVideoLoader {
     /// 指定フレーム（1 始まり）を numpy 配列で返す。
     ///
     /// **shape**: `(height, width, channels)` — channels は 3 (RGB) または 4 (RGBA)
-    /// **dtype**: `uint8`
-    ///
-    /// GStreamer バッファ → Vec への 1 回コピー後、Vec の所有権を numpy に移譲するため
-    /// 追加のメモリコピーは発生しない。
+    /// **dtype**: `float16` — ソースのビット深度によらず常に f16 で返す
+    /// （YUV 平面から CPU 上で直接変換するため、10/12/16bit ソースも精度を落とさない）。
     pub fn get_frame<'py>(
         &self,
         py: Python<'py>,
         frame_number: u64,
         target_fps: f64,
-    ) -> PyResult<Bound<'py, PyArray3<u8>>> {
+    ) -> PyResult<Bound<'py, PyArray3<f16>>> {
         let data = self
             .inner
             .get_frame(frame_number, target_fps)
@@ -113,12 +130,9 @@ impl PyVideoLoader {
 
         let h = self.inner.get_height() as usize;
         let w = self.inner.get_width() as usize;
-        let c = self.inner.get_color_format().bytes_per_pixel();
+        let c = self.inner.get_color_format().channel_count();
 
-        // Vec → ndarray::Array3 → numpy（所有権移譲、コピーなし）
-        let arr = Array3::<u8>::from_shape_vec((h, w, c), data)
-            .map_err(|e| PyValueError::new_err(format!("reshape failed: {e}")))?;
-        Ok(arr.into_pyarray(py))
+        f16_bytes_to_pyarray(py, &data, h, w, c)
     }
 
     /// 指定フレームを GPU テクスチャ（`PyTexture`, Rgba8Unorm）で返す。
@@ -145,6 +159,96 @@ impl PyVideoLoader {
     ) -> PyResult<Option<PyTexture>> {
         let (frame_number, target_fps) = params;
         self.get_texture_frame(frame_number, target_fps).map(Some)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  ImageLoader ラッパー
+// ─────────────────────────────────────────────────────────────
+
+/// 1 つの静止画ファイルを扱うローダー。VideoLoader と同じ `avloader_video_*` FFI を
+/// 流用して開く（FFmpeg は静止画も1フレームの動画として開けるため）。動画ファイルを
+/// 渡した場合も検証・拒否はせず、最初の1フレームのみをデコードする。
+///
+/// ```python
+/// loader = ImageLoader("/path/to/image.png", image_generator)
+///
+/// # shape: (height, width, channels) dtype: float16
+/// frame = loader.get_frame()
+///
+/// # GPU テクスチャ (Rgba16Float)
+/// tex = loader.get_texture_frame()
+/// ```
+#[pyclass]
+pub struct PyImageLoader {
+    inner: ImageLoader,
+}
+
+#[pymethods]
+impl PyImageLoader {
+    /// 画像ファイルを開く。デコード（YUV 平面・GPU テクスチャの両方）はコンストラクタ
+    /// 内で一度だけ実行される。`get_frame()` の RGB(A) バイト列への変換は初回呼び出し
+    /// まで遅延され、以降はキャッシュを返す。
+    ///
+    /// # Arguments
+    /// - `path`            : 画像ファイルパス（UTF-8）
+    /// - `image_generator` : GPU リソース管理（`PyImageGenerator`）
+    #[new]
+    pub fn new(path: &str, image_generator: &PyImageGenerator) -> PyResult<Self> {
+        let inner = ImageLoader::new(path, image_generator.inner.clone())
+            .map_err(|e| PyValueError::new_err(format!("ImageLoader::new: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// 画像の幅（px）。
+    #[getter]
+    pub fn width(&self) -> u32 {
+        self.inner.get_width()
+    }
+
+    /// 画像の高さ（px）。
+    #[getter]
+    pub fn height(&self) -> u32 {
+        self.inner.get_height()
+    }
+
+    /// カラーフォーマット。
+    #[getter]
+    pub fn color_format(&self) -> PyColorFormat {
+        self.inner.get_color_format().into()
+    }
+
+    /// 画像を numpy 配列で返す。
+    ///
+    /// **shape**: `(height, width, channels)` — channels は 3 (RGB) または 4 (RGBA)
+    /// **dtype**: `float16`
+    ///
+    /// 初回呼び出し時にのみ YUV 平面から CPU で変換し、以降はキャッシュを返す。
+    pub fn get_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f16>>> {
+        let data = self
+            .inner
+            .get_frame()
+            .map_err(|e| PyValueError::new_err(format!("get_frame: {e}")))?;
+        let h = self.inner.get_height() as usize;
+        let w = self.inner.get_width() as usize;
+        let c = self.inner.get_color_format().channel_count();
+
+        f16_bytes_to_pyarray(py, &data, h, w, c)
+    }
+
+    /// 画像を GPU テクスチャ（`PyTexture`, Rgba16Float）で返す。
+    ///
+    /// コンストラクタで構築済みのテクスチャを共有する（Arc 参照カウント増加のみ、
+    /// 追加のデコード・GPU 転送は発生しない）。
+    pub fn get_texture_frame(&self) -> PyTexture {
+        let tex = self.inner.get_texture_frame();
+        let width = tex.width();
+        let height = tex.height();
+        PyTexture {
+            inner: tex,
+            width,
+            height,
+        }
     }
 }
 
@@ -252,6 +356,8 @@ pub mod avloader_register {
     use super::PyAudioLoader;
     #[pymodule_export]
     use super::PyColorFormat;
+    #[pymodule_export]
+    use super::PyImageLoader;
     #[pymodule_export]
     use super::PyVideoLoader;
 }

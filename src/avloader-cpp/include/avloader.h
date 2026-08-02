@@ -39,9 +39,12 @@ int avloader_video_decode_frame(AvLoaderHandle h, uint64_t frame_num, double tar
                                  int num_planes, uint8_t** plane_bufs,
                                  const int* bytes_per_row);
 
-// Decode frame_num to RGB24 (channels=3) or RGBA32 (channels=4).
+// Decode frame_num to RGB48LE (channels=3) or RGBA64LE (channels=4) — 16-bit
+// unsigned per channel, via swscale with BT.709 coefficients and the source's
+// actual color range (limited/full) explicitly configured to match the GPU
+// shader path.
 // target_fps: frame rate used for frame-number ↔ timestamp mapping.
-// out_buf must hold at least width * height * channels bytes.
+// out_buf must hold at least width * height * channels * 2 bytes.
 // Thread-safe: serialised by an internal mutex.
 // Returns 0 on success, -1 on failure.
 int avloader_video_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double target_fps,

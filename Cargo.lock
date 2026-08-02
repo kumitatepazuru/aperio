@@ -132,6 +132,7 @@ dependencies = [
  "cpal",
  "env_logger",
  "gpu_util",
+ "half",
  "libc",
  "log",
  "naga_oil",
@@ -189,6 +190,7 @@ dependencies = [
  "bytemuck",
  "cc",
  "gpu_util",
+ "half",
  "wgpu",
 ]
 
@@ -1396,6 +1398,7 @@ version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778da78c64ddc928ebf5ad9df5edf0789410ff3bdbf3619aed51cd789a6af1e2"
 dependencies = [
+ "half",
  "libc",
  "ndarray",
  "num-complex",

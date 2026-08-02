@@ -512,7 +512,7 @@ int avloader_video_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double
     if (!decode_to_time(ldr, target_time, target_fps)) return -1;
 
     AVPixelFormat src_fmt = static_cast<AVPixelFormat>(ldr->frame->format);
-    AVPixelFormat dst_fmt = (channels == 4) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24;
+    AVPixelFormat dst_fmt = (channels == 4) ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGB48LE;
     SwsContext*&  sws_ref = (channels == 4) ? ldr->sws_rgba : ldr->sws_rgb;
 
     if (sws_ref && src_fmt != ldr->pix_fmt) {
@@ -524,11 +524,18 @@ int avloader_video_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double
                                  ldr->width, ldr->height, dst_fmt,
                                  SWS_BICUBIC, nullptr, nullptr, nullptr);
         if (!sws_ref) return -1;
+
+        // Explicitly match the GPU shader path (BT.709, source's actual
+        // limited/full range) instead of relying on swscale's defaults.
+        const int* coeff = sws_getCoefficients(SWS_CS_ITU709);
+        int src_range = (ldr->color_range == AVCOL_RANGE_JPEG) ? 1 : 0;
+        sws_setColorspaceDetails(sws_ref, coeff, src_range, coeff, /*dstRange=*/1,
+                                 0, 1 << 16, 1 << 16);
         ldr->pix_fmt = src_fmt;
     }
 
     uint8_t* dst_data[4]     = { out_buf, nullptr, nullptr, nullptr };
-    int      dst_linesize[4] = { ldr->width * channels, 0, 0, 0 };
+    int      dst_linesize[4] = { ldr->width * channels * 2, 0, 0, 0 };
 
     sws_scale(sws_ref,
               const_cast<const uint8_t**>(ldr->frame->data), ldr->frame->linesize,

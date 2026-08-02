@@ -275,7 +275,7 @@ fn bg_worker(inner: Arc<FrameCacheInner>) {
     }
 }
 
-fn decode_one(
+pub(crate) fn decode_one(
     decoder: &DecoderRef,
     frame_num: u64,
     descs: &[PlaneDesc],

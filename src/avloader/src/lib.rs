@@ -4,9 +4,13 @@ mod ffi {
 }
 
 mod audio_loader;
+mod common;
 mod frame_cache;
+mod image_loader;
 mod video_loader;
 mod yuv_pipeline;
 
 pub use audio_loader::AudioLoader;
-pub use video_loader::{ColorFormat, VideoLoader};
+pub use common::ColorFormat;
+pub use image_loader::ImageLoader;
+pub use video_loader::VideoLoader;
