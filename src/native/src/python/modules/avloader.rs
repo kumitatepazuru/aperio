@@ -250,6 +250,17 @@ impl PyImageLoader {
             height,
         }
     }
+
+    /// パイプライン経由で画像を GPU テクスチャで返す利便メソッド。静止画は常に
+    /// コンストラクタで構築済みの同じテクスチャを返すだけなので、`params`/`inputs`
+    /// は使わない(`PyVideoLoader::get_frame_for_pipeline` と同様の呼び出し規約)。
+    pub fn get_frame_for_pipeline(
+        &mut self,
+        _inputs: Vec<Py<PyTexture>>,
+        _params: Option<Py<PyAny>>,
+    ) -> PyResult<Option<PyTexture>> {
+        Ok(Some(self.get_texture_frame()))
+    }
 }
 
 // ─────────────────────────────────────────────────────────────

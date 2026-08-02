@@ -1,7 +1,7 @@
 from .gpu_util import PyImageGenerator, PyTexture
 from _typeshed import Incomplete
 from collections.abc import Sequence
-from typing import Final, final
+from typing import Any, Final, final
 
 @final
 class ColorFormat:
@@ -33,6 +33,7 @@ class PyImageLoader:
     @property
     def color_format(self, /) -> ColorFormat: ...
     def get_frame(self, /) -> Incomplete: ...
+    def get_frame_for_pipeline(self, /, _inputs: Sequence[PyTexture], _params: Any |None) -> PyTexture |None: ...
     def get_texture_frame(self, /) -> PyTexture: ...
     @property
     def height(self, /) -> int: ...

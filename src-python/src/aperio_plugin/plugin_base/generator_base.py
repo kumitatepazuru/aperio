@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from aperio.item_structures import ItemResult, ItemStructure
+from aperio.item_structures import AdditionalObject, ItemResult, ItemStructure
 from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerateBuilder
 import numpy as np
 import numpy.typing as npt
@@ -48,6 +48,17 @@ class VideoGenerateParameters:
     """生成元のフレームの幅。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
     height: int
     """生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
+
+@dataclass
+class AudioGeneratorReturn:
+    """オーディオの generate() の戻り値。additional_object は video 側の
+    ItemResult.additional_object と対称な仕組みで、自分と同じ時間窓に
+    加算ミックスする追加のオーディオアイテムを指定できる(behind は無視される。
+    音声は加算合成なので順序に意味が無いため)。"""
+
+    samples: "npt.NDArray[np.float32]"
+    additional_object: "AdditionalObject | None" = None
+
 
 @dataclass
 class AudioGenerateParameters:
@@ -101,7 +112,7 @@ class AudioGeneratorBase(SubPluginBase):
     def __init__(self):
         super().__init__()
 
-    def generate(self, params: AudioGenerateParameters) -> npt.NDArray[np.float32] | None:
+    def generate(self, params: AudioGenerateParameters) -> AudioGeneratorReturn | None:
         """
         オーディオサンプルを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -109,7 +120,7 @@ class AudioGeneratorBase(SubPluginBase):
             params (AudioGenerateParameters): オーディオサンプル生成に必要なパラメーター
 
         Returns:
-            npt.NDArray[np.float32] | None: 生成されたオーディオサンプルの2次元配列。Noneを返すとその処理はスキップされる。
+            AudioGeneratorReturn | None: 生成されたオーディオサンプル(+任意で追加オーディオオブジェクト)。Noneを返すとその処理はスキップされる。
         """
         raise NotImplementedError("Subclasses must implement this method")
 

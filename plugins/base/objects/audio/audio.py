@@ -9,7 +9,7 @@ import numpy.typing as npt
 from aperio.avloader import PyAudioLoader
 from aperio.item_structures import *
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import AudioGenerateParameters, AudioObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import AudioGenerateParameters, AudioGeneratorReturn, AudioObjectGeneratorBase
 
 
 class AudioObject(AudioObjectGeneratorBase):
@@ -105,7 +105,7 @@ class AudioObject(AudioObjectGeneratorBase):
 
         return None
 
-    def generate(self, params: AudioGenerateParameters) -> npt.NDArray[np.float32] | None:
+    def generate(self, params: AudioGenerateParameters) -> AudioGeneratorReturn | None:
         link_video = params.args.get("link_video", False)
 
         if link_video:
@@ -161,4 +161,4 @@ class AudioObject(AudioObjectGeneratorBase):
         elif raw.shape[1] > duration_samples:
             raw = raw[:, : duration_samples]
 
-        return raw
+        return AudioGeneratorReturn(samples=raw)

@@ -5,6 +5,7 @@ class PluginBase:
     name: str
     display_name: str
     description: str
+    is_hidden: bool
     def __init__(self) -> None:
         """
         プラグインの初期化を行う。必要に応じてサブクラスでオーバーライドする。

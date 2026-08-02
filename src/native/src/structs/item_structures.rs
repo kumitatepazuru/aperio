@@ -25,12 +25,15 @@ pub struct ItemResult {
     pub center_x: Option<i32>,
     pub center_y: Option<i32>,
     pub rotate: Option<f64>,
+    // エフェクトが「自分の背面/前面に追加のオブジェクトを流し込みたい」場合に使う。
+    // 合成ループは additional_object.item を実アイテムと全く同じコードパスで処理する。
+    pub additional_object: Option<AdditionalObject>,
 }
 
 #[pymethods]
 impl ItemResult {
     #[new]
-    #[pyo3(signature = (width, height, x=None, y=None, center_x=None, center_y=None, rotate=None))]
+    #[pyo3(signature = (width, height, x=None, y=None, center_x=None, center_y=None, rotate=None, additional_object=None))]
     fn new(
         width: i32,
         height: i32,
@@ -39,6 +42,7 @@ impl ItemResult {
         center_x: Option<i32>,
         center_y: Option<i32>,
         rotate: Option<f64>,
+        additional_object: Option<AdditionalObject>,
     ) -> Self {
         Self {
             width,
@@ -48,13 +52,14 @@ impl ItemResult {
             center_x,
             center_y,
             rotate,
+            additional_object,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "ItemResult(width={:?}, height={:?}, x={:?}, y={:?}, center_x={:?}, center_y={:?}, rotate={:?})",
-            self.width, self.height, self.x, self.y, self.center_x, self.center_y, self.rotate
+            "ItemResult(width={:?}, height={:?}, x={:?}, y={:?}, center_x={:?}, center_y={:?}, rotate={:?}, additional_object={:?})",
+            self.width, self.height, self.x, self.y, self.center_x, self.center_y, self.rotate, self.additional_object
         )
     }
 }
@@ -186,17 +191,36 @@ pub struct GenerateStructure {
     pub parameters: HashMap<String, JsonValue>, // パラメータの具体的な型はエフェクトによって異なるため、単にdict(JsonValue)型とする
 }
 
+#[pymethods]
+impl GenerateStructure {
+    /// Python側から additionalObject 用に GenerateStructure を新規構築するためのコンストラクタ。
+    #[new]
+    fn new(
+        py: Python<'_>,
+        id: String,
+        name: String,
+        display_name: String,
+        parameters: Py<PyDict>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            id,
+            name,
+            display_name,
+            parameters: parameters.bind(py).extract()?,
+        })
+    }
+}
+
 #[napi]
 #[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ItemStructure {
+    #[pyo3(constructor = (id, layer, start, end, x, y, scale, rotation, alpha, object, effects, min=None, max=None))]
     Video {
         id: String,
         layer: i32,
-        start: i32,       // アイテムの開始フレーム
-        end: i32,         // アイテムの終了フレーム
-        min: Option<i32>, // アイテムの有効な最小フレーム（省略可能）
-        max: Option<i32>, // アイテムの有効な最大フレーム（省略可能）
+        start: i32, // アイテムの開始フレーム
+        end: i32,   // アイテムの終了フレーム
         x: i32,
         y: i32,
         scale: f64,
@@ -204,19 +228,31 @@ pub enum ItemStructure {
         alpha: f64,
         object: GenerateStructure,
         effects: Vec<GenerateStructure>,
+        min: Option<i32>, // アイテムの有効な最小フレーム（省略可能）
+        max: Option<i32>, // アイテムの有効な最大フレーム（省略可能）
     },
+    #[pyo3(constructor = (id, layer, start, end, volume, pan, object, effects, min=None, max=None))]
     Audio {
         id: String,
         layer: i32,
         start: i32, // アイテムの開始フレーム
         end: i32,   // アイテムの終了フレーム
-        min: Option<i32>,
-        max: Option<i32>,
         volume: f64,
         pan: f64,
         object: GenerateStructure,
         effects: Vec<GenerateStructure>,
+        min: Option<i32>,
+        max: Option<i32>,
     },
+}
+
+#[napi(object)]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug, PyDataclass)]
+pub struct AdditionalObject {
+    pub item: ItemStructure,
+    /// true = 挿入元アイテムより背面(下)に挿入 / false = 前面(上)に挿入
+    pub behind: bool,
 }
 
 #[napi(object)]
@@ -253,6 +289,8 @@ pub struct PluginNameInfo {
 
 #[pymodule(module = "aperio.item_structures")]
 pub mod item_structures {
+    #[pymodule_export]
+    use super::AdditionalObject;
     #[pymodule_export]
     use super::FileFilter;
     #[pymodule_export]

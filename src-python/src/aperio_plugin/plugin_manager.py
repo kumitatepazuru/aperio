@@ -280,8 +280,16 @@ class PluginManager:
         """
         return PluginNameInfo(
             base_plugin={plugin.name: plugin.display_name for plugin in self.plugins.values()},
-            video_object_plugins={name: plugin.display_name for name, plugin in self.video_object_plugins.items()},
-            video_effect_plugins={name: plugin.display_name for name, plugin in self.video_effect_plugins.items()},
-            audio_object_plugins={name: plugin.display_name for name, plugin in self.audio_object_plugins.items()},
-            audio_effect_plugins={name: plugin.display_name for name, plugin in self.audio_effect_plugins.items()},
+            video_object_plugins={
+                name: plugin.display_name for name, plugin in self.video_object_plugins.items() if not plugin.is_hidden
+            },
+            video_effect_plugins={
+                name: plugin.display_name for name, plugin in self.video_effect_plugins.items() if not plugin.is_hidden
+            },
+            audio_object_plugins={
+                name: plugin.display_name for name, plugin in self.audio_object_plugins.items() if not plugin.is_hidden
+            },
+            audio_effect_plugins={
+                name: plugin.display_name for name, plugin in self.audio_effect_plugins.items() if not plugin.is_hidden
+            },
         )
