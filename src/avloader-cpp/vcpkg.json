@@ -26,7 +26,8 @@
         },
         "vorbis",
         "vulkan",
-        "swresample"
+        "swresample",
+        "zlib"
       ]
     }
   ]

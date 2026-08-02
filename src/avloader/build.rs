@@ -68,11 +68,17 @@ fn main() {
     println!("cargo:rustc-link-lib=vorbisfile");
     println!("cargo:rustc-link-lib=vorbisenc");
     println!("cargo:rustc-link-lib=ogg");
+    if cfg!(target_os = "windows") {
+        println!("cargo:rustc-link-lib=zlib");
+    } else {
+        println!("cargo:rustc-link-lib=z");
+    }
 
     // Windows system libraries required by FFmpeg
     if cfg!(target_os = "windows") {
         for lib in &[
             "bcrypt", "ws2_32", "secur32", "mfplat", "mf", "mfuuid", "strmiids", "ole32", "user32",
+            "psapi", "uuid", "oleaut32", "shlwapi", "gdi32", "vfw32", "ncrypt", "crypt32",
         ] {
             println!("cargo:rustc-link-lib={}", lib);
         }
