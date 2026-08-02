@@ -1,12 +1,11 @@
-import os
 import struct
 
-import aperio_plugin
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import make_generator_information
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
 
 
 class ColorAdjustmentEffect(VideoEffectGeneratorBase):
@@ -16,26 +15,17 @@ class ColorAdjustmentEffect(VideoEffectGeneratorBase):
         self.display_name = "色調補正"
         self.description = "Adjusts brightness, contrast, hue, luminance, and saturation."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        color_module = lib_module(common_dir, "color")
 
-        self.color_shader = PyCompiledWgsl.compose_new(
-            "color",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "color.wgsl")),
-            aperio_plugin.image_generator,
-        )
+        self.color_shader = compose_common_shader("color", [color_module], current_dir, "color.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="brightness",
                     title="明るさ",

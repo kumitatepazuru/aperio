@@ -1,12 +1,12 @@
-import os
 import struct
 
-import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import clamp, make_generator_information, pack_box_blur_dir_params
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
 
 
 def _split_radius(radius: int) -> tuple[int, int]:
@@ -23,50 +23,22 @@ class BlurEffect(VideoEffectGeneratorBase):
         self.display_name = "ぼかし"
         self.description = "Applies a blur effect to the input frame."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
-        math_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "math.wgsl"))
-        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        color_module = lib_module(common_dir, "color")
+        math_module = lib_module(common_dir, "math")
+        blur_module = lib_module(common_dir, "blur")
 
-        def load(path: str) -> str:
-            with open(path, "r") as f:
-                return f.read()
-
-        self.box_blur_dir_shader = PyCompiledWgsl.compose_new(
-            "box_blur_dir",
-            [blur_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "box_blur_dir.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.curve_shader = PyCompiledWgsl.compose_new(
-            "curve",
-            [math_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "curve.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.ycbcr_encode_shader = PyCompiledWgsl.compose_new(
-            "ycbcr_encode",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_encode.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.ycbcr_decode_shader = PyCompiledWgsl.compose_new(
-            "ycbcr_decode",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_decode.wgsl")),
-            aperio_plugin.image_generator,
-        )
+        self.box_blur_dir_shader = compose_common_shader("box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl")
+        self.curve_shader = compose_common_shader("curve", [math_module], common_dir, "curve.wgsl")
+        self.ycbcr_encode_shader = compose_common_shader("ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl")
+        self.ycbcr_decode_shader = compose_common_shader("ycbcr_decode", [color_module], common_dir, "ycbcr_decode.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="blur_radius",
                     title="強さ",
@@ -99,8 +71,8 @@ class BlurEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
         blur_radius = max(0, args.get("blur_radius", 5))
-        aspect = max(-100, min(100, args.get("aspect", 0)))
-        light_intensity = max(0, min(60, args.get("light_intensity", 0)))
+        aspect = clamp(args.get("aspect", 0), -100, 100)
+        light_intensity = clamp(args.get("light_intensity", 0), 0, 60)
         fixed_size = bool(args.get("fixed_size", False))
 
         # aspect > 0: 横方向のみに近づく → 縦半径を縮小
@@ -140,7 +112,7 @@ class BlurEffect(VideoEffectGeneratorBase):
                 return b
             offset = 0 if fixed_size else radius
             new_w = cur_w if fixed_size else cur_w + 2 * radius
-            shader_params = struct.pack("iiiiiiii", radius, 1, 0, new_w, cur_h, offset, border_mode, divisor_mode)
+            shader_params = pack_box_blur_dir_params(radius, 1, 0, new_w, cur_h, offset, border_mode, divisor_mode)
             b = b.add_wgsl(self.box_blur_dir_shader, shader_params, new_w, cur_h)
             cur_w = new_w
             return b
@@ -151,7 +123,7 @@ class BlurEffect(VideoEffectGeneratorBase):
                 return b
             offset = 0 if fixed_size else radius
             new_h = cur_h if fixed_size else cur_h + 2 * radius
-            shader_params = struct.pack("iiiiiiii", radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode)
+            shader_params = pack_box_blur_dir_params(radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode)
             b = b.add_wgsl(self.box_blur_dir_shader, shader_params, cur_w, new_h)
             cur_h = new_h
             return b

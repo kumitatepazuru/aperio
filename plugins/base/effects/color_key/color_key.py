@@ -3,12 +3,15 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio.gpu_util import PyCompiledWgsl
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
+from ..common.border_correction import ab_constants
 from ..common.color import bt601_encode
+from ..common.params import clamp, make_generator_information, pack_box_average_dir_params
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 
 class ColorKeyEffect(VideoEffectGeneratorBase):
@@ -18,15 +21,10 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
         self.display_name = "カラーキー"
         self.description = "Keys out a chosen color using an axis-aligned YCbCr box, with alpha-only edge softening."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
+        current_dir, common_dir = effect_dirs(__file__)
 
-        def load(path: str) -> str:
-            with open(path, "r") as f:
-                return f.read()
-
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
-        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
+        color_module = lib_module(common_dir, "color")
+        blur_module = lib_module(common_dir, "blur")
         color_key_module = gpu_util.create_composable_module(os.path.join(current_dir, "common.wgsl"))
 
         self.flat_shader = PyCompiledWgsl.compose_new(
@@ -41,11 +39,8 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
             gpu_util.create_naga_module(os.path.join(current_dir, "border_pass1.wgsl")),
             aperio_plugin.image_generator,
         )
-        self.box_average_dir_shader = PyCompiledWgsl.compose_new(
-            "color_key_box_average_dir",
-            [blur_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "box_average_dir.wgsl")),
-            aperio_plugin.image_generator,
+        self.box_average_dir_shader = compose_common_shader(
+            "color_key_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
         )
         self.border_pass3_shader = PyCompiledWgsl.compose_new(
             "color_key_border_pass3",
@@ -53,19 +48,14 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
             gpu_util.create_naga_module(os.path.join(current_dir, "border_pass3.wgsl")),
             aperio_plugin.image_generator,
         )
-        self.select_shader = PyCompiledWgsl(
-            "color_key_select", load(os.path.join(common_dir, "select.wgsl")), aperio_plugin.image_generator, None
-        )
+        self.select_shader = shared_shader("color_key_select", common_dir, "select.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Color(
                     id="key_color",
                     title="キー色",
@@ -100,9 +90,9 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
         key_color = args.get("key_color", (0.0, 1.0, 0.0, 1.0))
-        luma_range_ui = max(0, min(4096, args.get("luma_range", 0)))
-        chroma_range_ui = max(0, min(4096, args.get("chroma_range", 0)))
-        border_correction = max(0, min(5, args.get("border_correction", 0)))
+        luma_range_ui = clamp(args.get("luma_range", 0), 0, 4096)
+        chroma_range_ui = clamp(args.get("chroma_range", 0), 0, 4096)
+        border_correction = clamp(args.get("border_correction", 0), 0, 5)
 
         w, h = params.width, params.height
 
@@ -119,19 +109,14 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
             return GeneratorBuilderReturn(builder, ItemResult(w, h))
 
         r = border_correction
-        # README §5: A = 4096 - 4096/r, B = 4096 - (4096/r)*r(いずれも整数除算)。
-        # r は 1〜5 の整数なので Python の floor division でそのまま丸め誤差なく再現できる。
-        a_int = 4096 - 4096 // r
-        b_int = 4096 - (4096 // r) * r
-        a_const = a_int / 4096.0
-        b_const = b_int / 4096.0
+        a_const, b_const = ab_constants(r)
 
         pass1_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.border_pass1_shader, key_params, w, h)
         original_branch = gpu_util.PyImageGenerateBuilder()
         # state: [0]=a0マップ(パス1), [1]=元画像
         stage1 = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([pass1_branch, original_branch])
 
-        v_params = struct.pack("iiiii", r, 0, 1, w, h)
+        v_params = pack_box_average_dir_params(r, 0, 1, w, h)
         v_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.box_average_dir_shader, v_params, w, h)
         keep_a0_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 0), w, h)
         keep_orig_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 1), w, h)

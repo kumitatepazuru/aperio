@@ -1,13 +1,13 @@
 import math
-import os
 import struct
 
-import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import clamp, make_generator_information, pack_box_blur_dir_params, pack_expand_params
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 # 拡散を2つのボックスぼかし半径に分割する係数。1/2.236(≒1/√5)そのもの。
 # r2 = trunc(拡散*係数), r1 = 拡散 - r2 で、常に r1 >= r2 になる。
@@ -27,49 +27,22 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
         self.display_name = "拡散光"
         self.description = "Diffuses the image with a two-pass box blur and screens the brightened result back over the source."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
-        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        color_module = lib_module(common_dir, "color")
+        blur_module = lib_module(common_dir, "blur")
 
-        def load(path: str) -> str:
-            with open(path, "r") as f:
-                return f.read()
-
-        self.box_blur_dir_shader = PyCompiledWgsl.compose_new(
-            "box_blur_dir",
-            [blur_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "box_blur_dir.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.expand_shader = PyCompiledWgsl(
-            "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.ycbcr_encode_shader = PyCompiledWgsl.compose_new(
-            "ycbcr_encode",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_encode.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.ycbcr_decode_shader = PyCompiledWgsl.compose_new(
-            "ycbcr_decode",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "ycbcr_decode.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.composite_shader = PyCompiledWgsl(
-            "diffusion_light_composite", load(os.path.join(current_dir, "composite.wgsl")), aperio_plugin.image_generator, None
-        )
+        self.box_blur_dir_shader = compose_common_shader("box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl")
+        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
+        self.ycbcr_encode_shader = compose_common_shader("ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl")
+        self.ycbcr_decode_shader = compose_common_shader("ycbcr_decode", [color_module], common_dir, "ycbcr_decode.wgsl")
+        self.composite_shader = shared_shader("diffusion_light_composite", current_dir, "composite.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="strength",
                     title="強さ",
@@ -95,8 +68,8 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = max(0, min(100, args.get("strength", 50)))
-        diffusion = max(0, min(500, args.get("diffusion", 12)))
+        strength_ui = clamp(args.get("strength", 50), 0, 100)
+        diffusion = clamp(args.get("diffusion", 12), 0, 500)
         fixed_size = bool(args.get("fixed_size", False))
 
         if strength_ui == 0:
@@ -125,20 +98,20 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(
                     self.box_blur_dir_shader,
-                    struct.pack("iiiiiiii", radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode),
+                    pack_box_blur_dir_params(radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode),
                     cur_w,
                     new_h,
                 )
                 .add_wgsl(
                     self.box_blur_dir_shader,
-                    struct.pack("iiiiiiii", radius, 1, 0, new_w, new_h, offset, border_mode, divisor_mode),
+                    pack_box_blur_dir_params(radius, 1, 0, new_w, new_h, offset, border_mode, divisor_mode),
                     new_w,
                     new_h,
                 )
             )
             src_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
                 self.expand_shader,
-                struct.pack("iiiiffff", offset, offset, new_w, new_h, 0.0, 0.0, 0.0, 0.0),
+                pack_expand_params(offset, offset, new_w, new_h),
                 new_w,
                 new_h,
             )

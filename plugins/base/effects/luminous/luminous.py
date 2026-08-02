@@ -1,12 +1,12 @@
-import os
 import struct
 
-import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import clamp, make_generator_information, pack_box_blur_dir_params, pack_expand_params
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 # 拡散ループの初期半径(px)・パス数・等比数列の指数。元のAviUtl版のディス
 # アセンブル解析で確認された定数で、半径は 2px -> 拡散(生値)px まで6パスで
@@ -46,90 +46,37 @@ class LuminousEffect(VideoEffectGeneratorBase):
         self.display_name = "発光"
         self.description = "Extracts bright areas, diffuses them with a multi-scale blur, and blends them back as a colored glow."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
-        math_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "math.wgsl"))
-        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        color_module = lib_module(common_dir, "color")
+        math_module = lib_module(common_dir, "math")
+        blur_module = lib_module(common_dir, "blur")
 
-        def load(path: str) -> str:
-            with open(path, "r") as f:
-                return f.read()
-
-        self.threshold_shader = PyCompiledWgsl.compose_new(
-            "luminous_threshold",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "threshold.wgsl")),
-            aperio_plugin.image_generator,
+        self.threshold_shader = compose_common_shader("luminous_threshold", [color_module], current_dir, "threshold.wgsl")
+        self.curve_shader = compose_common_shader("curve", [math_module], common_dir, "curve.wgsl")
+        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
+        self.box_blur_dir_shader = compose_common_shader("box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl")
+        self.select_shader = shared_shader("luminous_select", common_dir, "select.wgsl")
+        self.accumulate_saturating_shader = shared_shader(
+            "luminous_accumulate_saturating", current_dir, "accumulate_saturating.wgsl"
         )
-        self.curve_shader = PyCompiledWgsl.compose_new(
-            "curve",
-            [math_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "curve.wgsl")),
-            aperio_plugin.image_generator,
+        self.combined_init_shader = compose_common_shader(
+            "luminous_combined_init", [math_module], current_dir, "combined_init.wgsl"
         )
-        self.expand_shader = PyCompiledWgsl(
-            "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
+        self.accumulate_chroma_shader = shared_shader("luminous_accumulate_chroma", current_dir, "accumulate_chroma.wgsl")
+        self.accumulate_luma_combined_shader = shared_shader(
+            "luminous_accumulate_luma_combined", current_dir, "accumulate_luma_combined.wgsl"
         )
-        self.box_blur_dir_shader = PyCompiledWgsl.compose_new(
-            "box_blur_dir",
-            [blur_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "box_blur_dir.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.select_shader = PyCompiledWgsl(
-            "luminous_select", load(os.path.join(common_dir, "select.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.accumulate_saturating_shader = PyCompiledWgsl(
-            "luminous_accumulate_saturating",
-            load(os.path.join(current_dir, "accumulate_saturating.wgsl")),
-            aperio_plugin.image_generator,
-            None,
-        )
-        self.combined_init_shader = PyCompiledWgsl.compose_new(
-            "luminous_combined_init",
-            [math_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "combined_init.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.accumulate_chroma_shader = PyCompiledWgsl(
-            "luminous_accumulate_chroma",
-            load(os.path.join(current_dir, "accumulate_chroma.wgsl")),
-            aperio_plugin.image_generator,
-            None,
-        )
-        self.accumulate_luma_combined_shader = PyCompiledWgsl(
-            "luminous_accumulate_luma_combined",
-            load(os.path.join(current_dir, "accumulate_luma_combined.wgsl")),
-            aperio_plugin.image_generator,
-            None,
-        )
-        self.reconstruct_shader = PyCompiledWgsl.compose_new(
-            "luminous_reconstruct",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "reconstruct.wgsl")),
-            aperio_plugin.image_generator,
-        )
+        self.reconstruct_shader = compose_common_shader("luminous_reconstruct", [color_module], current_dir, "reconstruct.wgsl")
         # 「高速化」ON時の近似ぼかし(縮小ピラミッド)用。
-        self.downsample_shader = PyCompiledWgsl(
-            "luminous_downsample", load(os.path.join(current_dir, "downsample.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.upsample_shader = PyCompiledWgsl.compose_new(
-            "luminous_upsample",
-            [math_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "upsample.wgsl")),
-            aperio_plugin.image_generator,
-        )
+        self.downsample_shader = shared_shader("luminous_downsample", current_dir, "downsample.wgsl")
+        self.upsample_shader = compose_common_shader("luminous_upsample", [math_module], current_dir, "upsample.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="strength",
                     title="強さ",
@@ -186,10 +133,10 @@ class LuminousEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = max(0, min(200, args.get("strength", 20)))
-        diffusion_ui = max(0, min(800, args.get("diffusion", 50)))
-        threshold_ui = max(0, min(200, args.get("threshold", 70)))
-        diffusion_speed_ui = max(0, min(60, args.get("diffusion_speed", 0)))
+        strength_ui = clamp(args.get("strength", 20), 0, 200)
+        diffusion_ui = clamp(args.get("diffusion", 50), 0, 800)
+        threshold_ui = clamp(args.get("threshold", 70), 0, 200)
+        diffusion_speed_ui = clamp(args.get("diffusion_speed", 0), 0, 60)
         color = args.get("color", (1.0, 0.0, 1.0, 1.0))
 
         # 強さ・しきい値: 元のAviUtl版はY値が0~4096の固定小数点で、
@@ -253,14 +200,11 @@ class LuminousEffect(VideoEffectGeneratorBase):
         threshold_params = struct.pack(
             "fffifff", gain, overflow, threshold_frac, use_source_chroma, cr_dev, cb_dev, luma_color
         )
-        expand_params = struct.pack(
-            "iiiiffff", max_radius, max_radius, new_width, new_height, 0.0, 0.0, 0.0, 0.0
-        )
+        expand_params = pack_expand_params(max_radius, max_radius, new_width, new_height)
         # combined_init通過後は色差(r/g)がoffset込み・輝度(b)が0で外側を埋め、
         # a=1(box_blurのプリマルチプライドno-op用)。
-        combined_expand_params = struct.pack(
-            "iiiiffff", max_radius, max_radius, new_width, new_height,
-            chroma_offset, chroma_offset, 0.0, 1.0,
+        combined_expand_params = pack_expand_params(
+            max_radius, max_radius, new_width, new_height, border=(chroma_offset, chroma_offset, 0.0, 1.0)
         )
 
         base_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.expand_shader, expand_params, new_width, new_height)
@@ -294,13 +238,13 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 gpu_util.PyImageGenerateBuilder()
                 .add_wgsl(
                     self.box_blur_dir_shader,
-                    struct.pack("iiiiiiii", r_h, 1, 0, new_width, new_height, 0, 0, 0),
+                    pack_box_blur_dir_params(r_h, 1, 0, new_width, new_height, offset=0, border_mode=0, divisor_mode=0),
                     new_width,
                     new_height,
                 )
                 .add_wgsl(
                     self.box_blur_dir_shader,
-                    struct.pack("iiiiiiii", r_v, 0, 1, new_width, new_height, 0, 0, 0),
+                    pack_box_blur_dir_params(r_v, 0, 1, new_width, new_height, offset=0, border_mode=0, divisor_mode=0),
                     new_width,
                     new_height,
                 )
@@ -327,13 +271,13 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 .add_wgsl(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
                 .add_wgsl(
                     self.box_blur_dir_shader,
-                    struct.pack("iiiiiiii", rs_h, 1, 0, small_w, small_h, 0, 0, 0),
+                    pack_box_blur_dir_params(rs_h, 1, 0, small_w, small_h, offset=0, border_mode=0, divisor_mode=0),
                     small_w,
                     small_h,
                 )
                 .add_wgsl(
                     self.box_blur_dir_shader,
-                    struct.pack("iiiiiiii", rs_v, 0, 1, small_w, small_h, 0, 0, 0),
+                    pack_box_blur_dir_params(rs_v, 0, 1, small_w, small_h, offset=0, border_mode=0, divisor_mode=0),
                     small_w,
                     small_h,
                 )

@@ -1,12 +1,13 @@
-import os
 import struct
 
 import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import clamp, make_generator_information, pack_box_average_dir_params, pack_expand_params
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 # `通常`形状のカスケード(exedit-inspect glow README §5.1)。半径は`拡散`をこれらの
 # 除数で割ったもの、strengthは`強さ`にこの倍率を掛けたもの(強さ*6から始まり毎パス半分)。
@@ -32,55 +33,27 @@ class GlowEffect(VideoEffectGeneratorBase):
         self.display_name = "グロー"
         self.description = "Extracts bright areas and spreads them as directional glow streaks or a soft cascade blur."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
-        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        color_module = lib_module(common_dir, "color")
+        blur_module = lib_module(common_dir, "blur")
 
-        def load(path: str) -> str:
-            with open(path, "r") as f:
-                return f.read()
-
-        self.extract_shader = PyCompiledWgsl.compose_new(
-            "glow_extract",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "extract.wgsl")),
-            aperio_plugin.image_generator,
+        self.extract_shader = compose_common_shader("glow_extract", [color_module], current_dir, "extract.wgsl")
+        self.box_average_dir_shader = compose_common_shader(
+            "glow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
         )
-        self.box_average_dir_shader = PyCompiledWgsl.compose_new(
-            "glow_box_average_dir",
-            [blur_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "box_average_dir.wgsl")),
-            aperio_plugin.image_generator,
+        self.line_accumulate_shader = compose_common_shader(
+            "glow_line_accumulate", [color_module, blur_module], current_dir, "line_accumulate.wgsl"
         )
-        self.line_accumulate_shader = PyCompiledWgsl.compose_new(
-            "glow_line_accumulate",
-            [color_module, blur_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "line_accumulate.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.composite_shader = PyCompiledWgsl.compose_new(
-            "glow_composite",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "composite.wgsl")),
-            aperio_plugin.image_generator,
-        )
-        self.select_shader = PyCompiledWgsl(
-            "glow_select", load(os.path.join(common_dir, "select.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.expand_shader = PyCompiledWgsl(
-            "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
-        )
+        self.composite_shader = compose_common_shader("glow_composite", [color_module], current_dir, "composite.wgsl")
+        self.select_shader = shared_shader("glow_select", common_dir, "select.wgsl")
+        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="strength",
                     title="強さ",
@@ -145,10 +118,10 @@ class GlowEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = max(0, min(400, args.get("strength", 40)))
-        diffusion_ui = max(0, min(200, args.get("diffusion", 30)))
-        threshold_ui = max(0, min(200, args.get("threshold", 40)))
-        blur_radius = max(0, min(50, args.get("blur", 1)))
+        strength_ui = clamp(args.get("strength", 40), 0, 400)
+        diffusion_ui = clamp(args.get("diffusion", 30), 0, 200)
+        threshold_ui = clamp(args.get("threshold", 40), 0, 200)
+        blur_radius = clamp(args.get("blur", 1), 0, 50)
         shape: str = args.get("shape", "normal")
         color = args.get("color", (1.0, 1.0, 1.0, 1.0))
         use_source_color = bool(args.get("use_source_color", True))
@@ -178,7 +151,7 @@ class GlowEffect(VideoEffectGeneratorBase):
             return gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", index), nw, nh)
 
         def box_average_params(radius: int, step_x: int, step_y: int) -> bytes:
-            return struct.pack("iiiii", radius, step_x, step_y, nw, nh)
+            return pack_box_average_dir_params(radius, step_x, step_y, nw, nh)
 
         def line_accumulate_params(radius: int, step_x: int, step_y: int, gain: float, is_first: bool) -> bytes:
             return struct.pack("iiifiii", radius, step_x, step_y, gain, 1 if is_first else 0, nw, nh)
@@ -188,7 +161,7 @@ class GlowEffect(VideoEffectGeneratorBase):
             "fifff", threshold_frac, 1 if use_source_color else 0, color[0], color[1], color[2]
         )
         ext_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.extract_shader, extract_params, w, h)
-        expand_params = struct.pack("iiiiffff", diffusion, diffusion, nw, nh, 0.0, 0.0, 0.0, 0.0)
+        expand_params = pack_expand_params(diffusion, diffusion, nw, nh)
         glow_chain = ext_branch.add_wgsl(self.expand_shader, expand_params, nw, nh)
 
         # --- 形状ごとの蓄積(README §5) ---

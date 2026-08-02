@@ -1,12 +1,11 @@
-import os
 import struct
 
-import aperio_plugin
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import clamp, make_generator_information
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
 
 # exedit-inspect luma_key README §2: ex_data.typeの4項目。func_procの分岐は
 # 0/1/2/elseなので、コンボ以外の値が来た場合はelse(=2)側の式に倒れる。
@@ -25,26 +24,17 @@ class LumaKeyEffect(VideoEffectGeneratorBase):
         self.display_name = "ルミナンスキー"
         self.description = "Keys out pixels within a luminance band around a base level, with optional linear edge falloff."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        color_module = lib_module(common_dir, "color")
 
-        self.luma_key_shader = PyCompiledWgsl.compose_new(
-            "luma_key",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "luma_key.wgsl")),
-            aperio_plugin.image_generator,
-        )
+        self.luma_key_shader = compose_common_shader("luma_key", [color_module], current_dir, "luma_key.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="base_luminance",
                     title="基準輝度",
@@ -75,8 +65,8 @@ class LumaKeyEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
         args = params.args
-        base_ui = max(-4096, min(8192, args.get("base_luminance", 2048)))
-        blur_ui = max(0, min(4096, args.get("blur", 512)))
+        base_ui = clamp(args.get("base_luminance", 2048), -4096, 8192)
+        blur_ui = clamp(args.get("blur", 512), 0, 4096)
         key_type = _KEY_TYPES.get(args.get("key_type", "dark"), 0)
 
         # README §3: 表示スケールが両方とも1で `/1000` のマジックナンバー除算も

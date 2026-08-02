@@ -1,14 +1,14 @@
-import os
 import struct
 
 import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ..common.color import bt601_encode
+from ..common.params import clamp, make_generator_information, pack_box_average_dir_params, pack_expand_params
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 
 class LightEffect(VideoEffectGeneratorBase):
@@ -18,42 +18,23 @@ class LightEffect(VideoEffectGeneratorBase):
         self.display_name = "ライト"
         self.description = "Adds a colored shading pass over the object and a soft halo behind it, both driven by the object's own alpha."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        blur_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "blur.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        blur_module = lib_module(common_dir, "blur")
 
-        def load(path: str) -> str:
-            with open(path, "r") as f:
-                return f.read()
-
-        self.box_average_dir_shader = PyCompiledWgsl.compose_new(
-            "light_box_average_dir",
-            [blur_module],
-            gpu_util.create_naga_module(os.path.join(common_dir, "box_average_dir.wgsl")),
-            aperio_plugin.image_generator,
+        self.box_average_dir_shader = compose_common_shader(
+            "light_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
         )
-        self.expand_shader = PyCompiledWgsl(
-            "expand", load(os.path.join(common_dir, "expand.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.invert_alpha_shader = PyCompiledWgsl(
-            "light_invert_alpha", load(os.path.join(current_dir, "invert_alpha.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.shadow_apply_shader = PyCompiledWgsl(
-            "light_shadow_apply", load(os.path.join(current_dir, "shadow_apply.wgsl")), aperio_plugin.image_generator, None
-        )
-        self.composite_shader = PyCompiledWgsl(
-            "light_composite", load(os.path.join(current_dir, "composite.wgsl")), aperio_plugin.image_generator, None
-        )
+        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
+        self.invert_alpha_shader = shared_shader("light_invert_alpha", current_dir, "invert_alpha.wgsl")
+        self.shadow_apply_shader = shared_shader("light_shadow_apply", current_dir, "shadow_apply.wgsl")
+        self.composite_shader = shared_shader("light_composite", current_dir, "composite.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Float(
                     id="strength",
                     title="強さ",
@@ -92,9 +73,9 @@ class LightEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = max(0.0, min(300.0, args.get("strength", 100.0)))
-        diffusion_ui = max(0.0, min(100.0, args.get("diffusion", 25.0)))
-        ratio_ui = max(-100.0, min(100.0, args.get("ratio", 0.0)))
+        strength_ui = clamp(args.get("strength", 100.0), 0.0, 300.0)
+        diffusion_ui = clamp(args.get("diffusion", 25.0), 0.0, 100.0)
+        ratio_ui = clamp(args.get("ratio", 0.0), -100.0, 100.0)
         backlight = bool(args.get("backlight", False))
         color = args.get("color", (1.0, 1.0, 1.0, 1.0))
 
@@ -133,8 +114,8 @@ class LightEffect(VideoEffectGeneratorBase):
             if backlight:
                 avg_branch = avg_branch.add_wgsl(self.invert_alpha_shader, None, w, h)
             avg_branch = (
-                avg_branch.add_wgsl(self.box_average_dir_shader, struct.pack("iiiii", r_shadow, 1, 0, w, h), w, h)
-                .add_wgsl(self.box_average_dir_shader, struct.pack("iiiii", r_shadow, 0, 1, w, h), w, h)
+                avg_branch.add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 1, 0, w, h), w, h)
+                .add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 0, 1, w, h), w, h)
             )
             shadow_params = struct.pack("iffff", 1 if backlight else 0, B / 4096.0, color[0], color[1], color[2])
             shadowed = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, avg_branch]).add_wgsl(
@@ -154,14 +135,14 @@ class LightEffect(VideoEffectGeneratorBase):
         r_halo = max(0, min(r_shadow, (max_dim - w) // 2, (max_dim - h) // 2))
 
         nw, nh = w + 2 * r_halo, h + 2 * r_halo
-        expand_params = struct.pack("iiiiffff", r_halo, r_halo, nw, nh, 0.0, 0.0, 0.0, 0.0)
+        expand_params = pack_expand_params(r_halo, r_halo, nw, nh)
 
         base_branch = shadowed.add_wgsl(self.expand_shader, expand_params, nw, nh)
         avg2d_branch = (
             gpu_util.PyImageGenerateBuilder()
             .add_wgsl(self.expand_shader, expand_params, nw, nh)
-            .add_wgsl(self.box_average_dir_shader, struct.pack("iiiii", r_halo, 1, 0, nw, nh), nw, nh)
-            .add_wgsl(self.box_average_dir_shader, struct.pack("iiiii", r_halo, 0, 1, nw, nh), nw, nh)
+            .add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 1, 0, nw, nh), nw, nh)
+            .add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 0, 1, nw, nh), nw, nh)
         )
 
         # 光色をY=1.0で復元した固定RGB(後光のストレート色)と、光色自身の輝度

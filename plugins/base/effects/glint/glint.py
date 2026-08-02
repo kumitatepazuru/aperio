@@ -1,13 +1,14 @@
 import math
-import os
 import struct
 
 import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import clamp, make_generator_information
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
 
 # 光線の到達距離。中心から距離dのソース画素は D = 4d まで光を伸ばすので、
 # キャンバスは光条の端がちょうど収まる大きさに広げられる(README手順3)。
@@ -30,26 +31,17 @@ class GlintEffect(VideoEffectGeneratorBase):
         self.display_name = "閃光"
         self.description = "Casts radial light streaks from a centre point by averaging the source along each pixel's ray."
 
-        current_dir = os.path.dirname(__file__)
-        common_dir = os.path.join(current_dir, "..", "common")
-        color_module = gpu_util.create_composable_module(os.path.join(common_dir, "lib", "color.wgsl"))
+        current_dir, common_dir = effect_dirs(__file__)
+        color_module = lib_module(common_dir, "color")
 
-        self.glint_shader = PyCompiledWgsl.compose_new(
-            "glint",
-            [color_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "glint.wgsl")),
-            aperio_plugin.image_generator,
-        )
+        self.glint_shader = compose_common_shader("glint", [color_module], current_dir, "glint.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="strength",
                     title="強さ",
@@ -109,10 +101,10 @@ class GlintEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = max(0, min(100, args.get("strength", 100)))
+        strength_ui = clamp(args.get("strength", 100), 0, 100)
         center = args.get("center", (0, 0))
-        track_x = max(-2000, min(2000, int(center[0])))
-        track_y = max(-2000, min(2000, int(center[1])))
+        track_x = clamp(int(center[0]), -2000, 2000)
+        track_y = clamp(int(center[1]), -2000, 2000)
         color = args.get("color", (1.0, 1.0, 1.0, 1.0))
         use_source_color = bool(args.get("use_source_color", True))
         blend_mode: str = args.get("blend_mode", "front")

@@ -1,11 +1,11 @@
-import os
 import struct
 
-import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledWgsl
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+
+from ..common.params import make_generator_information
+from ..common.shader_loader import effect_dirs, shared_shader
 
 
 class ClipEffect(VideoEffectGeneratorBase):
@@ -15,19 +15,15 @@ class ClipEffect(VideoEffectGeneratorBase):
         self.display_name = "クリッピング"
         self.description = "Clips the input frame from specified directions."
 
-        current_dir = os.path.dirname(__file__)
-        with open(os.path.join(current_dir, "clip.wgsl"), "r") as f:
-            self.clip_shader = PyCompiledWgsl("clip", f.read(), aperio_plugin.image_generator, None)
+        current_dir, _ = effect_dirs(__file__)
+        self.clip_shader = shared_shader("clip", current_dir, "clip.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, _: dict) -> GeneratorInformation:
-        return GeneratorInformation(
-            display_name=self.display_name,
-            duration_frames=None,
-            max_frame=None,
-            min_frame=None,
-            structure=[
+        return make_generator_information(
+            self.display_name,
+            [
                 RequestStructureParameter.Int(
                     id="clip_top",
                     title="上",
