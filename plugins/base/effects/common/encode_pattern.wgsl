@@ -1,7 +1,8 @@
 enable wgpu_binding_array;
 
 struct EncodePatternParams {
-    // 濃さ(strength_raw / 1000.0)。0..1
+    // 濃さ/強さに相当する係数(0..1)。`シャドー`は濃さトラックバー由来、
+    // `縁取り`にはこれに相当するパラメータが無いため常に1.0を渡す。
     density: f32,
 };
 
@@ -10,11 +11,11 @@ struct EncodePatternParams {
 
 @group(1) @binding(0) var<storage, read> params: EncodePatternParams;
 
-// パターン画像版のエンコード(exedit-inspect shadow README §5)。inputTex[0]は
-// 4パスのボックス平均を通したアルファ(.aだけ使う)、inputTex[1]はタイル済み
-// パターン画像(tile.wgsl の出力、ストレートRGBA)。
+// パターン画像版の共通エンコード。inputTex[0]は被覆率マップ(.aだけ使う、
+// `シャドー`は4パスのボックス平均、`縁取り`は2パスの「割らないボックス和+gain」)、
+// inputTex[1]はタイル済みパターン画像(common/tile.wgslの出力、ストレートRGBA)。
 // 色パラメータは完全に無視し、パターンの色をそのまま使う。アルファ同士が
-// 掛かるだけなので濃さとパターンの透明度は交換可能(README §5)。
+// 掛かるだけなので、density とパターンの透明度は交換可能。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mask_tex = inputTex[0];

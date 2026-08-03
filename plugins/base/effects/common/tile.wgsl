@@ -10,10 +10,10 @@ struct TileParams {
 
 @group(1) @binding(0) var<storage, read> params: TileParams;
 
-// パターン画像(inputTex[0])を出力サイズいっぱいに単純タイルする(補間なし、
-// exedit-inspect shadow README §6「単純コピー」)。タイル原点は常に(0,0) ——
-// 呼び出し側がタイル済みの結果を影の箱(box_w×box_h)にそのまま配置するので、
-// 実機の「タイル原点=影の箱の左上」と等価になる。
+// パターン画像(inputTex[0])を出力サイズいっぱいに単純タイルする(補間なし)。
+// タイル原点は常に(0,0)。`シャドー`(exedit-inspect shadow README §6。影の箱の
+// 左上が原点)と`縁取り`(exedit-inspect border README §6。キャンバスの左上が
+// 原点)は原点の取り方が一致するため共通化できる。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let out_coord = vec2<i32>(global_id.xy);

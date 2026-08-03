@@ -1,7 +1,8 @@
 enable wgpu_binding_array;
 
 struct EncodeColorParams {
-    // 濃さ(strength_raw / 1000.0)。0..1
+    // 濃さ/強さに相当する係数(0..1)。`シャドー`は濃さトラックバー由来、
+    // `縁取り`にはこれに相当するパラメータが無いため常に1.0を渡す。
     density: f32,
     color_r: f32,
     color_g: f32,
@@ -13,10 +14,11 @@ struct EncodeColorParams {
 
 @group(1) @binding(0) var<storage, read> params: EncodeColorParams;
 
-// 影色版のエンコード(exedit-inspect shadow README §5)。inputTex[0]は4パスの
-// ボックス平均を通したアルファ(.aだけ使う、正規化済みの [0,1] 平均)。
-// 影色はそのままY/Cb/Crへ入り(アンプリマルチプライ無し)、被覆率だけを
-// アルファに載せる — 濃さは avg に掛けるだけでクランプ以外の処理は不要。
+// 色版の共通エンコード。inputTex[0]は被覆率マップ(.aだけ使う、[0,1]に正規化済み
+// —— `シャドー`(exedit-inspect shadow README §5)は4パスのボックス平均済み
+// アルファ、`縁取り`(exedit-inspect border README §5)は2パスの「割らない
+// ボックス和+gain」済みの被覆マップ)。指定色はそのままY/Cb/Crへ入り
+// (アンプリマルチプライ無し)、被覆率×densityだけをアルファに載せる。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let mask_tex = inputTex[0];

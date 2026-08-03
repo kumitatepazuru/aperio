@@ -4,6 +4,7 @@ from aperio_plugin.plugin_base import MainPluginBase
 
 
 from .effects.blur.blur import BlurEffect
+from .effects.border.border import BorderEffect
 from .effects.boundary_blur.blur import BoundaryBlurEffect
 from .effects.chroma_key.chroma_key import ChromaKeyEffect
 from .effects.color_key.color_key import ColorKeyEffect
@@ -32,9 +33,10 @@ class AperioBasePlugin(MainPluginBase):
         self.description = "This is a plugin that provides basic effects/objects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
-        self.num_sub_plugins = 19
+        self.num_sub_plugins = 20
 
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
+        aperio_plugin.manager.register_sub_plugin(self, BorderEffect())
         aperio_plugin.manager.register_sub_plugin(self, BoundaryBlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, ChromaKeyEffect())
         aperio_plugin.manager.register_sub_plugin(self, ColorKeyEffect())

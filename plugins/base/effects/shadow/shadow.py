@@ -1,11 +1,8 @@
-import os
 import struct
 import uuid
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.avloader import PyImageLoader
-from aperio.gpu_util import PyCompiledTextureFunc
 from aperio.item_structures import (
     AdditionalObject,
     FileFilter,
@@ -20,9 +17,8 @@ from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, Vid
 
 from ..common.deferred_object import make_deferred_video_object, rerender_owner_object
 from ..common.params import clamp, make_generator_information, pack_box_average_dir_params, pack_expand_params
+from ..common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
-
-_PATTERN_EXTENSIONS = ["png", "jpg", "jpeg", "bmp", "webp", "gif", "tiff", "tga"]
 
 
 def _clamp_axis(offset: int, size: int, r: int, max_dim: int) -> tuple[int, int]:
@@ -41,7 +37,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
         self.display_name = "シャドー"
         self.description = "Draws a blurred, colored (or pattern-filled) copy of the object's alpha silhouette offset behind it."
 
-        current_dir, common_dir = effect_dirs(__file__)
+        _, common_dir = effect_dirs(__file__)
         blur_module = lib_module(common_dir, "blur")
 
         self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
@@ -49,24 +45,19 @@ class ShadowEffect(VideoEffectGeneratorBase):
             "shadow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
         )
         self.select_shader = shared_shader("shadow_select", common_dir, "select.wgsl")
-        self.encode_color_shader = shared_shader("shadow_encode_color", current_dir, "encode_color.wgsl")
-        self.encode_pattern_shader = shared_shader("shadow_encode_pattern", current_dir, "encode_pattern.wgsl")
-        self.tile_shader = shared_shader("shadow_tile", current_dir, "tile.wgsl")
-        self.composite_shader = shared_shader("shadow_composite", current_dir, "composite.wgsl")
+        self.encode_color_shader = shared_shader("encode_color", common_dir, "encode_color.wgsl")
+        self.encode_pattern_shader = shared_shader("encode_pattern", common_dir, "encode_pattern.wgsl")
+        self.tile_shader = shared_shader("tile", common_dir, "tile.wgsl")
+        self.composite_shader = shared_shader("composite", common_dir, "composite.wgsl")
 
-        self.image_loaders: dict[str, PyImageLoader] = {}
-        self.pattern_compiled_funcs: dict[str, PyCompiledTextureFunc] = {}
+        self.pattern_cache = PatternImageCache("shadow_pattern")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, params: dict) -> GeneratorInformation:
         paths = params.get("pattern_path", [])
-        path = paths[0] if paths else ""
-        if path and path not in self.image_loaders:
-            if os.path.exists(path):
-                loader = PyImageLoader(path=path, image_generator=aperio_plugin.image_generator)
-                self.image_loaders[path] = loader
-                self.pattern_compiled_funcs[path] = PyCompiledTextureFunc("shadow_pattern", loader.get_frame_for_pipeline)
+        if paths:
+            self.pattern_cache.ensure_loaded(paths[0])
 
         return make_generator_information(
             self.display_name,
@@ -114,7 +105,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
                     title="パターン画像ファイル",
                     multi_selections=False,
                     open_type="file",
-                    filters=[FileFilter("画像ファイル", _PATTERN_EXTENSIONS)],
+                    filters=[FileFilter("画像ファイル", PATTERN_EXTENSIONS)],
                 ),
                 RequestStructureParameter.Bool(
                     id="separate_object",
@@ -154,8 +145,8 @@ class ShadowEffect(VideoEffectGeneratorBase):
         r2 = r - r1
         box_w, box_h = w + 2 * r, h + 2 * r
 
-        loader = self.image_loaders.get(pattern_path) if pattern_path else None
-        pattern_func = self.pattern_compiled_funcs.get(pattern_path) if pattern_path else None
+        entry = self.pattern_cache.get(pattern_path) if pattern_path else None
+        loader, pattern_func = entry if entry is not None else (None, None)
 
         if separate_object:
             # 別アイテムとして切り離されるため、暗黙のパイプライン合流(add_parallel_wgsl経由で
