@@ -25,15 +25,15 @@ pub struct ItemResult {
     pub center_x: Option<i32>,
     pub center_y: Option<i32>,
     pub rotate: Option<f64>,
-    // エフェクトが「自分の背面/前面に追加のオブジェクトを流し込みたい」場合に使う。
-    // 合成ループは additional_object.item を実アイテムと全く同じコードパスで処理する。
-    pub additional_object: Option<AdditionalObject>,
+    // エフェクトが「自分の背面/前面に追加のアイテムを流し込みたい」場合に使う。
+    // 合成ループは additional_item.item を実アイテムと全く同じコードパスで処理する。
+    pub additional_item: Option<AdditionalItem>,
 }
 
 #[pymethods]
 impl ItemResult {
     #[new]
-    #[pyo3(signature = (width, height, x=None, y=None, center_x=None, center_y=None, rotate=None, additional_object=None))]
+    #[pyo3(signature = (width, height, x=None, y=None, center_x=None, center_y=None, rotate=None, additional_item=None))]
     fn new(
         width: i32,
         height: i32,
@@ -42,7 +42,7 @@ impl ItemResult {
         center_x: Option<i32>,
         center_y: Option<i32>,
         rotate: Option<f64>,
-        additional_object: Option<AdditionalObject>,
+        additional_item: Option<AdditionalItem>,
     ) -> Self {
         Self {
             width,
@@ -52,14 +52,14 @@ impl ItemResult {
             center_x,
             center_y,
             rotate,
-            additional_object,
+            additional_item,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "ItemResult(width={:?}, height={:?}, x={:?}, y={:?}, center_x={:?}, center_y={:?}, rotate={:?}, additional_object={:?})",
-            self.width, self.height, self.x, self.y, self.center_x, self.center_y, self.rotate, self.additional_object
+            "ItemResult(width={:?}, height={:?}, x={:?}, y={:?}, center_x={:?}, center_y={:?}, rotate={:?}, additional_item={:?})",
+            self.width, self.height, self.x, self.y, self.center_x, self.center_y, self.rotate, self.additional_item
         )
     }
 }
@@ -193,7 +193,7 @@ pub struct GenerateStructure {
 
 #[pymethods]
 impl GenerateStructure {
-    /// Python側から additionalObject 用に GenerateStructure を新規構築するためのコンストラクタ。
+    /// Python側から additionalItem 用に GenerateStructure を新規構築するためのコンストラクタ。
     #[new]
     fn new(
         py: Python<'_>,
@@ -249,7 +249,7 @@ pub enum ItemStructure {
 #[napi(object)]
 #[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
-pub struct AdditionalObject {
+pub struct AdditionalItem {
     pub item: ItemStructure,
     /// true = 挿入元アイテムより背面(下)に挿入 / false = 前面(上)に挿入
     pub behind: bool,
@@ -290,7 +290,7 @@ pub struct PluginNameInfo {
 #[pymodule(module = "aperio.item_structures")]
 pub mod item_structures {
     #[pymodule_export]
-    use super::AdditionalObject;
+    use super::AdditionalItem;
     #[pymodule_export]
     use super::FileFilter;
     #[pymodule_export]

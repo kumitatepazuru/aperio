@@ -5,7 +5,7 @@ from aperio.item_structures import GenerateStructure, GeneratorEvent, GeneratorI
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import *
 
-# additionalObject(ItemResult.additional_object / AudioGeneratorReturn.additional_object)から
+# additionalItem(ItemResult.additional_item / AudioGeneratorReturn.additional_item)から
 # 参照される合成用オブジェクトの実体を、ハンドル文字列経由で横流しするための保留プール。
 # エフェクトが自分の中で既に組み立てた Generator*Return を、そのまま1個のオブジェクトとして
 # 合成ループに流し込みたい場合に使う(shadow の「影を別オブジェクトで描画」等)。
@@ -25,14 +25,14 @@ def _make_generate_structure(name: str, handle: str) -> GenerateStructure:
 def make_deferred_video_object(
     result: "GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn",
 ) -> GenerateStructure:
-    """既に組み立てた Generator*Return を、additionalObject 用の GenerateStructure に変換する。"""
+    """既に組み立てた Generator*Return を、additionalItem 用の GenerateStructure に変換する。"""
     handle = str(uuid.uuid4())
     _pending_video[handle] = result
     return _make_generate_structure("base._deferred_video_object", handle)
 
 
 def make_deferred_audio_object(result: AudioGeneratorReturn) -> GenerateStructure:
-    """既に組み立てた AudioGeneratorReturn を、additionalObject 用の GenerateStructure に変換する。"""
+    """既に組み立てた AudioGeneratorReturn を、additionalItem 用の GenerateStructure に変換する。"""
     handle = str(uuid.uuid4())
     _pending_audio[handle] = result
     return _make_generate_structure("base._deferred_audio_object", handle)
@@ -60,7 +60,7 @@ def apply_generate_result(
 def rerender_owner_object(
     owner: "ItemStructure.Video", frame_number: int, width: int, height: int
 ) -> PyImageGenerateBuilder | None:
-    """additionalObject として独立したアイテムに切り離される影などが、暗黙のパイプライン合流
+    """additionalItem として独立したアイテムに切り離される影などが、暗黙のパイプライン合流
     (add_parallel_wgsl 経由で前段の state を継承する仕組み)に頼れず、自前でシルエット等の
     元データ(実際にピクセルを持つ builder)を必要とする場合に使うヘルパー。
     owner の object をもう一度 generate() することで、既存の layer_frame とは独立した
@@ -82,14 +82,14 @@ def rerender_owner_object(
 
 
 class DeferredVideoObject(VideoObjectGeneratorBase):
-    """additionalObject 経由で流し込まれた Generator*Return をそのまま返すだけの内部専用オブジェクト。
+    """additionalItem 経由で流し込まれた Generator*Return をそのまま返すだけの内部専用オブジェクト。
     UI のオブジェクト追加メニューには出さない(is_hidden=True)。"""
 
     def __init__(self) -> None:
         super().__init__()
         self.name = "base._deferred_video_object"
         self.display_name = "(内部)保留中の映像オブジェクト"
-        self.description = "additionalObject 機構が内部で使う非表示のオブジェクトプラグイン。"
+        self.description = "additionalItem 機構が内部で使う非表示のオブジェクトプラグイン。"
         self.is_hidden = True
 
     @event(type=GeneratorEvent.New)
@@ -104,14 +104,14 @@ class DeferredVideoObject(VideoObjectGeneratorBase):
 
 
 class DeferredAudioObject(AudioObjectGeneratorBase):
-    """additionalObject 経由で流し込まれた AudioGeneratorReturn をそのまま返すだけの内部専用オブジェクト。
+    """additionalItem 経由で流し込まれた AudioGeneratorReturn をそのまま返すだけの内部専用オブジェクト。
     UI のオブジェクト追加メニューには出さない(is_hidden=True)。"""
 
     def __init__(self) -> None:
         super().__init__()
         self.name = "base._deferred_audio_object"
         self.display_name = "(内部)保留中の音声オブジェクト"
-        self.description = "additionalObject 機構が内部で使う非表示のオブジェクトプラグイン。"
+        self.description = "additionalItem 機構が内部で使う非表示のオブジェクトプラグイン。"
         self.is_hidden = True
 
     @event(type=GeneratorEvent.New)

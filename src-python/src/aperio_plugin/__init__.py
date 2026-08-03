@@ -155,14 +155,14 @@ class AperioManager(PluginManager, EventManager):
         frame_number: int,
         width: int,
         height: int,
-    ) -> tuple[gpu_util.PyImageGenerateBuilder, ItemResult] | None:
+    ) -> tuple[gpu_util.PyImageGenerateBuilder, ItemResult, list[AdditionalItem], list[AdditionalItem]] | None:
         """
-        1つの Video アイテムの object→effects チェーンを解決し、builder と最終 ItemResult を返す。
+        1つの Video アイテムの object→effects チェーンを解決し、builder・最終 ItemResult・
+        チェーン中に現れた追加アイテム(behind側/ahead側)を返す。
 
-        `_make_frame_builder` のメインループ(実アイテム)と、additionalObject 経由で
-        流し込まれる合成アイテムの両方から共通で呼ばれる — エフェクトが返す
-        `ItemResult.additional_object.item` も「他の実アイテムと全く同じコードパス」で
-        処理されることがこの関数の存在意義。
+        `_make_frame_builder` のメインループ(実アイテム)と、additionalItem 経由で
+        流し込まれる合成アイテムの両方から共通で呼ばれる — 追加アイテムの `item` も
+        「他の実アイテムと全く同じコードパス」で処理される。
 
         Returns:
             None: オブジェクトプラグインが None を返した場合(スキップ対象)。
@@ -170,6 +170,14 @@ class AperioManager(PluginManager, EventManager):
         obj_name = layer.object["name"]
         if obj_name not in self.video_object_plugins:
             raise ValueError(f"Object plugin {obj_name} is not registered")
+
+        behind_items: list[AdditionalItem] = []
+        ahead_items: list[AdditionalItem] = []
+
+        def _collect(item_result: ItemResult) -> None:
+            additional = item_result.additional_item
+            if additional is not None:
+                (behind_items if additional.behind else ahead_items).append(additional)
 
         obj_plugin = self.video_object_plugins[obj_name]
         params = VideoGenerateParameters(
@@ -182,6 +190,7 @@ class AperioManager(PluginManager, EventManager):
         layer_frame = obj_plugin.generate(params)
         if layer_frame is None:
             return None
+        _collect(layer_frame.item_result)
 
         layer_builder = _apply_generate_result(gpu_util.PyImageGenerateBuilder(), layer_frame)
 
@@ -201,9 +210,10 @@ class AperioManager(PluginManager, EventManager):
             if tmp_layer_frame is None:
                 continue
             layer_frame = tmp_layer_frame
+            _collect(layer_frame.item_result)
             layer_builder = _apply_generate_result(layer_builder, layer_frame)
 
-        return layer_builder, layer_frame.item_result
+        return layer_builder, layer_frame.item_result, behind_items, ahead_items
 
     def _make_frame_builder(
         self,
@@ -268,32 +278,30 @@ class AperioManager(PluginManager, EventManager):
                 processed = self._process_video_item(layer, frame_number, width, height)
                 if processed is None:
                     continue
-                layer_builder, item_result = processed
-                frame_results[layer.id] = item_result
+                layer_builder, item_result, behind_items, ahead_items = processed
+                layer_id = layer.id
+                frame_results[layer_id] = item_result
 
-                # additionalObject: 自分の背面/前面に挿入する追加アイテムがあれば、
-                # 実アイテムと全く同じ _process_video_item で解決してから
-                # 配列上の隣接位置(=合成順で背面/前面)に挿入する。
-                behind_entry = None
-                front_entry = None
-                additional = item_result.additional_object
-                if additional is not None:
+                # additionalItem: チェーン中に現れた追加アイテム(behind/ahead)は、
+                # それぞれ実アイテムと全く同じ _process_video_item で解決してから
+                # 合成順で背面側/前面側に挿入する。
+                def _resolve(additional: AdditionalItem) -> tuple[gpu_util.PyImageGenerateBuilder, "ItemStructure.Video", ItemResult] | None:
                     if not isinstance(additional.item, ItemStructure.Video):
-                        logger.warning(f"additional_object of layer {layer.id} is not a video item. Skipping.")
-                    else:
-                        additional_processed = self._process_video_item(additional.item, frame_number, width, height)
-                        if additional_processed is not None:
-                            entry = (additional_processed[0], additional.item, additional_processed[1])
-                            if additional.behind:
-                                behind_entry = entry
-                            else:
-                                front_entry = entry
+                        logger.warning(f"additional_item of layer {layer_id} is not a video item. Skipping.")
+                        return None
+                    additional_processed = self._process_video_item(additional.item, frame_number, width, height)
+                    if additional_processed is None:
+                        return None
+                    return additional_processed[0], additional.item, additional_processed[1]
 
-                if behind_entry is not None:
+                behind_entries = [entry for a in behind_items if (entry := _resolve(a)) is not None]
+                ahead_entries = [entry for a in ahead_items if (entry := _resolve(a)) is not None]
+
+                for behind_entry in behind_entries:
                     _append_entry(*behind_entry)
                 _append_entry(layer_builder, layer, item_result)
-                if front_entry is not None:
-                    _append_entry(*front_entry)
+                for ahead_entry in ahead_entries:
+                    _append_entry(*ahead_entry)
 
             if len(layer_builders) == 0:
                 layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(
@@ -380,16 +388,19 @@ class AperioManager(PluginManager, EventManager):
         sample_rate: int,
         channels: int,
         sample_count: int,
-    ) -> AudioGeneratorReturn | None:
+    ) -> tuple[AudioGeneratorReturn, list[AdditionalItem]] | None:
         """
-        1つの Audio アイテムの object→effects チェーンを解決し、最終 AudioGeneratorReturn を返す。
+        1つの Audio アイテムの object→effects チェーンを解決し、最終 AudioGeneratorReturn と
+        チェーン中に現れた追加アイテムの配列を返す。
 
-        `_make_audio_sample` のメインループ(実アイテム)と、additionalObject 経由で
+        `_make_audio_sample` のメインループ(実アイテム)と、additionalItem 経由で
         流し込まれる合成アイテムの両方から共通で呼ばれる。
         """
         obj_name = layer.object["name"]
         if obj_name not in self.audio_object_plugins:
             raise ValueError(f"Audio object plugin {obj_name} is not registered")
+
+        additional_items: list[AdditionalItem] = []
 
         obj_plugin = self.audio_object_plugins[obj_name]
         obj_params = AudioGenerateParameters(
@@ -403,6 +414,8 @@ class AperioManager(PluginManager, EventManager):
         layer_result = obj_plugin.generate(obj_params)
         if layer_result is None:
             return None
+        if layer_result.additional_item is not None:
+            additional_items.append(layer_result.additional_item)
 
         # エフェクトを順番に適用（各エフェクトは前段サンプルをinput_samplesで受け取る）
         for effect in layer.effects:
@@ -423,8 +436,10 @@ class AperioManager(PluginManager, EventManager):
             if tmp_result is None:
                 return None
             layer_result = tmp_result
+            if layer_result.additional_item is not None:
+                additional_items.append(layer_result.additional_item)
 
-        return layer_result
+        return layer_result, additional_items
 
     def _make_audio_sample(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, sample_count: int) -> npt.NDArray[np.float32]:
         """
@@ -481,33 +496,35 @@ class AperioManager(PluginManager, EventManager):
                     logger.warning(f"Layer {layer.id} has no overlapping samples to generate. Skipping.")
                     continue
 
-                layer_result = self._process_audio_item(layer, overlap_start, sample_rate, channels, overlap_sample_count)
-                if layer_result is None:
+                processed = self._process_audio_item(layer, overlap_start, sample_rate, channels, overlap_sample_count)
+                if processed is None:
                     continue
+                layer_result, additional_items = processed
+                layer_id = layer.id
 
                 # ボリュームとパンをnumpyで一括適用して加算（浮動小数点丸め誤差による境界超過をクリップ）
                 _mix(layer.object["name"], overlap_sample_count, layer_result.samples, layer.volume, layer.pan, sample_offset)
 
-                # additionalObject: 同じ時間窓に加算ミックスする追加のオーディオアイテムがあれば、
-                # 実アイテムと全く同じ _process_audio_item で解決してから同じ窓に加算する
-                # (音声は加算合成なので順序に意味が無く、behind は無視してよい)。
-                additional = layer_result.additional_object
-                if additional is not None:
+                # additionalItem: 同じ時間窓に加算ミックスする追加のオーディオアイテムがあれば、
+                # それぞれ実アイテムと全く同じ _process_audio_item で解決してから同じ窓に加算する
+                # (音声は加算合成なので順序に意味が無く、behind は無視してよい。
+                for additional in additional_items:
                     if not isinstance(additional.item, ItemStructure.Audio):
-                        logger.warning(f"additional_object of layer {layer.id} is not an audio item. Skipping.")
-                    else:
-                        additional_result = self._process_audio_item(
-                            additional.item, overlap_start, sample_rate, channels, overlap_sample_count
+                        logger.warning(f"additional_item of layer {layer_id} is not an audio item. Skipping.")
+                        continue
+                    additional_processed = self._process_audio_item(
+                        additional.item, overlap_start, sample_rate, channels, overlap_sample_count
+                    )
+                    if additional_processed is not None:
+                        additional_result, _ = additional_processed
+                        _mix(
+                            additional.item.object["name"],
+                            overlap_sample_count,
+                            additional_result.samples,
+                            additional.item.volume,
+                            additional.item.pan,
+                            sample_offset,
                         )
-                        if additional_result is not None:
-                            _mix(
-                                additional.item.object["name"],
-                                overlap_sample_count,
-                                additional_result.samples,
-                                additional.item.volume,
-                                additional.item.pan,
-                                sample_offset,
-                            )
 
             np.clip(output, -1.0, 1.0, out=output)
             return output

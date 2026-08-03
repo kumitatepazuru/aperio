@@ -4,7 +4,7 @@ import uuid
 import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import (
-    AdditionalObject,
+    AdditionalItem,
     FileFilter,
     GeneratorEvent,
     GeneratorInformation,
@@ -219,7 +219,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
         # 元のオブジェクトは1バイトも変わらずに素通しする。
         owner = params.layer
         shadow_object_structure = make_deferred_video_object(GeneratorBuilderReturn(shadow_layer, ItemResult(box_w, box_h)))
-        additional_item = ItemStructure.Video(
+        shadow_item = ItemStructure.Video(
             id=str(uuid.uuid4()),
             layer=owner.layer,
             start=owner.start,
@@ -234,7 +234,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
             object=shadow_object_structure,
             effects=[],
         )
-        additional_object = AdditionalObject(item=additional_item, behind=True)
+        additional_item = AdditionalItem(item=shadow_item, behind=True)
 
         identity_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 0), w, h)
-        return GeneratorBuilderReturn(identity_builder, ItemResult(w, h, additional_object=additional_object))
+        return GeneratorBuilderReturn(identity_builder, ItemResult(w, h, additional_item=additional_item))
