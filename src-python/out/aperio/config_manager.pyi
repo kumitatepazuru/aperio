@@ -1,7 +1,19 @@
-from typing import final
+from .gpu_util import WrappedImagePixelFormat, WrappedSharedTextureFormat
+from _typeshed import Incomplete
+from typing import Any, final
 
 @final
-class AperioConfig: ...
+class AperioConfig:
+    @property
+    def dock_layout(self, /) -> Incomplete |None: ...
+    @property
+    def fast_preview(self, /) -> bool: ...
+    @property
+    def image_pixel_format(self, /) -> WrappedImagePixelFormat: ...
+    @property
+    def python(self, /) -> Any: ...
+    @property
+    def tex_pixel_format(self, /) -> WrappedSharedTextureFormat: ...
 
 @final
 class ConfigManager:

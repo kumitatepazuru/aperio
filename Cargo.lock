@@ -876,6 +876,7 @@ dependencies = [
  "ash",
  "bytemuck",
  "futures",
+ "half",
  "libc",
  "log",
  "naga_oil",

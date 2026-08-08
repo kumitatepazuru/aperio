@@ -34,7 +34,10 @@ class GlintEffect(VideoEffectGeneratorBase):
         current_dir, common_dir = effect_dirs(__file__)
         color_module = lib_module(common_dir, "color")
 
-        self.glint_shader = compose_common_shader("glint", [color_module], current_dir, "glint.wgsl")
+        self.glint_shader = compose_common_shader(
+            "glint", [color_module], current_dir, "glint.wgsl",
+            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)

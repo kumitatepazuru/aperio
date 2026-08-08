@@ -3,7 +3,7 @@ enable wgpu_binding_array;
 #import aperio::color::{bt601_decode}
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(1) var outputTex: ImageStorageTexture;
 
 // ycbcr_encode.wgsl の逆変換。{r=Cr偏差, g=Cb偏差, b=Y} からBT.601でRGBを
 // 復元する。alphaは素通し。

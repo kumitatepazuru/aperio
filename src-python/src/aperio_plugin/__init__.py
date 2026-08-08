@@ -48,8 +48,8 @@ from .frame_builder import (
 from .audio_mixer import mix
 
 # モジュールレベルグローバル — AperioManager.__init__ で設定される
-image_generator = gpu_util.PyImageGenerator()
-text_renderer = text_rendering.PyTextRenderer(image_generator)
+image_generator: gpu_util.PyImageGenerator
+text_renderer: text_rendering.PyTextRenderer
 # TODO: PluginManagerに名称を変更し、plugin_managerとして提供
 manager: AperioManager
 config_manager: ConfigManager
@@ -68,18 +68,23 @@ class AperioManager(PluginManager, EventManager):
         global config_manager
         global store_manager
         global audio_manager
+        global image_generator
+        global text_renderer
 
         # モジュールレベルグローバルに自身を設定（プラグインから参照されるため）
         manager = self
-
-        # self にも保持（フレーム生成メソッドで直接参照）
-        self.generator = image_generator
-        self.text_renderer = text_renderer
 
         # managers から各種マネージャーを取得して設定
         config_manager = managers.config_manager
         store_manager = managers.store_manager
         audio_manager = managers.audio_manager
+
+        image_generator = gpu_util.PyImageGenerator(config_manager.config.image_pixel_format)
+        text_renderer = text_rendering.PyTextRenderer(image_generator)
+
+        # self にも保持（フレーム生成メソッドで直接参照）
+        self.generator = image_generator
+        self.text_renderer = text_renderer
 
         shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
         with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:

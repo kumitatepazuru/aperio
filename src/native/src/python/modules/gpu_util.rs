@@ -31,6 +31,27 @@ pub enum WrappedSharedTextureFormat {
     Bgra8Unorm,
 }
 
+/// ImageGenerator の内部ワーキングテクスチャのフォーマットをPython/JSに公開するためのenum。
+/// `gpu_util::ImagePixelFormat`のラッパー。
+#[napi]
+#[pyclass(from_py_object, eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+pub enum WrappedImagePixelFormat {
+    Rgba8Unorm,
+    Rgba16Float,
+    Rgba32Float,
+}
+
+impl WrappedImagePixelFormat {
+    fn to_native(self) -> gpu_util::ImagePixelFormat {
+        match self {
+            WrappedImagePixelFormat::Rgba8Unorm => gpu_util::ImagePixelFormat::Rgba8Unorm,
+            WrappedImagePixelFormat::Rgba16Float => gpu_util::ImagePixelFormat::Rgba16Float,
+            WrappedImagePixelFormat::Rgba32Float => gpu_util::ImagePixelFormat::Rgba32Float,
+        }
+    }
+}
+
 // Pythonで動かすためのライブラリのラッパーを作る
 #[pyclass]
 pub struct PySamplerOptions {
@@ -194,16 +215,23 @@ impl PySamplerOptions {
 #[pymethods]
 impl PyCompiledWgsl {
     #[new]
+    #[pyo3(signature = (name, wgsl_code, generator, sampler_options=None, output_format=None))]
     pub fn new(
         name: &str,
         wgsl_code: &str,
         generator: &PyImageGenerator,
         sampler_options: Option<&PySamplerOptions>,
+        output_format: Option<WrappedImagePixelFormat>,
     ) -> Result<Self, PyErr> {
+        let output_format = output_format
+            .map(|f| f.to_native().to_wgpu())
+            .unwrap_or_else(|| generator.inner.image_format().to_wgpu());
+
         let inner = compiled_wgsl::CompiledWgsl::new(
             name,
             wgsl_code,
-            &generator.inner.device,
+            &generator.inner,
+            output_format,
             sampler_options.map(|s| &s.inner),
         )?;
 
@@ -214,22 +242,31 @@ impl PyCompiledWgsl {
     ///
     /// `name` はパイプラインキャッシュのキーにもなるため、同じシェーダーを異なる
     /// `shader_defs` で合成する場合は必ず別の `name` を渡すこと。
+    ///
+    /// `output_format` を省略した場合は `generator` の `image_format` が使われる。
+    /// 精度重視のシェーダー(WGSL側で `rgba32float` をハードコードしたままのもの)は、
+    /// generatorの設定に関わらず常に `WrappedImagePixelFormat.Rgba32Float` を明示すること。
     #[staticmethod]
-    #[pyo3(signature = (name, composable_modules, naga_module, generator, sampler_options=None))]
+    #[pyo3(signature = (name, composable_modules, naga_module, generator, sampler_options=None, output_format=None))]
     pub fn compose_new(
         name: &str,
         composable_modules: Vec<PyRef<'_, PyComposableModuleDescriptor>>,
         naga_module: &PyNagaModuleDescriptor,
         generator: &PyImageGenerator,
         sampler_options: Option<&PySamplerOptions>,
+        output_format: Option<WrappedImagePixelFormat>,
     ) -> Result<Self, PyErr> {
         let composable_modules: Vec<_> = composable_modules.iter().map(|m| &m.inner).collect();
+        let output_format = output_format
+            .map(|f| f.to_native().to_wgpu())
+            .unwrap_or_else(|| generator.inner.image_format().to_wgpu());
 
         let inner = compiled_wgsl::CompiledWgsl::compose_new(
             name,
             &composable_modules,
             &naga_module.inner,
-            &generator.inner.device,
+            &generator.inner,
+            output_format,
             sampler_options.map(|s| &s.inner),
         )?;
 
@@ -399,9 +436,10 @@ impl PyImageGenerateBuilder {
 // TODO: experimental-asyncを使った非同期処理
 impl PyImageGenerator {
     #[new]
-    pub fn new() -> Result<Self> {
+    pub fn new(format: WrappedImagePixelFormat) -> Result<Self> {
         let rt = Runtime::new()?;
-        let inner = rt.block_on(async { image_generator::ImageGenerator::new().await })?;
+        let inner =
+            rt.block_on(async { image_generator::ImageGenerator::new(format.to_native()).await })?;
         Ok(Self { inner, rt })
     }
 
@@ -468,6 +506,8 @@ pub mod gpu_util_register {
     use super::PySharedTextureHandle;
     #[pymodule_export]
     use super::PyTexture;
+    #[pymodule_export]
+    use super::WrappedImagePixelFormat;
     #[pymodule_export]
     use super::WrappedSharedTextureFormat;
     #[pymodule_export]

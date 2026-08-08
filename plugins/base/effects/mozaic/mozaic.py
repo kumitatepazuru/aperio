@@ -21,7 +21,10 @@ class MozaicEffect(VideoEffectGeneratorBase):
         math_module = lib_module(common_dir, "math")
 
         self.mozaic_h_shader = compose_common_shader("mozaic_h", [math_module], current_dir, "mozaic_h.wgsl")
-        self.mozaic_v_shader = compose_common_shader("mozaic_v", [math_module, color_module], current_dir, "mozaic_v.wgsl")
+        self.mozaic_v_shader = compose_common_shader(
+            "mozaic_v", [math_module, color_module], current_dir, "mozaic_v.wgsl",
+            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)

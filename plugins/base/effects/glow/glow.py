@@ -37,14 +37,21 @@ class GlowEffect(VideoEffectGeneratorBase):
         color_module = lib_module(common_dir, "color")
         blur_module = lib_module(common_dir, "blur")
 
-        self.extract_shader = compose_common_shader("glow_extract", [color_module], current_dir, "extract.wgsl")
+        rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
+
+        self.extract_shader = compose_common_shader(
+            "glow_extract", [color_module], current_dir, "extract.wgsl", output_format=rgba32float
+        )
         self.box_average_dir_shader = compose_common_shader(
-            "glow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
+            "glow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl", output_format=rgba32float
         )
         self.line_accumulate_shader = compose_common_shader(
-            "glow_line_accumulate", [color_module, blur_module], current_dir, "line_accumulate.wgsl"
+            "glow_line_accumulate", [color_module, blur_module], current_dir, "line_accumulate.wgsl",
+            output_format=rgba32float,
         )
-        self.composite_shader = compose_common_shader("glow_composite", [color_module], current_dir, "composite.wgsl")
+        self.composite_shader = compose_common_shader(
+            "glow_composite", [color_module], current_dir, "composite.wgsl", output_format=rgba32float
+        )
         self.select_shader = shared_shader("glow_select", common_dir, "select.wgsl")
         self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
 

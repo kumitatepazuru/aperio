@@ -28,8 +28,14 @@ class BlurEffect(VideoEffectGeneratorBase):
         math_module = lib_module(common_dir, "math")
         blur_module = lib_module(common_dir, "blur")
 
-        self.box_blur_dir_shader = compose_common_shader("box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl")
-        self.curve_shader = compose_common_shader("curve", [math_module], common_dir, "curve.wgsl")
+        self.box_blur_dir_shader = compose_common_shader(
+            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl",
+            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+        )
+        self.curve_shader = compose_common_shader(
+            "curve", [math_module], common_dir, "curve.wgsl",
+            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+        )
         self.ycbcr_encode_shader = compose_common_shader("ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl")
         self.ycbcr_decode_shader = compose_common_shader("ycbcr_decode", [color_module], common_dir, "ycbcr_decode.wgsl")
 

@@ -51,25 +51,41 @@ class LuminousEffect(VideoEffectGeneratorBase):
         math_module = lib_module(common_dir, "math")
         blur_module = lib_module(common_dir, "blur")
 
-        self.threshold_shader = compose_common_shader("luminous_threshold", [color_module], current_dir, "threshold.wgsl")
-        self.curve_shader = compose_common_shader("curve", [math_module], common_dir, "curve.wgsl")
+        rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
+
+        self.threshold_shader = compose_common_shader(
+            "luminous_threshold", [color_module], current_dir, "threshold.wgsl", output_format=rgba32float
+        )
+        self.curve_shader = compose_common_shader(
+            "curve", [math_module], common_dir, "curve.wgsl", output_format=rgba32float
+        )
         self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
-        self.box_blur_dir_shader = compose_common_shader("box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl")
+        self.box_blur_dir_shader = compose_common_shader(
+            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl", output_format=rgba32float
+        )
         self.select_shader = shared_shader("luminous_select", common_dir, "select.wgsl")
         self.accumulate_saturating_shader = shared_shader(
-            "luminous_accumulate_saturating", current_dir, "accumulate_saturating.wgsl"
+            "luminous_accumulate_saturating", current_dir, "accumulate_saturating.wgsl", output_format=rgba32float
         )
         self.combined_init_shader = compose_common_shader(
-            "luminous_combined_init", [math_module], current_dir, "combined_init.wgsl"
+            "luminous_combined_init", [math_module], current_dir, "combined_init.wgsl", output_format=rgba32float
         )
-        self.accumulate_chroma_shader = shared_shader("luminous_accumulate_chroma", current_dir, "accumulate_chroma.wgsl")
+        self.accumulate_chroma_shader = shared_shader(
+            "luminous_accumulate_chroma", current_dir, "accumulate_chroma.wgsl", output_format=rgba32float
+        )
         self.accumulate_luma_combined_shader = shared_shader(
-            "luminous_accumulate_luma_combined", current_dir, "accumulate_luma_combined.wgsl"
+            "luminous_accumulate_luma_combined", current_dir, "accumulate_luma_combined.wgsl", output_format=rgba32float
         )
-        self.reconstruct_shader = compose_common_shader("luminous_reconstruct", [color_module], current_dir, "reconstruct.wgsl")
+        self.reconstruct_shader = compose_common_shader(
+            "luminous_reconstruct", [color_module], current_dir, "reconstruct.wgsl", output_format=rgba32float
+        )
         # 「高速化」ON時の近似ぼかし(縮小ピラミッド)用。
-        self.downsample_shader = shared_shader("luminous_downsample", current_dir, "downsample.wgsl")
-        self.upsample_shader = compose_common_shader("luminous_upsample", [math_module], current_dir, "upsample.wgsl")
+        self.downsample_shader = shared_shader(
+            "luminous_downsample", current_dir, "downsample.wgsl", output_format=rgba32float
+        )
+        self.upsample_shader = compose_common_shader(
+            "luminous_upsample", [math_module], current_dir, "upsample.wgsl", output_format=rgba32float
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)

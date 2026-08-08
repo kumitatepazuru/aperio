@@ -3,7 +3,7 @@ enable wgpu_binding_array;
 #import aperio::color::{bt601_encode}
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(1) var outputTex: ImageStorageTexture;
 
 // RGB(ストレートアルファ)をBT.601の輝度Y・色差Cr/Cbへ変換し、
 // {r=Cr偏差, g=Cb偏差, b=Y, a=alpha} に詰め替える。alphaは素通し。

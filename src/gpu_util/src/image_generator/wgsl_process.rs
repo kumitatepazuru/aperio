@@ -60,7 +60,7 @@ pub fn handle_wgsl_step(
     let output_texture = generator.get_or_create_texture(
         output_width,
         output_height,
-        wgpu::TextureFormat::Rgba32Float,
+        wgsl.format,
         wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::STORAGE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
@@ -74,6 +74,7 @@ pub fn handle_wgsl_step(
         input_texture_count: input_texture_views.len(),
         has_storage: params.is_some(),
         has_sampler: wgsl.sampler.is_some(),
+        format: wgsl.format,
     };
     let cached_pipeline = generator.get_or_create_pipeline(&key, &wgsl.module)?;
 

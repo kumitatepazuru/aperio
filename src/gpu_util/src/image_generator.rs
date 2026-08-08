@@ -22,6 +22,7 @@ use crate::{
         parallel_process::handle_parallel_step, texture_func_process::handle_texture_func_step,
         wgsl_process::handle_wgsl_step,
     },
+    image_pixel_format::ImagePixelFormat,
     resource_pool::{LruCache, ResourcePool},
     SharedTextureFormat,
 };
@@ -41,6 +42,7 @@ pub(crate) struct PipelineCacheKey {
     input_texture_count: usize,
     has_storage: bool,
     has_sampler: bool,
+    format: wgpu::TextureFormat,
 }
 
 // テクスチャキャッシュのキーとなる構造体
@@ -95,6 +97,8 @@ pub struct ImageGenerator {
     /// このデバイスで確保できる2Dテクスチャの最大辺長（px）。
     /// キャンバスを広げるエフェクトが拡張量を切り詰める上限として使う。
     pub maximum_texture_size: u32,
+    /// パイプライン内部のワーキングテクスチャのフォーマット。
+    image_format: ImagePixelFormat,
     // 後処理用のパイプラインと関連リソース
     pub(crate) post_process_pipeline: ComputePipeline,
     pub(crate) blit_f32_to_f16_pipeline: RenderPipeline,
@@ -114,7 +118,7 @@ pub struct ImageGenerator {
 
 impl ImageGenerator {
     /// 新しいImageGeneratorインスタンスを非同期で作成します。
-    pub async fn new() -> Result<Self> {
+    pub async fn new(format: ImagePixelFormat) -> Result<Self> {
         let backends = if cfg!(target_os = "windows") {
             wgpu::Backends::DX12
         } else if cfg!(target_os = "linux") {
@@ -254,6 +258,7 @@ impl ImageGenerator {
             device,
             queue,
             maximum_texture_size,
+            image_format: format,
             post_process_pipeline,
             blit_f32_to_f16_pipeline,
             blit_f32_to_bgra8_pipeline,
@@ -268,6 +273,11 @@ impl ImageGenerator {
             // バッファリソースプールの初期化
             buffer_pool: Arc::new(Mutex::new(ResourcePool::new(10))),
         })
+    }
+
+    /// パイプライン内部のワーキングテクスチャのフォーマットを返す
+    pub fn image_format(&self) -> ImagePixelFormat {
+        self.image_format
     }
 
     /// パイプラインキャッシュの最大サイズを設定します。
@@ -478,7 +488,7 @@ impl ImageGenerator {
             visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::StorageTexture {
                 access: wgpu::StorageTextureAccess::WriteOnly,
-                format: wgpu::TextureFormat::Rgba32Float,
+                format: key.format,
                 view_dimension: wgpu::TextureViewDimension::D2,
             },
             count: None,

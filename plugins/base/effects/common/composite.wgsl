@@ -1,7 +1,7 @@
 enable wgpu_binding_array;
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(1) var outputTex: ImageStorageTexture;
 
 // 2枚のストレートアルファ画像を標準的なプリマルチプライドsource-overで合成する
 // 汎用ステップ。inputTex[0]が前面(src)、inputTex[1]が背面(dst)。

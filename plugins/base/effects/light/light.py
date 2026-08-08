@@ -21,13 +21,19 @@ class LightEffect(VideoEffectGeneratorBase):
         current_dir, common_dir = effect_dirs(__file__)
         blur_module = lib_module(common_dir, "blur")
 
+        rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
+
         self.box_average_dir_shader = compose_common_shader(
             "light_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
         )
         self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
         self.invert_alpha_shader = shared_shader("light_invert_alpha", current_dir, "invert_alpha.wgsl")
-        self.shadow_apply_shader = shared_shader("light_shadow_apply", current_dir, "shadow_apply.wgsl")
-        self.composite_shader = shared_shader("light_composite", current_dir, "composite.wgsl")
+        self.shadow_apply_shader = shared_shader(
+            "light_shadow_apply", current_dir, "shadow_apply.wgsl", output_format=rgba32float
+        )
+        self.composite_shader = shared_shader(
+            "light_composite", current_dir, "composite.wgsl", output_format=rgba32float
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
