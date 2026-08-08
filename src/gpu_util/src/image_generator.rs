@@ -1,9 +1,12 @@
 // image_generator.rs
 pub mod cpu_func_process;
 pub mod final_process;
+pub(crate) mod linked_memo;
 pub mod parallel_process;
 pub mod texture_func_process;
 pub mod wgsl_process;
+
+pub(crate) use linked_memo::LinkedMemo;
 
 #[cfg(target_os = "linux")]
 use crate::texture_to_native::linux::*;
@@ -334,6 +337,7 @@ impl ImageGenerator {
         &self,
         steps: &[PipelineStep],
         initial_state: ProcessingState,
+        memo: &LinkedMemo,
     ) -> Result<ProcessingState> {
         let mut state = initial_state;
 
@@ -344,17 +348,19 @@ impl ImageGenerator {
                     params,
                     output_height,
                     output_width,
+                    ..
                 } => {
                     handle_wgsl_step(self, &state, wgsl, params, i, *output_width, *output_height)?
                 }
-                PipelineStep::Parallel { pipelines } => {
-                    handle_parallel_step(self, &mut state, pipelines, i).await?
+                PipelineStep::Parallel { pipelines, .. } => {
+                    handle_parallel_step(self, &mut state, pipelines, i, memo).await?
                 }
                 PipelineStep::CpuFunc {
                     func,
                     params,
                     output_width,
                     output_height,
+                    ..
                 } => {
                     handle_cpu_func_step(
                         self,
@@ -371,6 +377,7 @@ impl ImageGenerator {
                     params,
                     output_width,
                     output_height,
+                    ..
                 } => {
                     handle_texture_func_step(
                         self,
@@ -382,7 +389,10 @@ impl ImageGenerator {
                     )
                     .await?
                 }
+                PipelineStep::Linked { linked_id, .. } => memo.resolve(linked_id)?,
             };
+
+            memo.record_if_target(step.id(), &state);
         }
 
         Ok(state)
@@ -398,7 +408,11 @@ impl ImageGenerator {
         self.texture_pool.lock().unwrap().reset_used();
         self.buffer_pool.lock().unwrap().reset_used();
 
-        let final_state_vec = self.execute_pipeline(&builder.steps, Vec::new()).await?;
+        let memo = LinkedMemo::new(&builder.steps);
+
+        let final_state_vec = self
+            .execute_pipeline(&builder.steps, Vec::new(), &memo)
+            .await?;
 
         // final_state_vecは単一の要素を持つはず
         if final_state_vec.len() != 1 {

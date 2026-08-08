@@ -26,7 +26,7 @@ class FileFilter:
 
 @final
 class GenerateStructure(dict):
-    def __new__(cls, /, id: str, name: str, display_name: str, parameters: dict) -> GenerateStructure: ...
+    def __new__(cls, /, id: str, name: str, display_name: str, parameters: dict, link_id: str |None = None) -> GenerateStructure: ...
 
 @final
 class GeneratorEvent:

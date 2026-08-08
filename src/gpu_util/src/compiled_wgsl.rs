@@ -39,7 +39,9 @@ fn build_sampler(
 
 #[derive(Clone)]
 pub struct CompiledWgsl {
-    pub(crate) id: String,
+    /// シェーダー種別のラベル。パイプラインキャッシュのキーにもなる
+    /// `GenerateStructure.name`と同じ「同種なら共通」の性質を持つ。
+    pub(crate) name: String,
     pub(crate) module: Arc<wgpu::ShaderModule>,
     pub(crate) sampler: Option<Arc<wgpu::Sampler>>,
     pub(crate) _source: Arc<str>,
@@ -47,20 +49,20 @@ pub struct CompiledWgsl {
 
 impl CompiledWgsl {
     pub fn new(
-        id: &str,
+        name: &str,
         wgsl_code: &str,
         device: &Device,
         sampler_options: Option<&SamplerOptions>,
     ) -> Result<Self> {
         let shader_module_descriptor = wgpu::ShaderModuleDescriptor {
-            label: Some(id), // labelにもIDを使用
+            label: Some(name), // labelにもnameを使用
             source: wgpu::ShaderSource::Wgsl(wgsl_code.into()),
         };
 
         let module = device.create_shader_module(shader_module_descriptor);
 
         Ok(Self {
-            id: id.to_string(),
+            name: name.to_string(),
             module: Arc::new(module),
             sampler: build_sampler(device, sampler_options),
             _source: Arc::from(wgsl_code),
@@ -70,10 +72,10 @@ impl CompiledWgsl {
     /// `composable_modules` を naga_oil に登録したうえで `naga_module` を合成し、
     /// できあがった naga IR からシェーダーモジュールを作る。
     ///
-    /// `id` はパイプラインキャッシュのキーとしても使われるため、
-    /// 同じシェーダーを異なる `shader_defs` で合成する場合は必ず別の `id` を渡すこと。
+    /// `name` はパイプラインキャッシュのキーとしても使われるため、
+    /// 同じシェーダーを異なる `shader_defs` で合成する場合は必ず別の `name` を渡すこと。
     pub fn compose_new(
-        id: &str,
+        name: &str,
         composable_modules: &[&ComposableModuleSource],
         naga_module: &NagaModuleSource,
         device: &Device,
@@ -108,12 +110,12 @@ impl CompiledWgsl {
         };
 
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(id), // labelにもIDを使用
+            label: Some(name), // labelにもnameを使用
             source: wgpu::ShaderSource::Naga(std::borrow::Cow::Owned(module)),
         });
 
         Ok(Self {
-            id: id.to_string(),
+            name: name.to_string(),
             module: Arc::new(shader_module),
             sampler: build_sampler(device, sampler_options),
             // naga IR から作るため WGSL のテキストは持たない

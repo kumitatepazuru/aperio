@@ -1,6 +1,5 @@
 import math
 import os.path
-import struct
 import traceback
 
 from aperio import PyManagers, gpu_util
@@ -36,61 +35,17 @@ from .plugin_base.generator_base import (
     AudioGenerateParameters,
     AudioGeneratorReturn,
     VideoGenerateParameters,
-    GeneratorBuilderReturn,
-    GeneratorFuncReturn,
-    GeneratorTextureReturn,
-    GeneratorWgslReturn,
 )
 from .plugin_manager import PluginManager
 from .event_manager import EventManager
-
-# スピーカーアジマス角 (度数法): 0=正面、負=左、正=右、±180=背面、None=LFE(常にgain=1.0)
-# 各エントリはFFmpegのデフォルトチャンネルレイアウト順に準拠
-_CHANNEL_AZIMUTHS: dict[int, list[float | None]] = {
-    1: [0.0],                                                    # Mono: FC
-    2: [-30.0, 30.0],                                            # Stereo: FL FR
-    3: [-30.0, 30.0, 0.0],                                       # 3.0: FL FR FC
-    4: [-30.0, 30.0, -110.0, 110.0],                            # 4.0: FL FR BL BR
-    5: [-30.0, 30.0, 0.0, -110.0, 110.0],                       # 5.0: FL FR FC BL BR
-    6: [-30.0, 30.0, 0.0, None, -110.0, 110.0],                 # 5.1: FL FR FC LFE BL BR
-    7: [-30.0, 30.0, 0.0, None, -110.0, 110.0, 180.0],         # 6.1: FL FR FC LFE BL BR BC
-    8: [-30.0, 30.0, 0.0, None, -110.0, 110.0, -60.0, 60.0],  # 7.1: FL FR FC LFE BL BR SL SR
-}
-
-
-def _apply_generate_result(
-    builder: gpu_util.PyImageGenerateBuilder,
-    generate_result: "GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn",
-) -> gpu_util.PyImageGenerateBuilder:
-    """GeneratorWgslReturn/FuncReturn/TextureReturn/BuilderReturn のいずれかを builder に適用する。
-    _process_video_item のオブジェクト生成・エフェクトチェーンの両方から使う共通ヘルパー。"""
-    item_result = generate_result.item_result
-    if isinstance(generate_result, GeneratorWgslReturn):
-        return builder.add_wgsl(generate_result.compiled, generate_result.params, item_result.width, item_result.height)
-    elif isinstance(generate_result, GeneratorFuncReturn):
-        return builder.add_func(generate_result.compiled, generate_result.params, item_result.width, item_result.height)
-    elif isinstance(generate_result, GeneratorTextureReturn):
-        return builder.add_texture_func(
-            generate_result.compiled, generate_result.params, item_result.width, item_result.height
-        )
-    elif isinstance(generate_result, GeneratorBuilderReturn):
-        return builder.add_builder(generate_result.builder)
-    return builder
-
-
-def _compute_pan_gains(pan: float, channels: int) -> npt.NDArray[np.float32]:
-    """pan [-1, 1] をスピーカーアジマスに基づくチャンネルごとのゲインに変換する。
-    未定義チャンネル数の場合はすべて 1.0 を返す。"""
-    azimuths = _CHANNEL_AZIMUTHS.get(channels)
-    if azimuths is None:
-        return np.ones(channels, dtype=np.float32)
-    pan_rad = math.radians(pan * 90.0)
-    gains = [
-        1.0 if az is None else max(0.0, math.cos(pan_rad - math.radians(az)))
-        for az in azimuths
-    ]
-    return np.array(gains, dtype=np.float32)
-
+from .frame_builder import (
+    apply_generate_result,
+    append_frame_entry,
+    collect_additional_item,
+    last_leaf_id,
+    resolve_additional_entry,
+)
+from .audio_mixer import mix
 
 # モジュールレベルグローバル — AperioManager.__init__ で設定される
 image_generator = gpu_util.PyImageGenerator()
@@ -155,6 +110,7 @@ class AperioManager(PluginManager, EventManager):
         frame_number: int,
         width: int,
         height: int,
+        structure_id_map: dict[str, tuple[str, int, int]],
     ) -> tuple[gpu_util.PyImageGenerateBuilder, ItemResult, list[AdditionalItem], list[AdditionalItem]] | None:
         """
         1つの Video アイテムの object→effects チェーンを解決し、builder・最終 ItemResult・
@@ -164,56 +120,108 @@ class AperioManager(PluginManager, EventManager):
         流し込まれる合成アイテムの両方から共通で呼ばれる — 追加アイテムの `item` も
         「他の実アイテムと全く同じコードパス」で処理される。
 
+        `structure_id_map` は「`GenerateStructure.id` → (そのステップの自動採番パイプラインid,
+        width, height)」の対応表で、1フレーム分の処理中だけ`_make_frame_builder`が保持する。
+        `link_id`が設定された object/effect エントリはプラグインを一切呼ばず、代わりに
+        ここから引いた情報でパイプライン上の既存出力をそのまま使い回す(`add_linked`)。
+        通常のエントリを処理した後は、その結果をここに登録する。
+
         Returns:
             None: オブジェクトプラグインが None を返した場合(スキップ対象)。
         """
-        obj_name = layer.object["name"]
-        if obj_name not in self.video_object_plugins:
-            raise ValueError(f"Object plugin {obj_name} is not registered")
-
         behind_items: list[AdditionalItem] = []
         ahead_items: list[AdditionalItem] = []
+        # link_idが連続するチェーンでは、実際に`add_linked`をビルダーに反映するのは
+        # その連続run内の最後のstepのときだけにする(中間のstepはstructure_id_mapへの
+        # エイリアス登録のみ)。Linkedは直前の状態を無視してリンク先のテクスチャに
+        # 差し替えるため、連続してadd_linkedすると手前の分が無駄になってしまうため。
+        pending_link: tuple[str, int, int] | None = None  # (pipeline_id, width, height)
 
-        def _collect(item_result: ItemResult) -> None:
-            additional = item_result.additional_item
-            if additional is not None:
-                (behind_items if additional.behind else ahead_items).append(additional)
+        object_id = layer.object["id"]
+        object_link_id = layer.object.get("link_id")
 
-        obj_plugin = self.video_object_plugins[obj_name]
-        params = VideoGenerateParameters(
-            frame_number=frame_number,
-            layer=layer,
-            args=layer.object["parameters"],
-            width=width,
-            height=height,
-        )
-        layer_frame = obj_plugin.generate(params)
-        if layer_frame is None:
-            return None
-        _collect(layer_frame.item_result)
+        if object_link_id is not None:
+            target = structure_id_map.get(object_link_id)
+            if target is None:
+                raise ValueError(f"link_id {object_link_id} was not resolved before use (structure {object_id})")
+            structure_id_map[object_id] = target
+            pending_link = target
+            item_result = ItemResult(target[1], target[2])
+            layer_builder = gpu_util.PyImageGenerateBuilder()
+        else:
+            obj_name = layer.object["name"]
+            if obj_name not in self.video_object_plugins:
+                raise ValueError(f"Object plugin {obj_name} is not registered")
 
-        layer_builder = _apply_generate_result(gpu_util.PyImageGenerateBuilder(), layer_frame)
-
-        for effect in layer.effects:
-            if effect["name"] not in self.video_effect_plugins:
-                raise ValueError(f"Effect plugin {effect['name']} is not registered")
-
-            effect_plugin = self.video_effect_plugins[effect["name"]]
+            obj_plugin = self.video_object_plugins[obj_name]
             params = VideoGenerateParameters(
                 frame_number=frame_number,
                 layer=layer,
-                args=effect["parameters"],
-                width=layer_frame.item_result.width,
-                height=layer_frame.item_result.height,
+                args=layer.object["parameters"],
+                width=width,
+                height=height,
+                structure_id=object_id,
             )
-            tmp_layer_frame = effect_plugin.generate(params)
-            if tmp_layer_frame is None:
-                continue
-            layer_frame = tmp_layer_frame
-            _collect(layer_frame.item_result)
-            layer_builder = _apply_generate_result(layer_builder, layer_frame)
+            layer_frame = obj_plugin.generate(params)
+            if layer_frame is None:
+                return None
+            collect_additional_item(layer_frame.item_result, behind_items, ahead_items)
+            item_result = layer_frame.item_result
 
-        return layer_builder, layer_frame.item_result, behind_items, ahead_items
+            layer_builder = gpu_util.PyImageGenerateBuilder()
+            if pending_link is not None:
+                layer_builder = layer_builder.add_linked(*pending_link)
+                pending_link = None
+            layer_builder = apply_generate_result(layer_builder, layer_frame)
+
+            pipeline_id_tree = layer_builder.get_id_tree()
+            if pipeline_id_tree:  # get_id_treeは常にlist、空ならNoneではなく空listが返る
+                structure_id_map[object_id] = (last_leaf_id(pipeline_id_tree), item_result.width, item_result.height)
+
+        for effect in layer.effects:
+            effect_id = effect["id"]
+            effect_link_id = effect.get("link_id")
+
+            if effect_link_id is not None:
+                target = structure_id_map.get(effect_link_id)
+                if target is None:
+                    raise ValueError(f"link_id {effect_link_id} was not resolved before use (structure {effect_id})")
+                structure_id_map[effect_id] = target
+                pending_link = target
+                item_result = ItemResult(target[1], target[2])
+            else:
+                if effect["name"] not in self.video_effect_plugins:
+                    raise ValueError(f"Effect plugin {effect['name']} is not registered")
+
+                effect_plugin = self.video_effect_plugins[effect["name"]]
+                params = VideoGenerateParameters(
+                    frame_number=frame_number,
+                    layer=layer,
+                    args=effect["parameters"],
+                    width=item_result.width,
+                    height=item_result.height,
+                    structure_id=effect_id,
+                )
+                tmp_layer_frame = effect_plugin.generate(params)
+                if tmp_layer_frame is None:
+                    continue
+                layer_frame = tmp_layer_frame
+                collect_additional_item(layer_frame.item_result, behind_items, ahead_items)
+                item_result = layer_frame.item_result
+
+                if pending_link is not None:
+                    layer_builder = layer_builder.add_linked(*pending_link)
+                    pending_link = None
+                layer_builder = apply_generate_result(layer_builder, layer_frame)
+
+                pipeline_id_tree = layer_builder.get_id_tree()
+                if pipeline_id_tree:
+                    structure_id_map[effect_id] = (last_leaf_id(pipeline_id_tree), item_result.width, item_result.height)
+
+        if pending_link is not None:  # チェーン末尾がlinkで終わる場合の materialize
+            layer_builder = layer_builder.add_linked(*pending_link)
+
+        return layer_builder, item_result, behind_items, ahead_items
 
     def _make_frame_builder(
         self,
@@ -248,34 +256,14 @@ class AperioManager(PluginManager, EventManager):
             layer_builders = []
             generator_params = []
             frame_results: dict[str, ItemResult] = {}
-
-            def _append_entry(item_builder: gpu_util.PyImageGenerateBuilder, item: "ItemStructure.Video", result: ItemResult) -> None:
-                eff_x = item.x + (result.x or 0)
-                eff_y = item.y + (result.y or 0)
-                eff_rotation = item.rotation + (result.rotate or 0.0)
-                eff_center_x = result.center_x or 0
-                eff_center_y = result.center_y or 0
-
-                # 回転をラジアンに変換してから回転行列を計算
-                rotation_rad = math.radians(eff_rotation)
-                cos_theta = math.cos(rotation_rad)
-                sin_theta = math.sin(rotation_rad)
-                alpha = item.alpha / 100  # 0-100 -> 0-1
-                rotation_matrix = [cos_theta, sin_theta, -sin_theta, cos_theta]
-
-                fmt = "<iiff"  # x, y, scale, alpha
-                fmt += "4f"    # rotation_matrix (2x2 floats)
-                fmt += "ii"    # center_x, center_y
-                params_bytes = struct.pack(fmt, eff_x, eff_y, item.scale / 100, alpha, *rotation_matrix, eff_center_x, eff_center_y)
-                layer_builders.append(item_builder)
-                generator_params.append(params_bytes)
+            structure_id_map: dict[str, tuple[str, int, int]] = {}
 
             for layer in frame_structure:
                 if not isinstance(layer, ItemStructure.Video):
                     logger.warning(f"Layer {layer.id} is not a video layer. Skipping.") # type: ignore
                     continue
 
-                processed = self._process_video_item(layer, frame_number, width, height)
+                processed = self._process_video_item(layer, frame_number, width, height, structure_id_map)
                 if processed is None:
                     continue
                 layer_builder, item_result, behind_items, ahead_items = processed
@@ -285,23 +273,22 @@ class AperioManager(PluginManager, EventManager):
                 # additionalItem: チェーン中に現れた追加アイテム(behind/ahead)は、
                 # それぞれ実アイテムと全く同じ _process_video_item で解決してから
                 # 合成順で背面側/前面側に挿入する。
-                def _resolve(additional: AdditionalItem) -> tuple[gpu_util.PyImageGenerateBuilder, "ItemStructure.Video", ItemResult] | None:
-                    if not isinstance(additional.item, ItemStructure.Video):
-                        logger.warning(f"additional_item of layer {layer_id} is not a video item. Skipping.")
-                        return None
-                    additional_processed = self._process_video_item(additional.item, frame_number, width, height)
-                    if additional_processed is None:
-                        return None
-                    return additional_processed[0], additional.item, additional_processed[1]
-
-                behind_entries = [entry for a in behind_items if (entry := _resolve(a)) is not None]
-                ahead_entries = [entry for a in ahead_items if (entry := _resolve(a)) is not None]
+                behind_entries = [
+                    entry
+                    for a in behind_items
+                    if (entry := resolve_additional_entry(self, a, layer_id, frame_number, width, height, structure_id_map)) is not None
+                ]
+                ahead_entries = [
+                    entry
+                    for a in ahead_items
+                    if (entry := resolve_additional_entry(self, a, layer_id, frame_number, width, height, structure_id_map)) is not None
+                ]
 
                 for behind_entry in behind_entries:
-                    _append_entry(*behind_entry)
-                _append_entry(layer_builder, layer, item_result)
+                    append_frame_entry(*behind_entry, layer_builders, generator_params)
+                append_frame_entry(layer_builder, layer, item_result, layer_builders, generator_params)
                 for ahead_entry in ahead_entries:
-                    _append_entry(*ahead_entry)
+                    append_frame_entry(*ahead_entry, layer_builders, generator_params)
 
             if len(layer_builders) == 0:
                 layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(
@@ -461,16 +448,6 @@ class AperioManager(PluginManager, EventManager):
             output = np.zeros((channels, sample_count), dtype=np.float32)
             request_end_time = start_time + sample_count / sample_rate
 
-            def _mix(obj_name: str, expected_count: int, samples, volume: float, pan: float, sample_offset: int) -> None:
-                if samples.ndim != 2 or samples.shape[0] != channels:
-                    raise ValueError(
-                        f"Audio plugin {obj_name} returned samples with invalid shape {samples.shape}, expected ({channels}, {expected_count})"
-                    )
-                pan_gains = _compute_pan_gains(pan / 100.0, channels)
-                mixed = samples * (volume / 100.0 * pan_gains[:, np.newaxis])
-                write_count = min(expected_count, sample_count - sample_offset)
-                output[:, sample_offset:sample_offset + write_count] += mixed[:, :write_count]
-
             for layer in audio_structure:
                 if not isinstance(layer, ItemStructure.Audio):
                     logger.warning(f"Layer {layer.id} is not an audio layer. Skipping.") # type: ignore
@@ -503,7 +480,10 @@ class AperioManager(PluginManager, EventManager):
                 layer_id = layer.id
 
                 # ボリュームとパンをnumpyで一括適用して加算（浮動小数点丸め誤差による境界超過をクリップ）
-                _mix(layer.object["name"], overlap_sample_count, layer_result.samples, layer.volume, layer.pan, sample_offset)
+                mix(
+                    output, channels, sample_count,
+                    layer.object["name"], overlap_sample_count, layer_result.samples, layer.volume, layer.pan, sample_offset,
+                )
 
                 # additionalItem: 同じ時間窓に加算ミックスする追加のオーディオアイテムがあれば、
                 # それぞれ実アイテムと全く同じ _process_audio_item で解決してから同じ窓に加算する
@@ -517,7 +497,10 @@ class AperioManager(PluginManager, EventManager):
                     )
                     if additional_processed is not None:
                         additional_result, _ = additional_processed
-                        _mix(
+                        mix(
+                            output,
+                            channels,
+                            sample_count,
                             additional.item.object["name"],
                             overlap_sample_count,
                             additional_result.samples,

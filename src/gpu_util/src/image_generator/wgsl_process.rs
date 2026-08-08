@@ -70,7 +70,7 @@ pub fn handle_wgsl_step(
 
     // --- パイプラインの取得 ---
     let key = PipelineCacheKey {
-        id: wgsl.id.clone(),
+        id: wgsl.name.clone(),
         input_texture_count: input_texture_views.len(),
         has_storage: params.is_some(),
         has_sampler: wgsl.sampler.is_some(),

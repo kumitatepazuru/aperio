@@ -48,6 +48,8 @@ class VideoGenerateParameters:
     """生成元のフレームの幅。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
     height: int
     """生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
+    structure_id: str = ""
+    """この呼び出しが対応する`GenerateStructure.id`(`layer.object["id"]`または対応するeffectの`["id"]`)。"""
 
 @dataclass
 class AudioGeneratorReturn:

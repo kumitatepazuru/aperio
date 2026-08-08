@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 use gpu_util::compiled_func::{
     self, CpuFunction, CpuInputImage, CpuOutput, GpuInputTexture, GpuTextureOutput, TextureFunction,
 };
-use gpu_util::image_generate_builder::ImageGenerateBuilder;
+use gpu_util::image_generate_builder::{IdTree, ImageGenerateBuilder};
 use gpu_util::image_generator;
 use gpu_util::{compiled_wgsl, image_generate_builder, SharedTextureFormat};
 
@@ -195,13 +195,13 @@ impl PySamplerOptions {
 impl PyCompiledWgsl {
     #[new]
     pub fn new(
-        id: &str,
+        name: &str,
         wgsl_code: &str,
         generator: &PyImageGenerator,
         sampler_options: Option<&PySamplerOptions>,
     ) -> Result<Self, PyErr> {
         let inner = compiled_wgsl::CompiledWgsl::new(
-            id,
+            name,
             wgsl_code,
             &generator.inner.device,
             sampler_options.map(|s| &s.inner),
@@ -212,12 +212,12 @@ impl PyCompiledWgsl {
 
     /// composable module 群を naga_oil で合成し、その naga IR からシェーダーを作る。
     ///
-    /// `id` はパイプラインキャッシュのキーにもなるため、同じシェーダーを異なる
-    /// `shader_defs` で合成する場合は必ず別の `id` を渡すこと。
+    /// `name` はパイプラインキャッシュのキーにもなるため、同じシェーダーを異なる
+    /// `shader_defs` で合成する場合は必ず別の `name` を渡すこと。
     #[staticmethod]
-    #[pyo3(signature = (id, composable_modules, naga_module, generator, sampler_options=None))]
+    #[pyo3(signature = (name, composable_modules, naga_module, generator, sampler_options=None))]
     pub fn compose_new(
-        id: &str,
+        name: &str,
         composable_modules: Vec<PyRef<'_, PyComposableModuleDescriptor>>,
         naga_module: &PyNagaModuleDescriptor,
         generator: &PyImageGenerator,
@@ -226,7 +226,7 @@ impl PyCompiledWgsl {
         let composable_modules: Vec<_> = composable_modules.iter().map(|m| &m.inner).collect();
 
         let inner = compiled_wgsl::CompiledWgsl::compose_new(
-            id,
+            name,
             &composable_modules,
             &naga_module.inner,
             &generator.inner.device,
@@ -278,6 +278,29 @@ impl PySharedTextureHandle {
     }
 }
 
+/// `IdTree`を対応するPythonオブジェクトに変換する。leafは`str`、`Parallel`は
+/// `{parallelのid: [各ブランチの全ステップidリスト...]}`という1要素の`dict`になる。
+fn id_tree_to_py(py: Python<'_>, tree: &IdTree) -> PyResult<Py<PyAny>> {
+    Ok(match tree {
+        IdTree::Single(s) => PyString::new(py, s).into_any().unbind(),
+        IdTree::Parallel { id, branches } => {
+            // branchesは`Vec<Vec<IdTree>>`(各ブランチの全ステップ列)なので、
+            // 1段(ブランチのリスト)→さらに1段(各ブランチ自身のステップリスト)変換する。
+            let branch_lists: PyResult<Vec<Py<PyAny>>> =
+                branches.iter().map(|branch| id_trees_to_py(py, branch)).collect();
+            let list = PyList::new(py, branch_lists?)?;
+            let dict = PyDict::new(py);
+            dict.set_item(id, list)?;
+            dict.into_any().unbind()
+        }
+    })
+}
+
+fn id_trees_to_py(py: Python<'_>, trees: &[IdTree]) -> PyResult<Py<PyAny>> {
+    let converted: PyResult<Vec<Py<PyAny>>> = trees.iter().map(|t| id_tree_to_py(py, t)).collect();
+    Ok(PyList::new(py, converted?)?.into_any().unbind())
+}
+
 #[pymethods]
 impl PyImageGenerateBuilder {
     #[new]
@@ -304,8 +327,20 @@ impl PyImageGenerateBuilder {
         Self { inner: new_inner }
     }
 
-    pub fn add_builder(&self, _py: Python<'_>, other: &PyImageGenerateBuilder) -> Self {
-        let new_inner = self.inner.clone().chain(&other.inner);
+    /// このビルダーが持つ全ステップの自動採番idを、追加順のリストとして返す
+    /// (空のビルダーなら空リスト)。leafは文字列、`Parallel`は`{parallelのid:
+    /// [各ブランチの全ステップidリスト...]}`という1要素の辞書になる(再帰的にネストしうる)。
+    /// 最後に追加したステップのidだけ欲しい場合は、リストの`[-1]`を取り、それが`dict`なら
+    /// その唯一の値(ブランチのリスト)の`[-1]`(=最後のブランチ、これも1つのリスト)の
+    /// `[-1]`を、というように再帰的にたどればよい。
+    pub fn get_id_tree(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
+        self.inner.id_tree().iter().map(|t| id_tree_to_py(py, t)).collect()
+    }
+
+    /// 実際には計算を行わず、同じフレーム内で`linked_id`(`get_id_tree`で取得したもの)が指す
+    /// 既存ステップの出力をそのまま使い回すステップを追加する。
+    pub fn add_linked(&self, linked_id: String, output_width: u32, output_height: u32) -> Self {
+        let new_inner = self.inner.clone().add_linked(linked_id, output_width, output_height);
         Self { inner: new_inner }
     }
 

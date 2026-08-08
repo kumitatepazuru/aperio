@@ -19,6 +19,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 wgpu = { version = "30", features = ["naga-ir"] }
 bytemuck = "1"
 naga_oil = "0.23.0"
+uuid = { version = "1", features = ["v4"] }
 
 [profile.release]
 lto = true

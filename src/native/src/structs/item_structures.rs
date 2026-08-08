@@ -189,24 +189,30 @@ pub struct GenerateStructure {
     pub name: String, // オブジェクトやエフェクトの固有名でIDとは違い種類が同じであれば同じになる
     pub display_name: String,
     pub parameters: HashMap<String, JsonValue>, // パラメータの具体的な型はエフェクトによって異なるため、単にdict(JsonValue)型とする
+    // Some の場合、このエントリは実体を持たず「link_id が指す別エントリの計算結果を
+    // フレーム内で使い回す」ことだけを意味する(name/display_name/parameters は無視される)。
+    pub link_id: Option<String>,
 }
 
 #[pymethods]
 impl GenerateStructure {
     /// Python側から additionalItem 用に GenerateStructure を新規構築するためのコンストラクタ。
     #[new]
+    #[pyo3(signature = (id, name, display_name, parameters, link_id=None))]
     fn new(
         py: Python<'_>,
         id: String,
         name: String,
         display_name: String,
         parameters: Py<PyDict>,
+        link_id: Option<String>,
     ) -> PyResult<Self> {
         Ok(Self {
             id,
             name,
             display_name,
             parameters: parameters.bind(py).extract()?,
+            link_id,
         })
     }
 }
