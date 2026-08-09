@@ -21,9 +21,10 @@ class MozaicEffect(VideoEffectGeneratorBase):
         math_module = lib_module(common_dir, "math")
 
         self.mozaic_h_shader = compose_common_shader("mozaic_h", [math_module], current_dir, "mozaic_h.wgsl")
+        # エフェクト最終段の単発。ベベルの輝度/色差補正は固定±25%のみで超過は僅かなため16で足りる。
         self.mozaic_v_shader = compose_common_shader(
             "mozaic_v", [math_module, color_module], current_dir, "mozaic_v.wgsl",
-            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+            min_output_format=gpu_util.WrappedImagePixelFormat.Rgba16Float,
         )
 
     @event(type=GeneratorEvent.New)

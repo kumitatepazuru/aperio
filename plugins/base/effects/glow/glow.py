@@ -38,22 +38,36 @@ class GlowEffect(VideoEffectGeneratorBase):
         blur_module = lib_module(common_dir, "blur")
 
         rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
+        rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
 
+        # extract: 単発(直後のexpandまでで自身は連鎖しない)。値はBT.601係数の逆数
+        # (最大約8.8倍)で頭打ちのため16で足りる。
         self.extract_shader = compose_common_shader(
-            "glow_extract", [color_module], current_dir, "extract.wgsl", output_format=rgba32float
+            "glow_extract", [color_module], current_dir, "extract.wgsl", min_output_format=rgba16float
         )
+        # box_average_dir: ループ内(i>0)でライブのアキュムレータ自体をブラーする
+        # 深い連鎖のため32必須。
         self.box_average_dir_shader = compose_common_shader(
-            "glow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl", output_format=rgba32float
+            "glow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl", min_output_format=rgba32float
         )
+        # line_accumulate: shapeにより最大12回自身の出力を再読込する深い連鎖のため32必須。
         self.line_accumulate_shader = compose_common_shader(
             "glow_line_accumulate", [color_module, blur_module], current_dir, "line_accumulate.wgsl",
-            output_format=rgba32float,
+            min_output_format=rgba32float,
         )
+        # composite: エフェクト最終段の単発。accumはline_accumulate側で輝度2.0に
+        # 頭打ち済みなので超過も数倍止まりで16で足りる。
         self.composite_shader = compose_common_shader(
-            "glow_composite", [color_module], current_dir, "composite.wgsl", output_format=rgba32float
+            "glow_composite", [color_module], current_dir, "composite.wgsl", min_output_format=rgba16float
         )
-        self.select_shader = shared_shader("glow_select", common_dir, "select.wgsl")
-        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
+        # select: shapeにより最大12回連続でアキュムレータを持ち越す深い連鎖のため32必須。
+        self.select_shader = shared_shader(
+            "glow_select", common_dir, "select.wgsl", min_output_format=rgba32float
+        )
+        # expand: extract直後の1回だけ(自身は連鎖しない)。オフセット無し・非負のみで16で足りる。
+        self.expand_shader = shared_shader(
+            "expand", common_dir, "expand.wgsl", min_output_format=rgba16float
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)

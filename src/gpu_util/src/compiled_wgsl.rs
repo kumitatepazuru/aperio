@@ -67,10 +67,7 @@ pub struct CompiledWgsl {
     pub(crate) name: String,
     pub(crate) module: Arc<wgpu::ShaderModule>,
     pub(crate) sampler: Option<Arc<wgpu::Sampler>>,
-    /// このシェーダーの出力ストレージテクスチャが実際に使うフォーマット。
-    /// `ImageStorageTexture`のaliasを使うシェーダーは呼び出し側で
-    /// `generator.image_format()`を渡すのが既定、精度重視のシェーダーは
-    /// 呼び出し側が明示的に`Rgba32Float`を渡す。
+    /// このシェーダーの出力ストレージテクスチャが実際に使うフォーマット
     pub(crate) format: wgpu::TextureFormat,
     pub(crate) _source: Arc<str>,
 }

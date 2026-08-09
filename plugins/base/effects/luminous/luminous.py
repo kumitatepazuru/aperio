@@ -1,5 +1,6 @@
 import struct
 
+import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
@@ -52,39 +53,58 @@ class LuminousEffect(VideoEffectGeneratorBase):
         blur_module = lib_module(common_dir, "blur")
 
         rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
+        rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
 
+        # threshold: 単発(直後のcombined_initへ1回渡すのみ、まだオフセット等は
+        # 付与されていない)で値も高々±2程度なので16で足りる。
         self.threshold_shader = compose_common_shader(
-            "luminous_threshold", [color_module], current_dir, "threshold.wgsl", output_format=rgba32float
+            "luminous_threshold", [color_module], current_dir, "threshold.wgsl", min_output_format=rgba16float
         )
+        # curve: pow(base, x*256)-1 は base=1.1,x=1で約4e10に達しRgba16Floatの
+        # 最大値(約65504)を超えてInfになりうるため32必須。
         self.curve_shader = compose_common_shader(
-            "curve", [math_module], common_dir, "curve.wgsl", output_format=rgba32float
+            "curve", [math_module], common_dir, "curve.wgsl", min_output_format=rgba32float
         )
-        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
+        # expand: combined_init直後の1回だが、diffusion_speed>0時はcombined_initが
+        # curve_forwardで作った(pow(base,x*256)-1由来の)巨大な値を複製するため32必須。
+        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl", min_output_format=rgba32float)
+        # box_blur_dir: 6パス拡散の深い連鎖(最大12回のh/v呼び出し)でオフセット付き
+        # 表現を運び続け、diffusion_speed>0時はcurve空間の値もブラーするため32必須。
         self.box_blur_dir_shader = compose_common_shader(
-            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl", output_format=rgba32float
+            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl", min_output_format=rgba32float
         )
-        self.select_shader = shared_shader("luminous_select", common_dir, "select.wgsl")
+        # select: ループの毎パスでchain/accumulatorの状態を持ち越す深い連鎖
+        # (最大5〜6回)。オフセット桁落ちとcurve空間の値の両方を運ぶため32必須。
+        self.select_shader = shared_shader(
+            "luminous_select", common_dir, "select.wgsl", min_output_format=rgba32float
+        )
+        # 以下のアキュムレータ群は深い連鎖(selectで毎パス再読込)+オフセット桁落ち/
+        # curve空間の値の単純加算(飽和なし)のいずれかに該当するため32必須。
         self.accumulate_saturating_shader = shared_shader(
-            "luminous_accumulate_saturating", current_dir, "accumulate_saturating.wgsl", output_format=rgba32float
+            "luminous_accumulate_saturating", current_dir, "accumulate_saturating.wgsl", min_output_format=rgba32float
         )
         self.combined_init_shader = compose_common_shader(
-            "luminous_combined_init", [math_module], current_dir, "combined_init.wgsl", output_format=rgba32float
+            "luminous_combined_init", [math_module], current_dir, "combined_init.wgsl", min_output_format=rgba32float
         )
         self.accumulate_chroma_shader = shared_shader(
-            "luminous_accumulate_chroma", current_dir, "accumulate_chroma.wgsl", output_format=rgba32float
+            "luminous_accumulate_chroma", current_dir, "accumulate_chroma.wgsl", min_output_format=rgba32float
         )
         self.accumulate_luma_combined_shader = shared_shader(
-            "luminous_accumulate_luma_combined", current_dir, "accumulate_luma_combined.wgsl", output_format=rgba32float
+            "luminous_accumulate_luma_combined", current_dir, "accumulate_luma_combined.wgsl",
+            min_output_format=rgba32float,
         )
+        # reconstruct: パイプライン最終段の単発。出力はクランプ無しで最大約2.4倍
+        # 程度の超過にとどまり(既定マゼンタで実測)、curveのような爆発は無いため16で足りる。
         self.reconstruct_shader = compose_common_shader(
-            "luminous_reconstruct", [color_module], current_dir, "reconstruct.wgsl", output_format=rgba32float
+            "luminous_reconstruct", [color_module], current_dir, "reconstruct.wgsl", min_output_format=rgba16float
         )
-        # 「高速化」ON時の近似ぼかし(縮小ピラミッド)用。
+        # 「高速化」ON時の近似ぼかし(縮小ピラミッド)用。fast_modeとdiffusion_speedは
+        # 独立に有効化できるため、box_blur_dir同様にcurve空間の値を想定して32必須。
         self.downsample_shader = shared_shader(
-            "luminous_downsample", current_dir, "downsample.wgsl", output_format=rgba32float
+            "luminous_downsample", current_dir, "downsample.wgsl", min_output_format=rgba32float
         )
         self.upsample_shader = compose_common_shader(
-            "luminous_upsample", [math_module], current_dir, "upsample.wgsl", output_format=rgba32float
+            "luminous_upsample", [math_module], current_dir, "upsample.wgsl", min_output_format=rgba32float
         )
 
     @event(type=GeneratorEvent.New)
@@ -182,9 +202,17 @@ class LuminousEffect(VideoEffectGeneratorBase):
         for _ in range(_DIFFUSION_PASSES):
             radii.append(round(accum))
             accum *= k
-        max_radius = max(radii)
+        # 6パスは前パスの出力をさらにぼかす「連鎖」(README手順4)なので、発光が
+        # 実際ににじみ出しうる距離は最後(最大)の半径単体ではなく全パス半径の合計に
+        # なる(glowエフェクトのカスケードと同じ理由)。ここを最大半径だけで見積もると、
+        # 特に拡散速度>0(飽和なしで輝度が4096を平気で超える。README手順5)で
+        # 見た目上その差が顕著になり、発光がキャンバス端で見切れていた。
+        cascade_reach = sum(radii)
+        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        # 実機の「確保済み最大キャンバス」制約に相当する安全策(通常は発火しない)。
+        max_radius = max(0, min(cascade_reach, (max_dim - width) // 2, (max_dim - height) // 2))
 
-        # 発光がキャンバス外ににじみ出す分だけ、最大半径ぶんを一度だけ拡張する。
+        # 発光がキャンバス外ににじみ出す分だけ、この半径ぶんを一度だけ拡張する。
         # 以降の6パスはこの固定サイズのキャンバス内で処理する。
         new_width = width + 2 * max_radius
         new_height = height + 2 * max_radius

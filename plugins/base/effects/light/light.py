@@ -21,18 +21,24 @@ class LightEffect(VideoEffectGeneratorBase):
         current_dir, common_dir = effect_dirs(__file__)
         blur_module = lib_module(common_dir, "blur")
 
-        rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
+        rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
 
         self.box_average_dir_shader = compose_common_shader(
             "light_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
         )
-        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
-        self.invert_alpha_shader = shared_shader("light_invert_alpha", current_dir, "invert_alpha.wgsl")
-        self.shadow_apply_shader = shared_shader(
-            "light_shadow_apply", current_dir, "shadow_apply.wgsl", output_format=rgba32float
+        # expand: shadow_apply_shaderの出力(最大約2.0、クランプなし)を1回だけ運ぶ
+        # 単発の使用。桁落ちする設計ではないため16で足りる。
+        self.expand_shader = shared_shader(
+            "expand", common_dir, "expand.wgsl", min_output_format=rgba16float
         )
+        self.invert_alpha_shader = shared_shader("light_invert_alpha", current_dir, "invert_alpha.wgsl")
+        # shadow_apply: 単発。base.rgb+light_color*mは最大約2.0程度で16で足りる。
+        self.shadow_apply_shader = shared_shader(
+            "light_shadow_apply", current_dir, "shadow_apply.wgsl", min_output_format=rgba16float
+        )
+        # composite: エフェクト最終段の単発。halo_rgbはBT.601係数の逆数で頭打ちのため16で足りる。
         self.composite_shader = shared_shader(
-            "light_composite", current_dir, "composite.wgsl", output_format=rgba32float
+            "light_composite", current_dir, "composite.wgsl", min_output_format=rgba16float
         )
 
     @event(type=GeneratorEvent.New)

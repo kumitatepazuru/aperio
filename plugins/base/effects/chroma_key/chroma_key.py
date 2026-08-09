@@ -40,16 +40,25 @@ class ChromaKeyEffect(VideoEffectGeneratorBase):
             aperio_plugin.image_generator,
         )
 
+        # border_pass1: hue_excessが最大約8.0まで未クランプで出るが、符号なし・
+        # 軽度の超過で下流も1〜2ホップのため16で足りる。
+        rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
         self.border_pass1_shader = PyCompiledWgsl.compose_new(
             "chroma_key_border_pass1",
             [color_module, chroma_key_module],
             gpu_util.create_naga_module(os.path.join(current_dir, "border_pass1.wgsl")),
             aperio_plugin.image_generator,
+            min_output_format=rgba16float,
         )
+        # box_average_dir: 上記マップを平均化するだけで精度要求は上がらないため16。
         self.box_average_dir_shader = compose_common_shader(
-            "chroma_key_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
+            "chroma_key_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl",
+            min_output_format=rgba16float,
         )
-        self.select_shader = shared_shader("chroma_key_select", common_dir, "select.wgsl")
+        # select: 上記マップの単純コピー持ち越しのため16。
+        self.select_shader = shared_shader(
+            "chroma_key_select", common_dir, "select.wgsl", min_output_format=rgba16float
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)

@@ -3,7 +3,7 @@ enable wgpu_binding_array;
 #import aperio::color::{bt601_decode}
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(1) var outputTex: ImageStorageTexture;
 
 // 輝度アキュムレータ(inputTex[1])と色差アキュムレータ(inputTex[2])を
 // BT.601フルレンジの逆変換で合成し、発光色(プリマルチプライドをun-premultiply
@@ -51,9 +51,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let glow_premul = glow_rgb * glow_alpha;
     let out_alpha = clamp(base.a + glow_alpha, 0.0, 1.0);
 
+    // ここで[0,1]にクランプしてはいけない: out_alphaが小さい(周囲が透明に近い)ほど
+    // このstraight-alpha色は1.0を大きく超えうる(光色の輝度係数が1未満なら常に、例えば
+    // 既定のマゼンタで約2.42倍)。README手順6の通り、不透明分岐は「単純加算(クランプなし)」、
+    // 透明分岐も na=min(g.y,4096) で割るだけでクランプは無く、最終的なクリップは
+    // シーン合成後の出力段(aviutl.exe側、aperioではpost_process.wgsl等)でのみ行われる。
+    // ここで早期にクランプすると、後段でout_alphaを掛け直した際の明るさが
+    // 「クランプせずout_alphaを掛けてから最後にクランプする」場合と一致しなくなり、
+    // out_alphaが小さいオブジェクト(透明背景のテキスト等)だけ不当に暗くなる
+    // (out_alpha=1に近い動画オブジェクトではこの割り算が実質no-opなので症状が隠れる)。
     var out_rgb = vec3<f32>(0.0);
     if (out_alpha > 1e-6) {
-        out_rgb = clamp((base_premul + glow_premul) / out_alpha, vec3<f32>(0.0), vec3<f32>(1.0));
+        out_rgb = (base_premul + glow_premul) / out_alpha;
     }
 
     textureStore(outputTex, coord, vec4<f32>(out_rgb, out_alpha));

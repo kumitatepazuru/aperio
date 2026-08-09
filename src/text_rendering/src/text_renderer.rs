@@ -136,7 +136,21 @@ impl TextRenderer {
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba16Float,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        // ALPHA_BLENDING(色factor=SrcAlpha)だと、透明にクリアした
+                        // ターゲットへ被覆率の低い(アンチエイリアスされた)グリフを
+                        // 描画した際にrgbがcoverageで事前乗算された値として書き込まれて
+                        // しまい、fs_mask/fs_colorが返しているストレートアルファ
+                        // (rgbはcoverageで乗算しない。aperio全体の規約)が壊れる。
+                        // 色チャンネルは常にsrcで置き換え、アルファだけ通常のsrc-overで
+                        // 蓄積することで、意図通りのストレートアルファ出力にする
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::Zero,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent::OVER,
+                        }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),

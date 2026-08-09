@@ -28,15 +28,24 @@ class BlurEffect(VideoEffectGeneratorBase):
         math_module = lib_module(common_dir, "math")
         blur_module = lib_module(common_dir, "blur")
 
+        # box_blur_dir: light_intensity>0時、curve_forward後(最大10^6オーダー)の
+        # 値を4パス連続でブラーする用途と共有しているため32必須。
         self.box_blur_dir_shader = compose_common_shader(
             "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl",
-            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+            min_output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
         )
+        # curve: pow(base, x*256)-1 は爆発しうるため32必須。
         self.curve_shader = compose_common_shader(
             "curve", [math_module], common_dir, "curve.wgsl",
-            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+            min_output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
         )
-        self.ycbcr_encode_shader = compose_common_shader("ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl")
+        # ycbcr_encode: 符号付きCr/Cb(±0.7程度)を出力するが、直後に(既に32bit固定の)
+        # curve_shaderへ1回で渡るだけの単発経路なので16で足りる。
+        self.ycbcr_encode_shader = compose_common_shader(
+            "ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl",
+            min_output_format=gpu_util.WrappedImagePixelFormat.Rgba16Float,
+        )
+        # ycbcr_decode: 終端(最終RGB出力)なのでフロア不要。
         self.ycbcr_decode_shader = compose_common_shader("ycbcr_decode", [color_module], common_dir, "ycbcr_decode.wgsl")
 
     @event(type=GeneratorEvent.New)

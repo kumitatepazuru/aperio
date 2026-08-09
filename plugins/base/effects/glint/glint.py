@@ -34,9 +34,11 @@ class GlintEffect(VideoEffectGeneratorBase):
         current_dir, common_dir = effect_dirs(__file__)
         color_module = lib_module(common_dir, "color")
 
+        # エフェクト全体が1シェーダー・1回のみの呼び出し(連鎖なし)。avg/avg_yは
+        # BT.601係数の逆数(最大約8.8倍)で頭打ちのため16で足りる。
         self.glint_shader = compose_common_shader(
             "glint", [color_module], current_dir, "glint.wgsl",
-            output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
+            min_output_format=gpu_util.WrappedImagePixelFormat.Rgba16Float,
         )
 
     @event(type=GeneratorEvent.New)

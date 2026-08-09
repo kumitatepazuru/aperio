@@ -31,11 +31,24 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
         color_module = lib_module(common_dir, "color")
         blur_module = lib_module(common_dir, "blur")
 
-        self.box_blur_dir_shader = compose_common_shader("box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl")
-        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
-        self.ycbcr_encode_shader = compose_common_shader("ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl")
+        rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
+
+        # 符号付きYCbCr偏差を、拡散半径2回×(ぼかしv/h/合成)の計6〜7段の連鎖で
+        # 使い回す(deep cascade)ため、下記4箇所はすべて32必須。
+        self.box_blur_dir_shader = compose_common_shader(
+            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl", min_output_format=rgba32float
+        )
+        self.expand_shader = shared_shader(
+            "expand", common_dir, "expand.wgsl", min_output_format=rgba32float
+        )
+        self.ycbcr_encode_shader = compose_common_shader(
+            "ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl", min_output_format=rgba32float
+        )
+        self.composite_shader = shared_shader(
+            "diffusion_light_composite", current_dir, "composite.wgsl", min_output_format=rgba32float
+        )
+        # ycbcr_decode: 終端(最終RGB出力)なのでフロア不要。
         self.ycbcr_decode_shader = compose_common_shader("ycbcr_decode", [color_module], common_dir, "ycbcr_decode.wgsl")
-        self.composite_shader = shared_shader("diffusion_light_composite", current_dir, "composite.wgsl")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
