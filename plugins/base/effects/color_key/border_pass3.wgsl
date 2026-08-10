@@ -7,10 +7,8 @@ struct ColorKeyBorderPass3Params {
     out_width: i32,
     out_height: i32,
     // 伸張定数(exedit-inspect color_key README §5「境界補正 ― アルファそのものをぼかす」)。
-    // A = 1 - 1/r, B = 1 - (1/r)*r(整数除算込み)。r=1〜5の少数なのでPython側で
-    // 事前に計算し、4096基準を1.0基準へ正規化した値をそのまま渡す。
+    // a = 1 - 1/r。v=1(完全不透明)のとき t(v)=1になるコントラスト伸張カーブの係数。
     a_const: f32,
-    b_const: f32,
 };
 
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
@@ -42,7 +40,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // README §5/§6: 「ぼかす対象も掛ける相手も画素のアルファ本体」。マットではなくa0自身を
     // 二重ボックス平均した値とa0の積を取るため、半透明な一様領域でも v = a0²/4096 に潰れうる。
     let r_f = f32(radius);
-    let bs = border_stretch(avg, a0, r_f, params.a_const, params.b_const);
+    let bs = border_stretch(avg, a0, r_f, params.a_const);
     let alpha = a0 * bs.factor;
 
     let src = textureLoad(orig_tex, coord, 0);

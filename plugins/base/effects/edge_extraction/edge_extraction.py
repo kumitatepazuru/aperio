@@ -5,7 +5,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.params import clamp, make_generator_information
+from ..common.params import make_generator_information
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 # edge_magnitude.wgsl の MODE_* と対応する。実機は`輝度エッジを抽出`/`透明度エッジを抽出`の
@@ -77,11 +77,10 @@ class EdgeExtractionEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
         args = params.args
 
-        # README §3: `強さ`は trunc(raw*4096/1000)、`しきい値`は trunc(raw*4096/10000)と
-        # 別々の定数除算を使う唯一のエフェクトだが、意味はどちらも「UIの100% = Q12の1.0」。
-        # 除数が10倍違うのは表示スケールが10倍違うからなので、正規化空間ではどちらも /100 に落ちる。
-        strength = clamp(args.get("strength", 100.0), 0.0, 1000.0) / 100.0
-        threshold = clamp(args.get("threshold", 0.0), -100.0, 100.0) / 100.0
+        # edge_magnitude.wgslの `clamp((mag-threshold)*strength, 0, 1)` が最終値を
+        # 自己ガードするため、ここでの範囲チェックは不要(UIの100% = 1.0に正規化するだけ)。
+        strength = args.get("strength", 100.0) / 100.0
+        threshold = args.get("threshold", 0.0) / 100.0
         mode = _MODES.get(args.get("mode", "luma"), _MODES["luma"])
         color = args.get("color", (1.0, 1.0, 1.0, 1.0))
 

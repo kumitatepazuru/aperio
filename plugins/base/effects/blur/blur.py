@@ -5,7 +5,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.params import clamp, make_generator_information, pack_box_blur_dir_params, split_radius
+from ..common.params import make_generator_information, pack_box_blur_dir_params, split_radius
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
 
 
@@ -79,17 +79,19 @@ class BlurEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
         blur_radius = max(0, args.get("blur_radius", 5))
-        aspect = clamp(args.get("aspect", 0), -100, 100)
-        light_intensity = clamp(args.get("light_intensity", 0), 0, 60)
+        aspect = args.get("aspect", 0)
+        light_intensity = args.get("light_intensity", 0)
         fixed_size = bool(args.get("fixed_size", False))
 
         # aspect > 0: 横方向のみに近づく → 縦半径を縮小
         # aspect < 0: 縦方向のみに近づく → 横半径を縮小
+        # aspectが±100を超えて縮小方向の半径が負になっても、下のh_pass/v_passが
+        # radius<=0を無視して素通しするだけなので安全。
         if aspect >= 0:
             h_radius = blur_radius
-            v_radius = int(blur_radius * (1 - aspect / 100))
+            v_radius = round(blur_radius * (1 - aspect / 100))
         else:
-            h_radius = int(blur_radius * (1 + aspect / 100))
+            h_radius = round(blur_radius * (1 + aspect / 100))
             v_radius = blur_radius
 
         if h_radius == 0 and v_radius == 0:

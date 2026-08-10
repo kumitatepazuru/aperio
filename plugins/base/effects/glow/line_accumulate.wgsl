@@ -7,7 +7,7 @@ struct LineAccumulateParams {
     radius: i32,
     step_x: i32,
     step_y: i32,
-    // gain = strength_raw / 16384。ウィンドウ内の和(平均ではない)にこれを掛けて
+    // gain = 強さ(UI 100%=1.0) * パス倍率 / 1638.4。ウィンドウ内の和(平均ではない)にこれを掛けて
     // 加算する。ウィンドウ幅が利得に直接効くのが実機の「カーネル幅で割らない蓄積」
     // (exedit-inspect glow README §4)。
     gain: f32,

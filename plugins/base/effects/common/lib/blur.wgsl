@@ -71,9 +71,9 @@ struct BorderStretch {
 // ボックス平均済みの値(avg_raw)と、そのピクセル自身の生値(raw)の積から
 // コントラスト伸張を行う(chroma_key/color_key 共通の境界補正伸張式、
 // exedit-inspect chroma_key README §7 / color_key README §5)。
-fn border_stretch(avg_raw: f32, raw: f32, radius: f32, a_const: f32, b_const: f32) -> BorderStretch {
+fn border_stretch(avg_raw: f32, raw: f32, radius: f32, a_const: f32) -> BorderStretch {
     let v = avg_raw * raw;
-    let t = (v - a_const) * radius + b_const;
+    let t = (v - a_const) * radius;
     var factor = clamp(t, 0.0, 1.0);
     if (v <= 0.0 || t <= 0.0) {
         factor = 0.0;

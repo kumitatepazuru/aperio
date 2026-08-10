@@ -10,12 +10,12 @@ from ..common.params import clamp, make_generator_information, pack_box_blur_dir
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 # 拡散を2つのボックスぼかし半径に分割する係数。1/2.236(≒1/√5)そのもの。
-# r2 = trunc(拡散*係数), r1 = 拡散 - r2 で、常に r1 >= r2 になる。
+# r2 = round(拡散*係数), r1 = 拡散 - r2 で、常に r1 >= r2 になる。
 _RADIUS_SPLIT_FACTOR = 1 / math.sqrt(5)
 
 
 def _split_diffusion(diffusion: int) -> tuple[int, int]:
-    r2 = int(diffusion * _RADIUS_SPLIT_FACTOR)
+    r2 = round(diffusion * _RADIUS_SPLIT_FACTOR)
     r1 = diffusion - r2
     return r1, r2
 
@@ -81,11 +81,14 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = clamp(args.get("strength", 50), 0, 100)
+        strength_ui = args.get("strength", 50)
+        # diffusionはブラー半径としてキャンバスを2*radiusずつ拡張するため、上限が
+        # 無いと巨大なバッファ確保を試みうる。この効果には他に上限クランプが無いので
+        # ここで維持する(#5)。
         diffusion = clamp(args.get("diffusion", 12), 0, 500)
         fixed_size = bool(args.get("fixed_size", False))
 
-        if strength_ui == 0:
+        if strength_ui <= 0:
             return None
 
         r1, r2 = _split_diffusion(diffusion)

@@ -85,26 +85,25 @@ class LightEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = clamp(args.get("strength", 100.0), 0.0, 300.0)
+        strength_ui = args.get("strength", 100.0)
         diffusion_ui = clamp(args.get("diffusion", 25.0), 0.0, 100.0)
-        ratio_ui = clamp(args.get("ratio", 0.0), -100.0, 100.0)
+        ratio_ui = args.get("ratio", 0.0)
         backlight = bool(args.get("backlight", False))
         color = args.get("color", (1.0, 1.0, 1.0, 1.0))
 
-        # 強さ0は実機と同じく即return(README §2、画像にもキャンバスにも一切触れない)。
-        strength_raw = round(strength_ui * 10)
-        if strength_raw == 0:
+        # 強さ0以下は画像にもキャンバスにも一切触れない(README §2)。
+        if strength_ui <= 0:
             return None
 
         # `比率`が`強さ`を陰影用係数Bと後光用係数Aへ分配する(README §2)。
-        S = strength_raw * 4096 // 1000
-        ratio_raw = round(ratio_ui * 10)
-        if ratio_raw >= 0:
-            A = S
-            B = S if ratio_raw == 0 else (S * (1000 - ratio_raw)) // 1000
+        strength_frac = strength_ui / 100.0
+        ratio_frac = ratio_ui / 100.0
+        if ratio_frac >= 0:
+            A_frac = strength_frac
+            B_frac = strength_frac * (1.0 - ratio_frac)
         else:
-            A = (S * (1000 + ratio_raw)) // 1000
-            B = S
+            A_frac = strength_frac * (1.0 + ratio_frac)
+            B_frac = strength_frac
 
         w, h = params.width, params.height
         max_dim = aperio_plugin.image_generator.maximum_texture_size
@@ -121,7 +120,7 @@ class LightEffect(VideoEffectGeneratorBase):
 
         original_branch = gpu_util.PyImageGenerateBuilder()
 
-        if B > 0:
+        if B_frac > 0:
             avg_branch = gpu_util.PyImageGenerateBuilder()
             if backlight:
                 avg_branch = avg_branch.add_wgsl(self.invert_alpha_shader, None, w, h)
@@ -129,7 +128,7 @@ class LightEffect(VideoEffectGeneratorBase):
                 avg_branch.add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 1, 0, w, h), w, h)
                 .add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 0, 1, w, h), w, h)
             )
-            shadow_params = struct.pack("iffff", 1 if backlight else 0, B / 4096.0, color[0], color[1], color[2])
+            shadow_params = struct.pack("iffff", 1 if backlight else 0, B_frac, color[0], color[1], color[2])
             shadowed = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, avg_branch]).add_wgsl(
                 self.shadow_apply_shader, shadow_params, w, h
             )
@@ -137,7 +136,7 @@ class LightEffect(VideoEffectGeneratorBase):
             # B<=0(比率=+100%)ではこのパス自体が丸ごとスキップされる(README §3)。
             shadowed = original_branch
 
-        if A <= 0:
+        if A_frac <= 0:
             # 比率=-100%: 後光パス・キャンバス拡張・最終合成を丸ごとスキップして
             # 即returnする(README §5)。
             return GeneratorBuilderReturn(shadowed, ItemResult(w, h))
@@ -164,7 +163,7 @@ class LightEffect(VideoEffectGeneratorBase):
         halo_g = 1.0 - 0.344136 * cb - 0.714136 * cr
         halo_b = 1.0 + 1.772 * cb
 
-        composite_params = struct.pack("fffff", A / 4096.0, halo_r, halo_g, halo_b, y)
+        composite_params = struct.pack("fffff", A_frac, halo_r, halo_g, halo_b, y)
         final_builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([base_branch, avg2d_branch]).add_wgsl(
             self.composite_shader, composite_params, nw, nh
         )

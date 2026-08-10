@@ -4,7 +4,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.params import clamp, make_generator_information
+from ..common.params import make_generator_information
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
 
 # exedit-inspect luma_key README §2: ex_data.typeの4項目。func_procの分岐は
@@ -65,8 +65,10 @@ class LumaKeyEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
         args = params.args
-        base_ui = clamp(args.get("base_luminance", 2048), -4096, 8192)
-        blur_ui = clamp(args.get("blur", 512), 0, 4096)
+        # README §7の通りこのエフェクトは元々クランプを持たない。luma_key.wgslの
+        # 分岐(t<0とt<blurの排他性)によりblur<=0でもゼロ除算は起きないため安全。
+        base_ui = args.get("base_luminance", 2048)
+        blur_ui = args.get("blur", 512)
         key_type = _KEY_TYPES.get(args.get("key_type", "dark"), 0)
 
         # README §3: 表示スケールが両方とも1で `/1000` のマジックナンバー除算も

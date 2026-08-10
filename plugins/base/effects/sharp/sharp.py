@@ -60,15 +60,15 @@ class SharpEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = clamp(args.get("strength", 50.0), 0.0, 800.0)
+        strength_ui = args.get("strength", 50.0)
+        # rangeはブラーカーネル半径(split_radius経由)に直結するため、下限0は維持する。
         range_ = clamp(args.get("range", 5), 0, 100)
 
-        # README §2: 強さ==0または範囲==0は独立した2本の早期returnで、画像に一切触れない。
-        strength_raw = round(strength_ui * 10)
-        if strength_raw == 0 or range_ == 0:
+        # README §2: 強さ<=0または範囲==0は独立した2本の早期returnで、画像に一切触れない。
+        if strength_ui <= 0 or range_ == 0:
             return None
 
-        S = strength_raw * 4096 // 1000
+        strength = strength_ui / 100.0
 
         w, h = params.width, params.height
 
@@ -93,7 +93,7 @@ class SharpEffect(VideoEffectGeneratorBase):
         blur_branch = blur_pass(blur_branch, r_lo, 0, 1)
         blur_branch = blur_pass(blur_branch, r_lo, 1, 0)
 
-        composite_params = struct.pack("f", S / 4096.0)
+        composite_params = struct.pack("f", strength)
         builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, blur_branch]).add_wgsl(
             self.composite_shader, composite_params, w, h
         )

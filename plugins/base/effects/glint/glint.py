@@ -106,7 +106,10 @@ class GlintEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = clamp(args.get("strength", 100), 0, 100)
+        # strengthはキャンバス拡張量にも掛かるため、負値は拡張の符号が反転して
+        # 矩形が潰れうる(#5)。下限0のみ維持し、上限は既存のmax(0.0, ...)しきい値
+        # 計算が自己ガードするため撤廃する。
+        strength_ui = max(0, args.get("strength", 100))
         center = args.get("center", (0, 0))
         track_x = clamp(int(center[0]), -2000, 2000)
         track_y = clamp(int(center[1]), -2000, 2000)
@@ -122,31 +125,27 @@ class GlintEffect(VideoEffectGeneratorBase):
 
         w, h = params.width, params.height
 
-        # 強さは輝度への掛け算ではなく**しきい値の引き算**。実機は
-        # strength = trunc(raw*4096/1000)、T = max(0, 4096-strength) で、
-        # 4096で割って正規化するとUI値/100がそのまま強さになる。
-        # キャンバスの拡張量にだけは掛け算として効くので、そちらは実機と同じ
-        # 固定小数(4096)のまま扱う。
-        strength_fixed = strength_ui * 4096 // 100
-        threshold = max(0.0, 1.0 - strength_ui / 100.0)
+        # 強さは輝度への掛け算ではなく**しきい値の引き算**。UI値/100がそのまま
+        # 割合になる。キャンバスの拡張量にも同じ割合を掛ける(手順3)。
+        strength_ratio = strength_ui / 100.0
+        threshold = max(0.0, 1.0 - strength_ratio)
 
         cx = w // 2 + track_x
         cy = h // 2 + track_y
 
-        # サンプル数上限R。0.75*maxdのつもりの式だが、切り捨てが2回別々に起きるので
-        # trunc(0.75*maxd)とは一致しない(maxd%4==3のとき常に1小さい)。
+        # サンプル数上限R。光条は中心までの距離の75%を走る(手順4)。
         maxd = max(abs(cx), abs(cy), abs(cx - w), abs(cy - h))
         maxd = min(maxd, int(math.sqrt(w * w + h * h)))  # 画像対角線でクランプ
         if fast_mode:
             maxd = min(maxd, _FAST_MAXD_CAP)
-        sample_cap = maxd // 4 + maxd // 2
+        sample_cap = round(maxd * 0.75)
 
         # サイズ固定は拡張結果を全部捨てて元の矩形に戻す。光線の計算自体は変わらない
         # ので、光条は同じように伸びようとしてオブジェクトの矩形で切られる。
         if fixed_size:
             x0, y0, x1, y1 = 0, 0, w, h
         else:
-            x0, y0, x1, y1 = self._grow_canvas(w, h, cx, cy, strength_fixed)
+            x0, y0, x1, y1 = self._grow_canvas(w, h, cx, cy, strength_ratio)
 
         ow, oh = x1 - x0, y1 - y0
 
@@ -181,21 +180,22 @@ class GlintEffect(VideoEffectGeneratorBase):
         center_y = h // 2 - (y0 + oh // 2)
         return GeneratorBuilderReturn(builder, ItemResult(ow, oh, center_x=center_x, center_y=center_y))
 
-    def _grow_canvas(self, w: int, h: int, cx: int, cy: int, strength_fixed: int) -> tuple[int, int, int, int]:
+    def _grow_canvas(self, w: int, h: int, cx: int, cy: int, strength_ratio: float) -> tuple[int, int, int, int]:
         """光条の端がちょうど収まるまでキャンバスを広げ、上限で切り詰める(README手順3)。
 
-        拡張量が strength 倍される点は実機どおり。強さは本来しきい値であって長さでは
-        ないので幾何的な到達距離は4倍のままだが、「暗い先端はどうせしきい値を超えない
-        だろう」という前提でキャンバスだけが切り詰められている。
+        拡張量は strength_ratio(0..1、強さ100%超も許容)倍される。強さは本来しきい値で
+        あって長さではないので幾何的な到達距離は4倍のままだが、「暗い先端はどうせ
+        しきい値を超えないだろう」という前提でキャンバスだけが切り詰められている。
         """
         x0 = min(cx - _RAY_REACH * cx, 0)
         y0 = min(cy - _RAY_REACH * cy, 0)
         x1 = max((cx - w) + _RAY_REACH * (w - cx), 0)
         y1 = max((cy - h) + _RAY_REACH * (h - cy), 0)
 
-        # Pythonの>>は算術シフトなので、実機のsar(負値はfloor)と一致する。
-        x0, y0 = (x0 * strength_fixed) >> 12, (y0 * strength_fixed) >> 12
-        x1, y1 = ((x1 * strength_fixed) >> 12) + w, ((y1 * strength_fixed) >> 12) + h
+        # x0/y0は0以下、x1/y1は0以上。光条を絶対に切り詰めないよう、負側はfloor
+        # (より外側へ)、正側はceil(より外側へ)で整数化する。
+        x0, y0 = math.floor(x0 * strength_ratio), math.floor(y0 * strength_ratio)
+        x1, y1 = math.ceil(x1 * strength_ratio) + w, math.ceil(y1 * strength_ratio) + h
 
         # 2つの上限で切り詰める。実機はオブジェクトキャンバスの最大幅・最大高と
         # 「フレームサイズ + オブジェクトサイズ*2」の小さいほうを使う。前者にあたるのは

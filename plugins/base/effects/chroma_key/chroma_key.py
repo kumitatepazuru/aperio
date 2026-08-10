@@ -8,7 +8,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.border_correction import ab_constants
+from ..common.border_correction import ab_constant
 from ..common.color import bt601_encode
 from ..common.params import clamp, make_generator_information, pack_box_average_dir_params
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
@@ -110,8 +110,10 @@ class ChromaKeyEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
         key_color = args.get("key_color", (0.0, 1.0, 0.0, 1.0))
-        hue_range_ui = clamp(args.get("hue_range", 24), 0, 256)
-        sat_range_ui = clamp(args.get("sat_range", 96), 0, 256)
+        hue_range_ui = args.get("hue_range", 24)
+        sat_range_ui = args.get("sat_range", 96)
+        # border_correctionはボックス平均カーネル半径・境界補正伸張式(1/r)の分母に
+        # 直結するため、下限0(ゼロ除算防止)は維持する。
         border_correction = clamp(args.get("border_correction", 1), 0, 5)
         color_correction = bool(args.get("color_correction", False))
         # 透過補正は色彩補正offでは常に無効(exedit-inspect chroma_key README §5/§7)。
@@ -135,7 +137,7 @@ class ChromaKeyEffect(VideoEffectGeneratorBase):
             return GeneratorBuilderReturn(builder, ItemResult(w, h))
 
         r = border_correction
-        a_const, b_const = ab_constants(r)
+        a_const = ab_constant(r)
 
         pass1_params = struct.pack("fffff", key_cb, key_cr, key_sat, hue_range_turns, sat_range)
         pass1_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.border_pass1_shader, pass1_params, w, h)
@@ -151,7 +153,7 @@ class ChromaKeyEffect(VideoEffectGeneratorBase):
         stage2 = stage1.add_parallel_wgsl([v_branch, keep_map_branch, keep_orig_branch])
 
         pass3_params = struct.pack(
-            "iiifffffii", r, w, h, a_const, b_const, key_cb, key_cr, key_sat, color_correction_flag, alpha_correction_flag
+            "iiiffffii", r, w, h, a_const, key_cb, key_cr, key_sat, color_correction_flag, alpha_correction_flag
         )
         builder = stage2.add_wgsl(self.border_pass3_shader, pass3_params, w, h)
 

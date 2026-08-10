@@ -6,7 +6,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.params import clamp, make_generator_information, pack_box_blur_dir_params, pack_expand_params
+from ..common.params import make_generator_information, pack_box_blur_dir_params, pack_expand_params
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 # 拡散ループの初期半径(px)・パス数・等比数列の指数。元のAviUtl版のディス
@@ -169,10 +169,16 @@ class LuminousEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = clamp(args.get("strength", 20), 0, 200)
-        diffusion_ui = clamp(args.get("diffusion", 50), 0, 800)
-        threshold_ui = clamp(args.get("threshold", 70), 0, 200)
-        diffusion_speed_ui = clamp(args.get("diffusion_speed", 0), 0, 60)
+        # strength/thresholdはthreshold.wgslの`clamp(..., 0.0, 1.0)`が最終値を
+        # 自己ガードするためクランプ不要。diffusion_speedもmax(1,min(100,...))の
+        # 内側クランプが既にあるため不要。
+        strength_ui = args.get("strength", 20)
+        threshold_ui = args.get("threshold", 70)
+        diffusion_speed_ui = args.get("diffusion_speed", 0)
+        # diffusionだけは下限0が必須(#5): (diffusion_ui*0.5)**0.2で負の底を分数乗
+        # すると複素数になりround()がクラッシュする。上限はcascade_reachがmax_dim
+        # 由来で再クランプされるため不要。
+        diffusion_ui = max(0, args.get("diffusion", 50))
         color = args.get("color", (1.0, 0.0, 1.0, 1.0))
 
         # 強さ・しきい値: 元のAviUtl版はY値が0~4096の固定小数点で、

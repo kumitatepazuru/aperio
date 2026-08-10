@@ -8,7 +8,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.border_correction import ab_constants
+from ..common.border_correction import ab_constant
 from ..common.color import bt601_encode
 from ..common.params import clamp, make_generator_information, pack_box_average_dir_params
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
@@ -90,8 +90,10 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
         key_color = args.get("key_color", (0.0, 1.0, 0.0, 1.0))
-        luma_range_ui = clamp(args.get("luma_range", 0), 0, 4096)
-        chroma_range_ui = clamp(args.get("chroma_range", 0), 0, 4096)
+        luma_range_ui = args.get("luma_range", 0)
+        chroma_range_ui = args.get("chroma_range", 0)
+        # border_correctionはボックス平均カーネル半径・境界補正伸張式(1/r)の分母に
+        # 直結するため、下限0(ゼロ除算防止)は維持する。
         border_correction = clamp(args.get("border_correction", 0), 0, 5)
 
         w, h = params.width, params.height
@@ -109,7 +111,7 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
             return GeneratorBuilderReturn(builder, ItemResult(w, h))
 
         r = border_correction
-        a_const, b_const = ab_constants(r)
+        a_const = ab_constant(r)
 
         pass1_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.border_pass1_shader, key_params, w, h)
         original_branch = gpu_util.PyImageGenerateBuilder()
@@ -123,7 +125,7 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
         # state: [0]=垂直方向にボックス平均済みのa0, [1]=a0そのまま(未ぼかし), [2]=元画像
         stage2 = stage1.add_parallel_wgsl([v_branch, keep_a0_branch, keep_orig_branch])
 
-        pass3_params = struct.pack("iiiff", r, w, h, a_const, b_const)
+        pass3_params = struct.pack("iiif", r, w, h, a_const)
         builder = stage2.add_wgsl(self.border_pass3_shader, pass3_params, w, h)
 
         return GeneratorBuilderReturn(builder, ItemResult(w, h))

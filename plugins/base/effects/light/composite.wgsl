@@ -1,7 +1,7 @@
 enable wgpu_binding_array;
 
 struct LightCompositeParams {
-    // 後光係数 A / 4096.0
+    // 後光係数(強さ・比率から算出した0..1の割合)
     a: f32,
     // 光色をY=1.0で復元したRGB(CPU側で事前計算。ガモット外に出ることがあるので
     // クランプしない)

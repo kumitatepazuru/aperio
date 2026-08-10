@@ -1,13 +1,12 @@
 enable wgpu_binding_array;
 
 #import aperio::color::{bt601_encode, bt601_decode}
-#import aperio::math::{floor_div}
 
 struct ConvexEdgeParams {
     steps: i32,
-    // Q16固定小数点の方向ベクトル(exedit-inspect convex_edge README §3)。
-    dx: i32,
-    dy: i32,
+    // 単位方向ベクトル(exedit-inspect convex_edge README §3)。
+    dir_x: f32,
+    dir_y: f32,
     height: f32,
 };
 
@@ -16,9 +15,9 @@ struct ConvexEdgeParams {
 
 @group(1) @binding(0) var<storage, read> params: ConvexEdgeParams;
 
-// exedit-inspect convex_edge README §4: 点対称な有限差分。floor_divで
-// floor(k*dx/65536)を整数のまま再現するため、45度付近でk=1が丸ごと死ぬ象限や
-// 対角方向の二重カウントも特別扱いなしに自然に再現される。
+// exedit-inspect convex_edge README §4: 点対称な有限差分。ステップkごとの
+// オフセットをfloor(k*dir)で整数化し、その符号反転を後方サンプルにそのまま使う
+// (後方だけ別途floorし直さない)ことで点対称なサンプル対を保つ。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tex = inputTex[0];
@@ -35,12 +34,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let cb = ycc.y;
     let y = ycc.z;
 
-    var acc = vec2<i32>(0, 0);
+    var acc = vec2<f32>(0.0, 0.0);
     var sum = 0.0;
-    let dir = vec2<i32>(params.dx, params.dy);
+    let dir = vec2<f32>(params.dir_x, params.dir_y);
     for (var k = 1; k <= params.steps; k++) {
         acc += dir;
-        let o = vec2<i32>(floor_div(acc.x, 65536), floor_div(acc.y, 65536));
+        let o = vec2<i32>(floor(acc.x), floor(acc.y));
 
         // README §4(c): 前後それぞれ独立に範囲判定する(枠外は寄与ゼロ)。
         let fwd = coord + o;

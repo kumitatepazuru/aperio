@@ -9,10 +9,8 @@ struct ChromaKeyBorderPass3Params {
     out_width: i32,
     out_height: i32,
     // 伸張定数(exedit-inspect chroma_key README §7「パス3-積とコントラスト伸張」)。
-    // A = 1 - 1/r, B = 1 - (1/r)*r(整数除算込み)。r=1〜5の少数なのでPython側で
-    // 事前に計算し、4096基準を1.0基準へ正規化した値をそのまま渡す。
+    // a = 1 - 1/r。v=1(完全不透明)のとき t(v)=1になるコントラスト伸張カーブの係数。
     a_const: f32,
-    b_const: f32,
     key_cb: f32,
     key_cr: f32,
     key_sat: f32,
@@ -53,7 +51,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // README: 「ブレンドではなく積」。二重ボックス平均した値と、このピクセル自身の
     // 生の map_b との積を取ることで、キー側(map_b=0)は平均後もにじまず0のまま保たれる。
     let r_f = f32(radius);
-    let bs = border_stretch(avg_b, map_b, r_f, params.a_const, params.b_const);
+    let bs = border_stretch(avg_b, map_b, r_f, params.a_const);
 
     let src = textureLoad(orig_tex, coord, 0);
     var alpha = src.a * bs.factor;

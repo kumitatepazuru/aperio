@@ -14,9 +14,9 @@ def _axis_radii(radius: int, aspect: int) -> tuple[int, int]:
     (README: 縦横比>0でry、縦横比<0でrxのみ変化。もう片方はradiusのまま)。"""
     if aspect >= 0:
         rx = radius
-        ry = int(radius * (1 - aspect / 100))
+        ry = round(radius * (1 - aspect / 100))
     else:
-        rx = int(radius * (1 + aspect / 100))
+        rx = round(radius * (1 + aspect / 100))
         ry = radius
     return rx, ry
 

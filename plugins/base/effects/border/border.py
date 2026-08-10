@@ -6,7 +6,7 @@ from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformat
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.params import clamp, make_generator_information, pack_expand_params
+from ..common.params import make_generator_information, pack_expand_params
 from ..common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
@@ -80,13 +80,17 @@ class BorderEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        size_ui = max(0, int(clamp(args.get("size", 3), 0, 500)))
+        # sizeは後段でmax_dim由来の実バッファ予算により再クランプされる(size==0で
+        # 早期return)ので、ここでは整数化のみでよい。
+        size_ui = round(args.get("size", 3))
 
         # サイズ=0は実機と同じく即return(README §1、画像にもキャンバスにも一切触れない)。
         if size_ui == 0:
             return None
 
-        blur_raw = max(0, int(clamp(args.get("blur", 10), 0, 100)))
+        # blur_rawの下限0はgain計算の分母(0.02*size*blur_raw+1)がゼロになるのを
+        # 防ぐために必須(#5)。上限はgainがただ小さくなるだけで安全のため撤廃。
+        blur_raw = max(0, round(args.get("blur", 10)))
         color = args.get("color", (0.0, 0.0, 0.0, 1.0))
         pattern_paths = args.get("pattern_path", [])
         pattern_path = pattern_paths[0] if pattern_paths else ""

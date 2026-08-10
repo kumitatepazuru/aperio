@@ -19,7 +19,7 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 from aperio_plugin.utils import build_link_prefix
 
-from ..common.params import clamp, make_generator_information, pack_box_average_dir_params, pack_expand_params
+from ..common.params import make_generator_information, pack_box_average_dir_params, pack_expand_params
 from ..common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
@@ -78,15 +78,16 @@ class _ShadowParams:
 def _derive_shadow_params(args: dict, w: int, h: int, max_dim: int) -> _ShadowParams | None:
     """UIパラメータから、クランプ済みのX/Y/半径を含む影パラメータを導出する。
     濃さ=0のときはNoneを返す(README §2、画像にもキャンバスにも一切触れない)。"""
-    strength_ui = clamp(args.get("strength", 40.0), 0.0, 100.0)
-    strength_raw = round(strength_ui * 10)
-    if strength_raw == 0:
+    strength_ui = args.get("strength", 40.0)
+    if strength_ui <= 0:
         return None
-    density = strength_raw / 1000.0
+    density = strength_ui / 100.0
 
-    X = int(clamp(args.get("x", -40), -200, 200))
-    Y = int(clamp(args.get("y", 24), -200, 200))
-    r = max(0, int(clamp(args.get("diffusion", 10), 0, 50)))
+    # X/Y/半径は_clamp_axis()がmax_dim由来の実バッファ予算で再クランプするため、
+    # ここでは整数化のみ行う。
+    X = round(args.get("x", -40))
+    Y = round(args.get("y", 24))
+    r = max(0, round(args.get("diffusion", 10)))
     color = args.get("color", (0.0, 0.0, 0.0, 1.0))
     pattern_paths = args.get("pattern_path", [])
     pattern_path = pattern_paths[0] if pattern_paths else ""

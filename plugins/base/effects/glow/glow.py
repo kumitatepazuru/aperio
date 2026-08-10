@@ -139,28 +139,31 @@ class GlowEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        strength_ui = clamp(args.get("strength", 40), 0, 400)
-        diffusion_ui = clamp(args.get("diffusion", 30), 0, 200)
-        threshold_ui = clamp(args.get("threshold", 40), 0, 200)
+        strength_ui = args.get("strength", 40)
+        diffusion_ui = args.get("diffusion", 30)
+        threshold_ui = args.get("threshold", 40)
+        # blur_radiusはbox_average_dirのカーネル半径(ループ回数)に直結し、後段の
+        # 再クランプが無いため、暴走を防ぐ上限を維持する(#5)。
         blur_radius = clamp(args.get("blur", 1), 0, 50)
         shape: str = args.get("shape", "normal")
         color = args.get("color", (1.0, 1.0, 1.0, 1.0))
         use_source_color = bool(args.get("use_source_color", True))
         light_only = bool(args.get("light_only", False))
 
-        # 強さ0または拡散0は実機と同じく即return(README: fp->func_procの2つの早期return)。
-        if strength_ui == 0 or diffusion_ui == 0:
+        # 強さ<=0または拡散<=0は即return(README: fp->func_procの2つの早期return)。
+        if strength_ui <= 0 or diffusion_ui <= 0:
             return None
 
         w, h = params.width, params.height
 
-        # 強さ・しきい値はAviUtl側の「表示スケール」の数値をそのままIntにしてあるので、
-        # ここで元の raw / 正規化フラクションへ戻す(README §2)。
-        strength_raw = strength_ui * 10
+        # gain = strength_raw*mult/16384、strength_raw = strength_ui*10 は
+        # 10/16384 = 1/1638.4 に約分できるので、そのまま正規化した割合として扱う。
+        strength_scale = strength_ui / 1638.4
         threshold_frac = threshold_ui / 100.0
 
         # 拡散はrx・ryの両方に生値のまま使われる(README §2)ので実質1本の半径。
-        # キャンバスが確保できるテクスチャの最大辺長を超えないよう安全にクランプする。
+        # キャンバスが確保できるテクスチャの最大辺長を超えないよう安全にクランプする
+        # (この再クランプがdiffusion_uiに対する唯一かつ十分な構造的ガード)。
         max_dim = aperio_plugin.image_generator.maximum_texture_size
         diffusion = max(0, min(diffusion_ui, (max_dim - w) // 2, (max_dim - h) // 2))
         if diffusion == 0:
@@ -191,7 +194,7 @@ class GlowEffect(VideoEffectGeneratorBase):
             # としてのみ使い、水平加算の初回(is_first)でクリアされる)。
             for i, (divisor, mult) in enumerate(zip(_NORMAL_DIVISORS, _NORMAL_MULTS)):
                 r = diffusion // divisor
-                gain = strength_raw * mult / 16384.0
+                gain = strength_scale * mult
                 v_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
                     self.box_average_dir_shader, box_average_params(r, 0, 1), nw, nh
                 )
@@ -206,7 +209,7 @@ class GlowEffect(VideoEffectGeneratorBase):
                 # 半径は r, r/2, r/4、strength倍率は 1, 2, 4(README §5.2: 3スケールの
                 # 合計利得がほぼ等しくなる組み合わせ)。
                 for radius_val, mult in ((diffusion, 1.0), (diffusion // 2, 2.0), (diffusion // 4, 4.0)):
-                    gain = strength_raw * mult / 16384.0
+                    gain = strength_scale * mult
                     accumulate_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
                         self.line_accumulate_shader, line_accumulate_params(radius_val, dx, dy, gain, is_first), nw, nh
                     )

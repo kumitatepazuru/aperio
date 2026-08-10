@@ -3,7 +3,7 @@ enable wgpu_binding_array;
 #import aperio::color::{bt601_encode, bt601_decode}
 
 struct SharpCompositeParams {
-    // README §3: trunc(strength_raw*4096/1000)/4096 相当(UI 100.0 = ×1.0)。
+    // strength_ui/100.0(UI 100.0 = ×1.0、README §3)。
     strength: f32,
 };
 
