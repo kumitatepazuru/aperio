@@ -20,6 +20,7 @@ from .effects.luma_key.luma_key import LumaKeyEffect
 from .effects.luminous.luminous import LuminousEffect
 from .effects.mozaic.mozaic import MozaicEffect
 from .effects.shadow.shadow import ShadowEffect, ShadowLayerEffect
+from .effects.sharp.sharp import SharpEffect
 from .objects.audio.audio import AudioObject
 from .objects.text.text import TextObject
 from .objects.video.video import VideoObject
@@ -34,7 +35,7 @@ class AperioBasePlugin(MainPluginBase):
         self.description = "This is a plugin that provides basic effects/objects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
-        self.num_sub_plugins = 21
+        self.num_sub_plugins = 22
 
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, BorderEffect())
@@ -54,6 +55,7 @@ class AperioBasePlugin(MainPluginBase):
         aperio_plugin.manager.register_sub_plugin(self, MozaicEffect())
         aperio_plugin.manager.register_sub_plugin(self, ShadowEffect())
         aperio_plugin.manager.register_sub_plugin(self, ShadowLayerEffect())
+        aperio_plugin.manager.register_sub_plugin(self, SharpEffect())
         aperio_plugin.manager.register_sub_plugin(self, AudioObject())
         aperio_plugin.manager.register_sub_plugin(self, TextObject())
         aperio_plugin.manager.register_sub_plugin(self, VideoObject())

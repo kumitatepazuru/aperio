@@ -33,6 +33,13 @@ def pack_box_average_dir_params(radius: int, step_x: int, step_y: int, w: int, h
     return struct.pack("iiiii", radius, step_x, step_y, w, h)
 
 
+def split_radius(radius: int) -> tuple[int, int]:
+    """半径を2つのボックスパスに分割する(r_hi=ceil(r/2), r_lo=floor(r/2))。合成
+    カーネルが三角形(半径が奇数なら上底3の台形)になる、実機ぼかし系フィルタの
+    分割方法。`ぼかし`(blur.py)と`シャープ`(sharp.py)が共有する。"""
+    return radius - radius // 2, radius // 2
+
+
 def pack_box_blur_dir_params(
     radius: int, step_x: int, step_y: int, w: int, h: int, offset: int = 0, border_mode: int = 1, divisor_mode: int = 0
 ) -> bytes:

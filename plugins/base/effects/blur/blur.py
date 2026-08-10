@@ -5,15 +5,8 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.params import clamp, make_generator_information, pack_box_blur_dir_params
+from ..common.params import clamp, make_generator_information, pack_box_blur_dir_params, split_radius
 from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
-
-
-def _split_radius(radius: int) -> tuple[int, int]:
-    """半径を2つのボックスパスに分割する。合成カーネルが三角形(半径が奇数なら
-    上底3の台形)になる、実機ぼかしフィルタの分割方法(README手順2・3)。
-    r_hi = ceil(r/2), r_lo = floor(r/2)。"""
-    return radius - radius // 2, radius // 2
 
 
 class BlurEffect(VideoEffectGeneratorBase):
@@ -143,8 +136,8 @@ class BlurEffect(VideoEffectGeneratorBase):
             cur_h = new_h
             return b
 
-        rx_hi, rx_lo = _split_radius(h_radius)
-        ry_hi, ry_lo = _split_radius(v_radius)
+        rx_hi, rx_lo = split_radius(h_radius)
+        ry_hi, ry_lo = split_radius(v_radius)
 
         builder = h_pass(builder, rx_hi)
         builder = h_pass(builder, rx_lo)
