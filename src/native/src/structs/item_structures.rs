@@ -6,6 +6,22 @@ use pyo3::{prelude::*, types::PyDict};
 
 use crate::utils::json_value::JsonValue;
 
+fn opt_add_i32(a: Option<i32>, b: Option<i32>) -> Option<i32> {
+    if a.is_none() && b.is_none() {
+        None
+    } else {
+        Some(a.unwrap_or(0) + b.unwrap_or(0))
+    }
+}
+
+fn opt_add_f64(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    if a.is_none() && b.is_none() {
+        None
+    } else {
+        Some(a.unwrap_or(0.0) + b.unwrap_or(0.0))
+    }
+}
+
 #[napi(object)]
 #[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
@@ -61,6 +77,14 @@ impl ItemResult {
             "ItemResult(width={:?}, height={:?}, x={:?}, y={:?}, center_x={:?}, center_y={:?}, rotate={:?}, additional_item={:?})",
             self.width, self.height, self.x, self.y, self.center_x, self.center_y, self.rotate, self.additional_item
         )
+    }
+
+    fn combine(&mut self, item_result: ItemResult) {
+        self.x = opt_add_i32(self.x, item_result.x);
+        self.y = opt_add_i32(self.y, item_result.y);
+        self.center_x = opt_add_i32(self.center_x, item_result.center_x);
+        self.center_y = opt_add_i32(self.center_y, item_result.center_y);
+        self.rotate = opt_add_f64(self.rotate, item_result.rotate);
     }
 }
 

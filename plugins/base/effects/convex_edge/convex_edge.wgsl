@@ -39,7 +39,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let dir = vec2<f32>(params.dir_x, params.dir_y);
     for (var k = 1; k <= params.steps; k++) {
         acc += dir;
-        let o = vec2<i32>(floor(acc.x), floor(acc.y));
+        let o = vec2<i32>(floor(acc));
 
         // README §4(c): 前後それぞれ独立に範囲判定する(枠外は寄与ゼロ)。
         let fwd = coord + o;

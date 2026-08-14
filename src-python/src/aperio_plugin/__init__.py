@@ -212,7 +212,7 @@ class AperioManager(PluginManager, EventManager):
                     continue
                 layer_frame = tmp_layer_frame
                 collect_additional_item(layer_frame.item_result, behind_items, ahead_items)
-                item_result = layer_frame.item_result
+                item_result.combine(layer_frame.item_result)
 
                 if pending_link is not None:
                     layer_builder = layer_builder.add_linked(*pending_link)
