@@ -1,12 +1,12 @@
 import struct
 
-import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ..common.params import make_generator_information
 from ..common.shader_loader import effect_dirs, shared_shader
+from ..common.timeline import in_out_ramp
 
 
 class FadeEffect(VideoEffectGeneratorBase):
@@ -49,22 +49,9 @@ class FadeEffect(VideoEffectGeneratorBase):
         fade_in = args.get("fade_in", 0.5)
         fade_out = args.get("fade_out", 0.5)
 
-        fps = aperio_plugin.store_manager.get_state().frame_state.fps
-        in_frames = round(fade_in * fps)
-        out_frames = round(fade_out * fps)
-
-        # アイテム内のフレーム位置(README §3)。item.end は排他境界なので
-        # end-1 が原作の inclusive な終端フレームに相当する。
-        t = params.frame_number - params.layer.start
-        u = (params.layer.end - 1) - params.frame_number
-
-        # README §4: フェードイン側の `if (a < 4096)` は到達不能なガードなので
-        # 省略し、min()1本にまとめている。
-        g = 1.0
-        if t < in_frames:
-            g = min(g, (t + 1) / (in_frames + 1))
-        if u < out_frames:
-            g = min(g, (u + 1) / (out_frames + 1))
+        # README §3/§4 のランプ(`ワイプ`と共通、common/timeline.py)。フェードは
+        # どちら側のランプが勝ったかを見ないので `from_out` は捨てる。
+        g, _ = in_out_ramp(params, fade_in, fade_out)
 
         if g >= 1.0:
             return None
