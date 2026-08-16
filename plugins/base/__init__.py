@@ -11,6 +11,7 @@ from .effects.color_key.color_key import ColorKeyEffect
 from .effects.adjustments.color import ColorAdjustmentEffect
 from .effects.clip.clip import ClipEffect
 from .effects.convex_edge.convex_edge import ConvexEdgeEffect
+from .effects.diagonal_clipping.diagonal_clipping import DiagonalClippingEffect
 from .effects.diffusion_light.diffusion_light import DiffusionLightEffect
 from .effects.edge_extraction.edge_extraction import EdgeExtractionEffect
 from .effects.fade.fade import FadeEffect
@@ -37,7 +38,7 @@ class AperioBasePlugin(MainPluginBase):
         self.description = "This is a plugin that provides basic effects/objects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
-        self.num_sub_plugins = 24
+        self.num_sub_plugins = 25
 
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, BorderEffect())
@@ -47,6 +48,7 @@ class AperioBasePlugin(MainPluginBase):
         aperio_plugin.manager.register_sub_plugin(self, ColorAdjustmentEffect())
         aperio_plugin.manager.register_sub_plugin(self, ClipEffect())
         aperio_plugin.manager.register_sub_plugin(self, ConvexEdgeEffect())
+        aperio_plugin.manager.register_sub_plugin(self, DiagonalClippingEffect())
         aperio_plugin.manager.register_sub_plugin(self, DiffusionLightEffect())
         aperio_plugin.manager.register_sub_plugin(self, EdgeExtractionEffect())
         aperio_plugin.manager.register_sub_plugin(self, FadeEffect())
