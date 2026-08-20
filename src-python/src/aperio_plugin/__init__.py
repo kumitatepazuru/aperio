@@ -290,10 +290,10 @@ class AperioManager(PluginManager, EventManager):
                 ]
 
                 for behind_entry in behind_entries:
-                    append_frame_entry(*behind_entry, layer_builders, generator_params)
-                append_frame_entry(layer_builder, layer, item_result, layer_builders, generator_params)
+                    append_frame_entry(*behind_entry, layer_builders, generator_params, height)
+                append_frame_entry(layer_builder, layer, item_result, layer_builders, generator_params, height)
                 for ahead_entry in ahead_entries:
-                    append_frame_entry(*ahead_entry, layer_builders, generator_params)
+                    append_frame_entry(*ahead_entry, layer_builders, generator_params, height)
 
             if len(layer_builders) == 0:
                 layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(
