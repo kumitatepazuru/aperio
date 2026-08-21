@@ -18,12 +18,18 @@ from .edge_extraction import EdgeExtractionEffect
 from .fade import FadeEffect
 from .glint import GlintEffect
 from .glow import GlowEffect
+from .image_loop import ImageLoopEffect
 from .light import LightEffect
 from .luma_key import LumaKeyEffect
 from .luminous import LuminousEffect
+from .mirror import MirrorEffect
 from .mozaic import MozaicEffect
+from .polar_coordinate_transform import PolarCoordinateTransformEffect
+from .raster import RasterEffect
+from .ripple import RippleEffect
 from .shadow import ShadowEffect, ShadowLayerEffect
 from .sharp import SharpEffect
+from .vibration import VibrationEffect
 from .wipe import WipeEffect
 
 
@@ -36,8 +42,8 @@ class AperioBaseEffectPlugin(MainPluginBase):
         self.description = "This is a plugin that provides basic effects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
-        self.num_sub_plugins = 25
-        
+        self.num_sub_plugins = 31
+
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, BorderEffect())
         aperio_plugin.manager.register_sub_plugin(self, BoundaryBlurEffect())
@@ -54,12 +60,18 @@ class AperioBaseEffectPlugin(MainPluginBase):
         aperio_plugin.manager.register_sub_plugin(self, FadeEffect())
         aperio_plugin.manager.register_sub_plugin(self, GlintEffect())
         aperio_plugin.manager.register_sub_plugin(self, GlowEffect())
+        aperio_plugin.manager.register_sub_plugin(self, ImageLoopEffect())
         aperio_plugin.manager.register_sub_plugin(self, LensBlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, LightEffect())
         aperio_plugin.manager.register_sub_plugin(self, LumaKeyEffect())
         aperio_plugin.manager.register_sub_plugin(self, LuminousEffect())
+        aperio_plugin.manager.register_sub_plugin(self, MirrorEffect())
         aperio_plugin.manager.register_sub_plugin(self, MozaicEffect())
+        aperio_plugin.manager.register_sub_plugin(self, PolarCoordinateTransformEffect())
+        aperio_plugin.manager.register_sub_plugin(self, RasterEffect())
+        aperio_plugin.manager.register_sub_plugin(self, RippleEffect())
         aperio_plugin.manager.register_sub_plugin(self, ShadowEffect())
         aperio_plugin.manager.register_sub_plugin(self, ShadowLayerEffect())
         aperio_plugin.manager.register_sub_plugin(self, SharpEffect())
+        aperio_plugin.manager.register_sub_plugin(self, VibrationEffect())
         aperio_plugin.manager.register_sub_plugin(self, WipeEffect())

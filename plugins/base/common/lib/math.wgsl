@@ -42,3 +42,28 @@ fn bilinear4_load(tex: texture_2d<f32>, src: vec2<f32>) -> vec4<f32> {
     let bottom = mix(c01, c11, frac.x);
     return mix(top, bottom, frac.y);
 }
+
+fn load_or_zero(tex: texture_2d<f32>, x: i32, y: i32, dims: vec2<i32>) -> vec4<f32> {
+    if (x < 0 || y < 0 || x >= dims.x || y >= dims.y) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+    return textureLoad(tex, vec2<i32>(x, y), 0);
+}
+
+// bilinear4_load と同じだが、範囲外テクセルは重み0(透明)として扱う(端をクランプしない)。
+fn bilinear4_load_transparent(tex: texture_2d<f32>, src: vec2<f32>) -> vec4<f32> {
+    let dims = vec2<i32>(textureDimensions(tex));
+    let s0 = floor(src);
+    let frac = src - s0;
+    let i0 = vec2<i32>(s0);
+    let i1 = i0 + vec2<i32>(1, 1);
+
+    let c00 = load_or_zero(tex, i0.x, i0.y, dims);
+    let c10 = load_or_zero(tex, i1.x, i0.y, dims);
+    let c01 = load_or_zero(tex, i0.x, i1.y, dims);
+    let c11 = load_or_zero(tex, i1.x, i1.y, dims);
+
+    let top = mix(c00, c10, frac.x);
+    let bottom = mix(c01, c11, frac.x);
+    return mix(top, bottom, frac.y);
+}

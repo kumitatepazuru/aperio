@@ -24,41 +24,24 @@ class LensBlurEffect(VideoEffectGeneratorBase):
         rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
         rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
 
-        # curve: pow(base, x*256)-1 は爆発しうるため32必須。ぼかしの`光の強さ`と
-        # 同じヘルパーを共有する(README §4「輝度カーブ」)。nameをblur.pyと揃える
-        # ことでコンパイル済みパイプラインのキャッシュも共有する。
         self.curve_shader = compose_common_shader(
             "curve", [math_module], common_dir, "curve.wgsl",
             min_output_format=rgba32float,
         )
-        # ycbcr_encode: 符号付きCr/Cb(±0.7程度)を出力するが、直後に(既に32bit固定の)
-        # curve_shaderへ1回で渡るだけの単発経路なので16で足りる。
         self.ycbcr_encode_shader = compose_common_shader(
             "ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl",
             min_output_format=rgba16float,
         )
-        # ycbcr_decode: BT.601復元後は通常のRGB値域に収まり、この後は線形空間の
-        # resize_upで拡大するだけ(爆発する変換を挟まない)なのでフロア不要。
         self.ycbcr_decode_shader = compose_common_shader("ycbcr_decode", [color_module], common_dir, "ycbcr_decode.wgsl")
-
-        # expand: サイズ固定OFF時のみ通す、元画像([0,1]のストレートRGBA)の
-        # 均等拡張(README §6)。glowのexpand呼び出しと同じname/フォーマットにして
-        # コンパイル済みパイプラインを共有する。
         self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl", min_output_format=rgba16float)
-
-        # resize_down/disc_blur: curve_forward後(最大pow(base,256)-1のオーダー)の
-        # 値をそのまま扱うため32必須(curveと同じ理由)。このエフェクト専用なので
-        # lens_blur直下に置く(docs/plugin.md 規則1)。
         self.resize_down_shader = shared_shader(
             "lens_blur_resize_down", current_dir, "resize_down.wgsl", min_output_format=rgba32float,
         )
         self.disc_blur_shader = shared_shader(
             "lens_blur_disc_blur", current_dir, "disc_blur.wgsl", min_output_format=rgba32float,
         )
-        # resize_up: curve_inverse/ycbcr_decode後の線形RGB([0,1]程度)をbilinear4_load
-        # で拡大するだけの終端パスなのでフロア不要。
         self.resize_up_shader = compose_common_shader(
-            "lens_blur_resize_up", [math_module], current_dir, "resize_up.wgsl",
+            "resize_bilinear", [math_module], common_dir, "resize_bilinear.wgsl",
         )
 
     @event(type=GeneratorEvent.New)

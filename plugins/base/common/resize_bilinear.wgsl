@@ -2,7 +2,7 @@ enable wgpu_binding_array;
 
 #import aperio::math::{bilinear4_load}
 
-struct ResizeUpParams {
+struct ResizeBilinearParams {
     out_width: i32,
     out_height: i32,
 };
@@ -10,14 +10,11 @@ struct ResizeUpParams {
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
 @group(0) @binding(1) var outputTex: ImageStorageTexture;
 
-@group(1) @binding(0) var<storage, read> params: ResizeUpParams;
+@group(1) @binding(0) var<storage, read> params: ResizeBilinearParams;
 
-// bilinear4_loadによる線形空間での拡大(exedit-inspect lens_blur README §4
-// 「(4)/(7) リサイズ」、縮小がカーブ空間で行われるのに対し拡大はycbcr_decode後の
-// 線形RGB空間で行う)。テクセル中心基準の半画素シフトで写像する標準的な
-// バイリニアを使う(README §10: 原作の拡大側補間が最近傍か線形か未確定のため、
-// 素直なバイリニアを採用)。curve_inverse/ycbcr_decodeを経た後の通常のRGB値
-// ([0,1]程度)を扱う終端パスなので32bit floatは不要。
+// bilinear4_loadによる汎用リサイズ(拡大・縮小どちらも同じ式でよい: srcは
+// out_dimsに対するsrc_dimsの比率で決まるだけでスケール方向に依存しない)。
+// テクセル中心基準の半画素シフトで写像する標準的なバイリニア。
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let out_coord = vec2<i32>(global_id.xy);

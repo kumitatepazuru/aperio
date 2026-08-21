@@ -130,7 +130,7 @@ impl ImageGenerator {
         };
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
-            flags: wgpu::InstanceFlags::advanced_debugging(),
+            flags: wgpu::InstanceFlags::from_env_or_default(),
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = instance
