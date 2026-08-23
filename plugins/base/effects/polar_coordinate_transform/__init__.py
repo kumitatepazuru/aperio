@@ -59,8 +59,6 @@ class PolarCoordinateTransformEffect(VideoEffectGeneratorBase):
         swirl_rate = swirl * 2.0 * math.pi / max(1e-3, r - center_hole)
 
         shader_params = struct.pack("ifffii", center_hole, r, rotation_rad, swirl_rate, s, s)
-        center_x = w // 2 - s // 2
-        center_y = h // 2 - s // 2
         return GeneratorWgslReturn(
-            self.shader, shader_params, ItemResult(s, s, center_x=center_x, center_y=center_y)
+            self.shader, shader_params, ItemResult(s, s)
         )

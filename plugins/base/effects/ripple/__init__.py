@@ -43,6 +43,7 @@ class RippleEffect(VideoEffectGeneratorBase):
                 RequestStructureParameter.Float(
                     id="speed", title="速度", default_value=150.0, suffix="px/s", min=-2000.0, max=2000.0
                 ),
+                # TODO: 以下のパラメータ3つは詳細設定というボタンかアコーディオンかを作れるようにして、そこに格納するようにする
                 RequestStructureParameter.Int(
                     id="ring_count", title="波紋数", default_value=0, min=0, max=1000
                 ),

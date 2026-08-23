@@ -66,7 +66,13 @@ fn main() {
     println!("cargo:rustc-link-lib=vorbisenc");
     println!("cargo:rustc-link-lib=ogg");
     if cfg!(target_os = "windows") {
-        println!("cargo:rustc-link-lib=zlib");
+        // zlibのライブラリ名がarchによって違う
+        // TODO: バージョン等の違いの可能性も捨てきれないので要調査。というかpkgconfigを利用できないのか？
+        if cfg!(target_arch = "x86_64") {
+            println!("cargo:rustc-link-lib=zs");
+        } else if cfg!(target_arch = "aarch64") {
+            println!("cargo:rustc-link-lib=zlib");
+        }
     } else {
         println!("cargo:rustc-link-lib=z");
     }

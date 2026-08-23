@@ -68,7 +68,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    let theta = params_array.rotation_rad + (R - r) * params_array.swirl_rate - atan2(dx, dy);
+    let theta = -params_array.rotation_rad + (R - r) * params_array.swirl_rate - atan2(dx, dy);
     let src_col = wrap_mod_f(theta * src_w / (2.0 * PI), src_w);
 
     // 適応的スーパーサンプリング: 出力1画素が源画像の角度方向に何画素分を覆うかを
