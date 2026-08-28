@@ -40,10 +40,10 @@ class ImageLoopEffect(VideoEffectGeneratorBase):
                     id="tiles_y", title="縦回数", default_value=1, min=1, max=400
                 ),
                 RequestStructureParameter.Float(
-                    id="speed_x", title="速度X", default_value=0.0, suffix="px/frame", min=-1000.0, max=1000.0
+                    id="speed_x", title="速度X", default_value=0.0, suffix="px/f", min=-1000.0, max=1000.0
                 ),
                 RequestStructureParameter.Float(
-                    id="speed_y", title="速度Y", default_value=0.0, suffix="px/frame", min=-1000.0, max=1000.0
+                    id="speed_y", title="速度Y", default_value=0.0, suffix="px/f", min=-1000.0, max=1000.0
                 ),
             ],
         )

@@ -131,7 +131,7 @@ class BorderEffect(VideoEffectGeneratorBase):
             tiled_branch = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_texture_func(pattern_func, None, loader.width, loader.height)
-                .add_wgsl(self.tile_shader, struct.pack("ii", box_w, box_h), box_w, box_h)
+                .add_wgsl(self.tile_shader, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
             )
             edge_layer = (
                 gpu_util.PyImageGenerateBuilder()

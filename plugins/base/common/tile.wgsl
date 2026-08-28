@@ -1,6 +1,10 @@
 enable wgpu_binding_array;
 
 struct TileParams {
+    // タイルの位相シフト(exedit-inspect composite_image README §5:
+    // 「負の座標をx%dw/y%dhで畳んだ位置から始めて敷き詰める」)。
+    offset_x: i32,
+    offset_y: i32,
     out_width: i32,
     out_height: i32,
 };
@@ -24,7 +28,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let tex = inputTex[0];
     let pattern_dims = vec2<i32>(textureDimensions(tex));
-    let in_coord = out_coord % pattern_dims;
+    let shifted = out_coord - vec2<i32>(params.offset_x, params.offset_y);
+    let in_coord = ((shifted % pattern_dims) + pattern_dims) % pattern_dims;
 
     textureStore(outputTex, out_coord, textureLoad(tex, in_coord, 0));
 }

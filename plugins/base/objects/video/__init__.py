@@ -4,9 +4,11 @@ import os
 import aperio_plugin
 from aperio.avloader import PyVideoLoader
 from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
-from aperio.gpu_util import PyCompiledTextureFunc
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, VideoGenerateParameters, VideoObjectGeneratorBase
+
+from ... import write_video_sync_frame
+from ...common.video_cache import VideoLoaderCache
 
 
 class VideoObject(VideoObjectGeneratorBase):
@@ -21,26 +23,31 @@ class VideoObject(VideoObjectGeneratorBase):
         self.display_name = "動画"
         self.description = "動画を再生できます。動画ファイルのパスを指定してください。"
 
-        self.compiled_funcs: dict[str, PyCompiledTextureFunc] = {}
-        self.video_loaders: dict[str, PyVideoLoader] = {}
+        # generate() は毎フレーム呼ばれ、オブジェクトの id (structure_id) を
+        # キーとして使えるので、composite_video effect と共通の id キー・キャッシュを使う。
+        self.video_cache = VideoLoaderCache("video_frame")
+
+        # on_request_structure には id が渡ってこない(New/RequestStructure イベント時点では
+        # タイムライン上の id が params に含まれない)ため、max_frame 計算に必要な
+        # frame_count/fps を読むためだけの、パスキーの単純なローダー保持。
+        # video_cache (id キー、generate 用) とは別物として扱う。
+        self._metadata_loaders: dict[str, PyVideoLoader] = {}
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
     def on_request_structure(self, params: dict) -> GeneratorInformation:
         paths = params.get("video_path", [])
         path = paths[0] if paths else ""
-        if path not in self.video_loaders:
+        if path not in self._metadata_loaders:
             # TODO: 開けなかったときにUIで通知する
             if os.path.exists(path):
-                loader = PyVideoLoader(path=path, image_generator=aperio_plugin.image_generator)
-                self.video_loaders[path] = loader
-                self.compiled_funcs[path] = PyCompiledTextureFunc("video_frame", loader.get_frame_for_pipeline)
+                self._metadata_loaders[path] = PyVideoLoader(path=path, image_generator=aperio_plugin.image_generator)
 
         fps = aperio_plugin.store_manager.get_state().frame_state.fps
         return GeneratorInformation(
             display_name=self.display_name,
             duration_frames=300,
-            max_frame=math.ceil(loader.frame_count * fps / loader.fps) if (loader := self.video_loaders.get(path)) else None,
+            max_frame=math.ceil(loader.frame_count * fps / loader.fps) if (loader := self._metadata_loaders.get(path)) else None,
             min_frame=None,
             structure=[
                 RequestStructureParameter.File(
@@ -63,12 +70,13 @@ class VideoObject(VideoObjectGeneratorBase):
         if not paths:
             return None
         path = paths[0]
-        video_loader = self.video_loaders.get(path)
-        compiled_func = self.compiled_funcs.get(path)
-        if video_loader is None or compiled_func is None:
+        entry = self.video_cache.get_or_load(params.structure_id, path) if path else None
+        if entry is None:
             return None
+        video_loader, compiled_func = entry
 
         video_frame_number = params.frame_number - params.layer.start + 1
+        write_video_sync_frame(params.frame_number, video_frame_number)
 
         return GeneratorTextureReturn(
             compiled=compiled_func,
