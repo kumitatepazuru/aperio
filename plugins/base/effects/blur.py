@@ -5,8 +5,8 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ...common.params import make_generator_information, pack_box_blur_dir_params, split_radius
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ..common.params import make_generator_information, pack_box_blur_dir_params, split_radius
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module
 
 
 class BlurEffect(VideoEffectGeneratorBase):

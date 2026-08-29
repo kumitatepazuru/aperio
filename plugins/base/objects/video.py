@@ -7,8 +7,8 @@ from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformat
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, VideoGenerateParameters, VideoObjectGeneratorBase
 
-from ... import write_video_sync_frame
-from ...common.video_cache import VideoLoaderCache
+from .. import write_video_sync_frame
+from ..common.video_cache import VideoLoaderCache
 
 
 class VideoObject(VideoObjectGeneratorBase):

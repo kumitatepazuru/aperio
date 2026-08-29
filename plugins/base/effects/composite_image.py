@@ -5,9 +5,9 @@ from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformat
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ...common.params import make_generator_information, pack_expand_params
-from ...common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ..common.params import make_generator_information, pack_expand_params
+from ..common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 _MEDIA_MODE_INDEX = {"overwrite_color": 0, "luma_overwrite": 1, "luma_multiply": 2}
 

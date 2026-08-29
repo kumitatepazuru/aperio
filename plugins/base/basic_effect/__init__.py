@@ -2,14 +2,14 @@ import aperio_plugin
 from aperio_plugin.plugin_base import MainPluginBase
 from aperio_plugin.plugin_manager import PluginManager
 
-from .expand.expand import ExpandEffect
-from .flip.flip import FlipEffect
-from .position.position import PositionEffect
-from .resize.resize import ResizeEffect
-from .rotation.rotation import RotationEffect
-from .rotation90.rotation90 import Rotation90Effect
-from .transparency.transparency import TransparencyEffect
-from .zoom.zoom import ZoomEffect
+from .expand import ExpandEffect
+from .flip import FlipEffect
+from .position import PositionEffect
+from .resize import ResizeEffect
+from .rotation import RotationEffect
+from .rotation90 import Rotation90Effect
+from .transparency import TransparencyEffect
+from .zoom import ZoomEffect
 
 
 @PluginManager.plugin

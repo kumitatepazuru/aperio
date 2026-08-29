@@ -3,7 +3,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ...common.params import make_generator_information
+from ..common.params import make_generator_information
 
 
 class RotationEffect(VideoEffectGeneratorBase):

@@ -19,9 +19,9 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 from aperio_plugin.utils import build_link_prefix
 
-from ...common.params import make_generator_information, pack_box_average_dir_params, pack_expand_params
-from ...common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ..common.params import make_generator_information, pack_box_average_dir_params, pack_expand_params
+from ..common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
+from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
 
 # 「影を別オブジェクトで描画」時、影レイヤーの計算だけを行う非表示エフェクトの名前。
 # ShadowEffect自身をチェーン末尾に再度置くと`separate_object`分岐に再突入して無限再帰する

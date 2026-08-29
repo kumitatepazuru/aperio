@@ -22,14 +22,17 @@ fn bytes_per_pixel(format: wgpu::TextureFormat) -> Result<u32> {
 /// `CpuInputImage.data`の公開契約(常にf32・内部フォーマットに非依存)を保つための変換。
 fn raw_bytes_to_f32(format: wgpu::TextureFormat, raw_pixels: &[u8]) -> Result<Vec<f32>> {
     match format {
-        wgpu::TextureFormat::Rgba32Float => Ok(bytemuck::cast_slice(raw_pixels).to_vec()),
-        wgpu::TextureFormat::Rgba16Float => {
-            let bits: &[u16] = bytemuck::cast_slice(raw_pixels);
-            Ok(bits
-                .iter()
-                .map(|&b| half::f16::from_bits(b).to_f32())
-                .collect())
-        }
+        // `raw_pixels`(Vec<u8>)はアラインメント1しか保証されないため、
+        // `bytemuck::cast_slice`によるu16/f32への直接キャストはアロケータ次第でpanicしうる。
+        // `chunks_exact`+`from_le_bytes`でバイト単位に明示変換し、この問題を回避する。
+        wgpu::TextureFormat::Rgba32Float => Ok(raw_pixels
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect()),
+        wgpu::TextureFormat::Rgba16Float => Ok(raw_pixels
+            .chunks_exact(2)
+            .map(|c| half::f16::from_le_bytes(c.try_into().unwrap()).to_f32())
+            .collect()),
         wgpu::TextureFormat::Rgba8Unorm => {
             Ok(raw_pixels.iter().map(|&b| b as f32 / 255.0).collect())
         }

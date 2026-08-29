@@ -5,8 +5,8 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemRes
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ...common.params import make_generator_information
-from ...common.random import rand_unit
+from ..common.params import make_generator_information
+from ..common.random import rand_unit
 
 
 class VibrationEffect(VideoEffectGeneratorBase):
