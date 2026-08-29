@@ -12,6 +12,7 @@ from .composite_image import CompositeImageEffect
 from .composite_video import CompositeVideoEffect
 from .convert_gamut import ConvertGamutEffect
 from .convex_edge import ConvexEdgeEffect
+from .deinterlacing import DeinterlacingEffect
 from .diagonal_clipping import DiagonalClippingEffect
 from .directional_blur import DirectionalBlurEffect
 from .emission_blur import EmissionBlurEffect
@@ -49,7 +50,7 @@ class AperioBaseEffectPlugin(MainPluginBase):
         self.description = "This is a plugin that provides basic effects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
-        self.num_sub_plugins = 38
+        self.num_sub_plugins = 39
 
         aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
         aperio_plugin.manager.register_sub_plugin(self, BorderEffect())
@@ -62,6 +63,7 @@ class AperioBaseEffectPlugin(MainPluginBase):
         aperio_plugin.manager.register_sub_plugin(self, CompositeVideoEffect())
         aperio_plugin.manager.register_sub_plugin(self, ConvertGamutEffect())
         aperio_plugin.manager.register_sub_plugin(self, ConvexEdgeEffect())
+        aperio_plugin.manager.register_sub_plugin(self, DeinterlacingEffect())
         aperio_plugin.manager.register_sub_plugin(self, DiagonalClippingEffect())
         aperio_plugin.manager.register_sub_plugin(self, DiffusionLightEffect())
         aperio_plugin.manager.register_sub_plugin(self, DirectionalBlurEffect())
