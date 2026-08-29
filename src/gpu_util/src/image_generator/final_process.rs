@@ -115,7 +115,7 @@ pub async fn handle_final_process(
             rx.await
                 .context("Failed to receive buffer mapping result")??;
 
-            let data = buffer_slice.get_mapped_range();
+            let data = buffer_slice.get_mapped_range()?;
             let result = data.to_vec();
             drop(data); // get_mapped_rangeの借用を解除
             readback_buffer.unmap();

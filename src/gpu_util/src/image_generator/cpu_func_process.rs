@@ -3,10 +3,42 @@ use std::sync::Arc;
 
 use crate::compiled_func::{CompiledFunc, CpuInputImage};
 use crate::image_generator::{ImageGenerator, ProcessingState, StepOutput};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use futures::channel::oneshot;
 use futures::future::join_all;
 use futures::FutureExt;
+
+/// テクスチャの実フォーマットにおける1ピクセルあたりのバイト数。
+fn bytes_per_pixel(format: wgpu::TextureFormat) -> Result<u32> {
+    match format {
+        wgpu::TextureFormat::Rgba8Unorm => Ok(4),
+        wgpu::TextureFormat::Rgba16Float => Ok(8),
+        wgpu::TextureFormat::Rgba32Float => Ok(16),
+        other => bail!("Unsupported texture format for CPU readback: {other:?}"),
+    }
+}
+
+/// depad済みの生バイト列を、フォーマットに応じて正規化非依存の`Vec<f32>`へ変換する。
+/// `CpuInputImage.data`の公開契約(常にf32・内部フォーマットに非依存)を保つための変換。
+fn raw_bytes_to_f32(format: wgpu::TextureFormat, raw_pixels: &[u8]) -> Result<Vec<f32>> {
+    match format {
+        // `raw_pixels`(Vec<u8>)はアラインメント1しか保証されないため、
+        // `bytemuck::cast_slice`によるu16/f32への直接キャストはアロケータ次第でpanicしうる。
+        // `chunks_exact`+`from_le_bytes`でバイト単位に明示変換し、この問題を回避する。
+        wgpu::TextureFormat::Rgba32Float => Ok(raw_pixels
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect()),
+        wgpu::TextureFormat::Rgba16Float => Ok(raw_pixels
+            .chunks_exact(2)
+            .map(|c| half::f16::from_le_bytes(c.try_into().unwrap()).to_f32())
+            .collect()),
+        wgpu::TextureFormat::Rgba8Unorm => {
+            Ok(raw_pixels.iter().map(|&b| b as f32 / 255.0).collect())
+        }
+        other => bail!("Unsupported texture format for CPU readback: {other:?}"),
+    }
+}
 
 async fn download_gpu_texture(
     device: &wgpu::Device,
@@ -14,7 +46,8 @@ async fn download_gpu_texture(
     texture_to_read: &Arc<wgpu::Texture>,
 ) -> Result<(Vec<f32>, u32, u32)> {
     let (width, height) = (texture_to_read.width(), texture_to_read.height());
-    let row_size = width * std::mem::size_of::<[f32; 4]>() as u32;
+    let format = texture_to_read.format();
+    let row_size = width * bytes_per_pixel(format)?;
     let bytes_per_row = ((row_size + 255) / 256) * 256;
     let readback_buffer_size = (bytes_per_row * height) as u64;
 
@@ -55,7 +88,7 @@ async fn download_gpu_texture(
     })?;
     rx.await??;
 
-    let data = buffer_slice.get_mapped_range();
+    let data = buffer_slice.get_mapped_range()?;
 
     // パディングを外して詰め直し
     let mut pixels = vec![0u8; (row_size * height) as usize];
@@ -64,7 +97,7 @@ async fn download_gpu_texture(
         let dst = &mut pixels[y * row_size as usize..(y + 1) * row_size as usize];
         dst.copy_from_slice(src);
     }
-    Ok((bytemuck::cast_slice(&pixels).to_vec(), width, height))
+    Ok((raw_bytes_to_f32(format, &pixels)?, width, height))
 }
 
 pub async fn handle_cpu_func_step(

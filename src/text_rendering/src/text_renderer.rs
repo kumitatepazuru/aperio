@@ -101,8 +101,8 @@ impl TextRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("TextRenderer Pipeline Layout"),
-            bind_group_layouts: &[&bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size: 0,
         });
 
         // インスタンスバッファ頂点属性（stride = 48 bytes）
@@ -127,7 +127,7 @@ impl TextRenderer {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[vertex_buffer_layout.clone()],
+                    buffers: &[Some(vertex_buffer_layout.clone())],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -136,7 +136,21 @@ impl TextRenderer {
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba16Float,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        // ALPHA_BLENDING(色factor=SrcAlpha)だと、透明にクリアした
+                        // ターゲットへ被覆率の低い(アンチエイリアスされた)グリフを
+                        // 描画した際にrgbがcoverageで事前乗算された値として書き込まれて
+                        // しまい、fs_mask/fs_colorが返しているストレートアルファ
+                        // (rgbはcoverageで乗算しない。aperio全体の規約)が壊れる。
+                        // 色チャンネルは常にsrcで置き換え、アルファだけ通常のsrc-overで
+                        // 蓄積することで、意図通りのストレートアルファ出力にする
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::Zero,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent::OVER,
+                        }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -146,7 +160,7 @@ impl TextRenderer {
                 },
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };

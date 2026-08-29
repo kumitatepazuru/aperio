@@ -19,6 +19,7 @@ const videoBaseParameterStructure: RequestStructureParameter[] = [
     title: "拡大率",
     defaultValue: 100,
     suffix: "%",
+    min: 0,
   },
   {
     type: "Float",
@@ -33,6 +34,8 @@ const videoBaseParameterStructure: RequestStructureParameter[] = [
     title: "透明度",
     defaultValue: 100,
     suffix: "%",
+    min: 0,
+    max: 100,
   },
 ];
 
@@ -43,6 +46,7 @@ const audioBaseParameterStructure: RequestStructureParameter[] = [
     title: "音量",
     defaultValue: 100,
     suffix: "%",
+    min: 0,
   },
   {
     type: "Float",
@@ -50,6 +54,8 @@ const audioBaseParameterStructure: RequestStructureParameter[] = [
     title: "パン",
     defaultValue: 0,
     suffix: "%",
+    min: -100,
+    max: 100,
   },
 ];
 

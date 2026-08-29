@@ -3,5 +3,6 @@
     "default_version": "3.14.0"
   },
   "fast_preview": true,
-  "tex_pixel_format": "Bgra8Unorm"
+  "tex_pixel_format": "Bgra8Unorm",
+  "image_pixel_format": "Rgba32Float"
 }

@@ -7,24 +7,26 @@ use std::fs;
 use std::path::PathBuf;
 use std::{fs::File, io::Write};
 
-use crate::python::modules::gpu_util::WrappedSharedTextureFormat;
+use crate::python::modules::gpu_util::{WrappedImagePixelFormat, WrappedSharedTextureFormat};
 use crate::utils::get_data_dir;
 use crate::utils::json_value::JsonValue;
 use crate::Dirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[napi(object)]
+#[pyclass(from_py_object, get_all)]
 pub struct PythonConfig {
     pub default_version: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[napi(object)]
-#[pyclass(from_py_object)]
+#[pyclass(from_py_object, get_all)]
 pub struct AperioConfig {
     pub python: PythonConfig,
     pub fast_preview: bool,
     pub tex_pixel_format: WrappedSharedTextureFormat,
+    pub image_pixel_format: WrappedImagePixelFormat,
     pub dock_layout: Option<JsonValue>,
 }
 

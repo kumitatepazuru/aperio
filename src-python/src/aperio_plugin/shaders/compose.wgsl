@@ -1,17 +1,25 @@
+enable wgpu_binding_array;
+
+// TODO: fragment shaderなどをstepで扱えるようにして、簡略化・高速化をする
+
+
 // 各レイヤーのメタ情報を格納する構造体
 struct LayerParams {
-  x: i32,     // レイヤーの中心のx座標
-  y: i32,     // レイヤーの中心のy座標
-  scale: f32,  // レイヤーの拡大・縮小率
-  alpha: f32,  // レイヤーの透明度 (0.0〜1.0)
-  rotation_matrix: mat2x2<f32>, // レイヤーの回転行列
+  // 出力中心相対の画面座標 -> テクスチャ相対座標の逆ホモグラフィ。
+  // 3D回転(X/Y軸を含む)・拡大率・平行移動(X/Y/Z)・透視投影がすべてこの1枚に畳み込まれている。
+  // 同次座標なので、掛けたあとに z で割る必要がある。
+  inv_transform: mat3x3<f32>,
+  center_x: f32,                // 回転・拡縮の基点オフセットX (レイヤーテクスチャ中心からのピクセル数)
+  center_y: f32,                // 回転・拡縮の基点オフセットY (レイヤーテクスチャ中心からのピクセル数)
+  alpha: f32,                   // レイヤーの透明度 (0.0〜1.0)
+  _pad: f32,                    // アライメント用パディング
 };
 
 // --- リソースのバインディング定義 ---
 
 // グループ0: テクスチャ関連
 @group(0) @binding(0) var inputTex: binding_array<texture_2d<f32>>;
-@group(0) @binding(1) var outputTex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(1) var outputTex: ImageStorageTexture;
 @group(0) @binding(2) var linear_sampler: sampler;
 
 // グループ1: メタデータ
@@ -40,21 +48,25 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let params = layer_params_array[i];
     let layer_dims = textureDimensions(inputTex[i]);
     let layer_dims_f = vec2<f32>(layer_dims);
-    if (params.scale <= 0.0) {
+    if (params.alpha <= 0.0) {
       continue;
     }
 
-    // 出力ピクセル座標から、レイヤーテクスチャ上の対応する座標を計算
-    // params.x/y はレイヤー中心の座標 (出力テクスチャの中央が原点)
+    // 出力ピクセル座標から、レイヤーテクスチャ上の対応する座標を計算する。
+    // 出力テクスチャの中央が原点。+0.5 はピクセル中心を指すため
+    // (後段の src_coord_pixel / layer_dims_f がテクセル中心と一致するようになる)。
     let output_center = vec2<f32>(output_dims) * 0.5;
-    let layer_center_out = output_center + vec2<f32>(f32(params.x), f32(params.y));
-    let relative_coord = vec2<f32>(output_coord) - layer_center_out;
+    let relative_coord = vec2<f32>(output_coord) + vec2<f32>(0.5, 0.5) - output_center;
 
-    // 事前に計算された回転行列を適用 (中心基準)
-    let rotated_coord = params.rotation_matrix * relative_coord;
+    // 事前に計算された逆ホモグラフィ (3D回転 + 拡縮 + 平行移動 + 透視投影) を適用
+    let q = params.inv_transform * vec3<f32>(relative_coord, 1.0);
+    if (q.z <= 0.0) {
+      continue;  // カメラ平面より後方 (このレイヤーには映らない画素)
+    }
+    let src_rel = q.xy / q.z;
 
-    // スケールを適用し、テクスチャ中央を原点とした座標をピクセル座標に変換
-    let src_coord_pixel = rotated_coord / params.scale + layer_dims_f * 0.5;
+    // 基点オフセットを加えてテクスチャピクセル座標に変換
+    let src_coord_pixel = src_rel + layer_dims_f * 0.5 + vec2<f32>(params.center_x, params.center_y);
 
     if (src_coord_pixel.x >= 0.0 && src_coord_pixel.x < layer_dims_f.x &&
         src_coord_pixel.y >= 0.0 && src_coord_pixel.y < layer_dims_f.y) {

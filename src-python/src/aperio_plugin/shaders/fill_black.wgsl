@@ -1,5 +1,5 @@
 @group(0) @binding(0)
-var outputTex: texture_storage_2d<rgba32float, write>;
+var outputTex: ImageStorageTexture;
 
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {

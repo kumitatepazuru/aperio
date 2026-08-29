@@ -2,13 +2,13 @@ from aperio.item_structures import *
 from .event_manager import EventManager
 from .plugin_manager import PluginManager
 from _typeshed import Incomplete
-from aperio import PyManagers as PyManagers, gpu_util
+from aperio import PyManagers as PyManagers, gpu_util, text_rendering
 from aperio.audio import AudioManager as AudioManager
 from aperio.config_manager import ConfigManager as ConfigManager
 from aperio.store import StoreManager as StoreManager
 
-image_generator: Incomplete
-text_renderer: Incomplete
+image_generator: gpu_util.PyImageGenerator
+text_renderer: text_rendering.PyTextRenderer
 manager: AperioManager
 config_manager: ConfigManager
 store_manager: StoreManager

@@ -1,8 +1,6 @@
 from dataclasses import dataclass
-from enum import Enum
-
-from aperio.item_structures import ItemStructure
-from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl
+from aperio.item_structures import AdditionalItem, ItemResult, ItemStructure
+from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerateBuilder
 import numpy as np
 import numpy.typing as npt
 
@@ -13,24 +11,27 @@ from . import SubPluginBase
 class GeneratorWgslReturn:
     compiled: PyCompiledWgsl
     params: bytes
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 
 @dataclass
 class GeneratorFuncReturn:
     compiled: PyCompiledFunc
     params: object
-    output_width: int
-    output_height: int
+    item_result: ItemResult
 
 
 @dataclass
 class GeneratorTextureReturn:
     compiled: PyCompiledTextureFunc
     params: object
-    output_width: int
-    output_height: int
+    item_result: ItemResult
+
+
+@dataclass
+class GeneratorBuilderReturn:
+    builder: PyImageGenerateBuilder
+    item_result: ItemResult
 
 
 @dataclass
@@ -47,6 +48,19 @@ class VideoGenerateParameters:
     """生成元のフレームの幅。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
     height: int
     """生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
+    structure_id: str = ""
+    """この呼び出しが対応する`GenerateStructure.id`(`layer.object["id"]`または対応するeffectの`["id"]`)。"""
+
+@dataclass
+class AudioGeneratorReturn:
+    """オーディオの generate() の戻り値。additional_item は video 側の
+    ItemResult.additional_item と対称な仕組みで、自分と同じ時間窓に
+    加算ミックスする追加のオーディオアイテムを指定できる(behind は無視される。
+    音声は加算合成なので順序に意味が無いため)。"""
+
+    samples: "npt.NDArray[np.float32]"
+    additional_item: "AdditionalItem | None" = None
+
 
 @dataclass
 class AudioGenerateParameters:
@@ -78,7 +92,7 @@ class VideoGeneratorBase(SubPluginBase):
 
     def generate(
         self, params: VideoGenerateParameters
-    ) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+    ) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -86,7 +100,7 @@ class VideoGeneratorBase(SubPluginBase):
             params (VideoGenerateParameters): フレーム生成に必要なパラメーター
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None:
+            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
             生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
         raise NotImplementedError("Subclasses must implement this method")
@@ -100,7 +114,7 @@ class AudioGeneratorBase(SubPluginBase):
     def __init__(self):
         super().__init__()
 
-    def generate(self, params: AudioGenerateParameters) -> npt.NDArray[np.float32] | None:
+    def generate(self, params: AudioGenerateParameters) -> AudioGeneratorReturn | None:
         """
         オーディオサンプルを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -108,7 +122,7 @@ class AudioGeneratorBase(SubPluginBase):
             params (AudioGenerateParameters): オーディオサンプル生成に必要なパラメーター
 
         Returns:
-            npt.NDArray[np.float32] | None: 生成されたオーディオサンプルの2次元配列。Noneを返すとその処理はスキップされる。
+            AudioGeneratorReturn | None: 生成されたオーディオサンプル(+任意で追加オーディオアイテム)。Noneを返すとその処理はスキップされる。
         """
         raise NotImplementedError("Subclasses must implement this method")
 

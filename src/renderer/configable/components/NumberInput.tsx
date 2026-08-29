@@ -105,16 +105,25 @@ const NumberInput = ({
           }}
           onChange={(e) => {
             setInputStr(e.target.value);
-            const v = isInt
+            let v = isInt
               ? parseInt(e.target.value, 10)
               : parseFloat(e.target.value);
-            if (!isNaN(v)) onChange(v);
+            if (!isNaN(v)) {
+              if (min !== undefined) v = Math.max(min, v);
+              if (max !== undefined) v = Math.min(max, v);
+              onChange(v);
+            }
           }}
           onBlur={() => {
-            const v = isInt ? parseInt(inputStr, 10) : parseFloat(inputStr);
+            let v = isInt ? parseInt(inputStr, 10) : parseFloat(inputStr);
             if (isNaN(v)) {
               onChange(valueAtFocus.current);
               setInputStr(String(valueAtFocus.current));
+            } else {
+              if (min !== undefined) v = Math.max(min, v);
+              if (max !== undefined) v = Math.min(max, v);
+              onChange(v);
+              setInputStr(String(v));
             }
           }}
         />

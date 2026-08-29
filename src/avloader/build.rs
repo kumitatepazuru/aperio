@@ -60,19 +60,28 @@ fn main() {
         println!("cargo:rustc-link-lib=x264");
         println!("cargo:rustc-link-lib=x265");
     }
-    if cfg!(target_arch = "x86_64") || cfg!(target_os = "windows") {
-        println!("cargo:rustc-link-lib=libmfx");
-    }
     println!("cargo:rustc-link-lib=vpx");
     println!("cargo:rustc-link-lib=vorbis");
     println!("cargo:rustc-link-lib=vorbisfile");
     println!("cargo:rustc-link-lib=vorbisenc");
     println!("cargo:rustc-link-lib=ogg");
+    if cfg!(target_os = "windows") {
+        // zlibのライブラリ名がarchによって違う
+        // TODO: バージョン等の違いの可能性も捨てきれないので要調査。というかpkgconfigを利用できないのか？
+        if cfg!(target_arch = "x86_64") {
+            println!("cargo:rustc-link-lib=zs");
+        } else if cfg!(target_arch = "aarch64") {
+            println!("cargo:rustc-link-lib=zlib");
+        }
+    } else {
+        println!("cargo:rustc-link-lib=z");
+    }
 
     // Windows system libraries required by FFmpeg
     if cfg!(target_os = "windows") {
         for lib in &[
             "bcrypt", "ws2_32", "secur32", "mfplat", "mf", "mfuuid", "strmiids", "ole32", "user32",
+            "psapi", "uuid", "oleaut32", "shlwapi", "gdi32", "vfw32", "ncrypt", "crypt32",
         ] {
             println!("cargo:rustc-link-lib={}", lib);
         }

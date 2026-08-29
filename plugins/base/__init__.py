@@ -1,27 +1,21 @@
-import aperio_plugin
-from aperio_plugin import PluginManager
-from aperio_plugin.plugin_base import MainPluginBase
+# `from . import objects`/`from . import effects` より前で定義する必要がある
+# (それらのモジュールがロード時にこの関数をインポートするため、循環インポートを避ける)。
+_video_sync_last: tuple[int, int] | None = None
 
 
-from .effects.blur.blur import BlurEffect
-from .objects.audio.audio import AudioObject
-from .objects.test.test import SinWaveObject
-from .objects.text.text import TextObject
-from .objects.video.video import VideoObject
+def write_video_sync_frame(frame_number: int, video_frame_number: int) -> None:
+    global _video_sync_last
+    _video_sync_last = (frame_number, video_frame_number)
 
 
-@PluginManager.plugin
-class AperioBasePlugin(MainPluginBase):
-    def __init__(self):
-        super().__init__()
-        self.name = "base"
-        self.display_name = "基本"
-        self.description = "This is a plugin that provides basic effects/objects for Aperio."
-        self.version = "1.0.0"
-        self.author = "Aperio"
+def read_video_sync_frame(frame_number: int) -> int | None:
+    if _video_sync_last is not None and _video_sync_last[0] == frame_number:
+        return _video_sync_last[1]
+    return None
 
-        aperio_plugin.manager.register_sub_plugin(self, BlurEffect())
-        aperio_plugin.manager.register_sub_plugin(self, AudioObject())
-        aperio_plugin.manager.register_sub_plugin(self, TextObject())
-        aperio_plugin.manager.register_sub_plugin(self, VideoObject())
-        aperio_plugin.manager.register_sub_plugin(self, SinWaveObject())
+
+from . import basic_effect
+from . import effects
+from . import objects
+
+# TODO: パッケージの概念を作って複数プラグインの一括インストールができるようにしたい

@@ -47,10 +47,17 @@ impl<K: Hash + Eq + Clone, V: Clone> ResourcePool<K, V> {
     }
 
     /// used フラグをリセットします。
-    /// キーごとのアイテム数が上限を超えている場合、未使用(used=false)のアイテムを先に削除してから
-    /// 残りの used フラグをリセットします。使用中(used=true)のアイテムは上限超過時も削除しません。
+    /// 前フレームで一度も使用されなかったキーはエントリごと削除します。
+    /// 使用されたキーについて、アイテム数が上限を超えている場合は未使用(used=false)のアイテムを
+    /// 先に削除してから残りの used フラグをリセットします。使用中(used=true)のアイテムは上限超過時も削除しません。
     pub fn reset_used(&mut self) {
-        for items in self.pool.values_mut() {
+        self.pool.retain(|_, items| {
+            // 前フレームで一度も使われなかったキーはエントリごと削除
+            let any_used = items.iter().any(|item| item.used);
+            if !any_used {
+                return false;
+            }
+
             if items.len() > self.max_per_key {
                 // 未使用アイテムを削除して上限以内に収める（使用中は保持）
                 items.retain(|item| item.used);
@@ -59,16 +66,18 @@ impl<K: Hash + Eq + Clone, V: Clone> ResourcePool<K, V> {
             for item in items.iter_mut() {
                 item.used = false;
             }
-        }
+            true
+        });
     }
 
     pub fn set_max_per_key(&mut self, max: usize) {
         self.max_per_key = max;
-        for items in self.pool.values_mut() {
+        self.pool.retain(|_, items| {
             if items.len() > max {
                 items.retain(|item| item.used);
             }
-        }
+            !items.is_empty()
+        });
     }
 }
 

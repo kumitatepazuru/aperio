@@ -1,5 +1,6 @@
 from .plugin_base.generator_base import *
 from .plugin_base import MainPluginBase as MainPluginBase, SubPluginBase as SubPluginBase
+from .plugin_load_progress import PluginLoadProgressWindow as PluginLoadProgressWindow
 from _typeshed import Incomplete
 from aperio.item_structures import PluginNameInfo
 from typing import Callable

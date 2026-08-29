@@ -9,9 +9,13 @@ use tokio::runtime::Runtime;
 use gpu_util::compiled_func::{
     self, CpuFunction, CpuInputImage, CpuOutput, GpuInputTexture, GpuTextureOutput, TextureFunction,
 };
-use gpu_util::image_generate_builder::ImageGenerateBuilder;
+use gpu_util::image_generate_builder::{IdTree, ImageGenerateBuilder};
 use gpu_util::image_generator;
 use gpu_util::{compiled_wgsl, image_generate_builder, SharedTextureFormat};
+
+use crate::python::modules::compose_wgsl::{
+    PyComposableModuleDescriptor, PyNagaModuleDescriptor,
+};
 
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
@@ -25,6 +29,27 @@ use gpu_util::texture_to_native::windows::SharedTextureHandle;
 pub enum WrappedSharedTextureFormat {
     Rgba16Float,
     Bgra8Unorm,
+}
+
+/// ImageGenerator の内部ワーキングテクスチャのフォーマットをPython/JSに公開するためのenum。
+/// `gpu_util::ImagePixelFormat`のラッパー。
+#[napi]
+#[pyclass(from_py_object, eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+pub enum WrappedImagePixelFormat {
+    Rgba8Unorm,
+    Rgba16Float,
+    Rgba32Float,
+}
+
+impl WrappedImagePixelFormat {
+    fn to_native(self) -> gpu_util::ImagePixelFormat {
+        match self {
+            WrappedImagePixelFormat::Rgba8Unorm => gpu_util::ImagePixelFormat::Rgba8Unorm,
+            WrappedImagePixelFormat::Rgba16Float => gpu_util::ImagePixelFormat::Rgba16Float,
+            WrappedImagePixelFormat::Rgba32Float => gpu_util::ImagePixelFormat::Rgba32Float,
+        }
+    }
 }
 
 // Pythonで動かすためのライブラリのラッパーを作る
@@ -190,16 +215,61 @@ impl PySamplerOptions {
 #[pymethods]
 impl PyCompiledWgsl {
     #[new]
+    #[pyo3(signature = (name, wgsl_code, generator, sampler_options=None, min_output_format=None))]
     pub fn new(
-        id: &str,
+        name: &str,
         wgsl_code: &str,
         generator: &PyImageGenerator,
         sampler_options: Option<&PySamplerOptions>,
+        min_output_format: Option<WrappedImagePixelFormat>,
     ) -> Result<Self, PyErr> {
+        let floor = min_output_format
+            .map(|f| f.to_native())
+            .unwrap_or(gpu_util::ImagePixelFormat::Rgba8Unorm);
+        let output_format = generator.inner.image_format().max(floor).to_wgpu();
+
         let inner = compiled_wgsl::CompiledWgsl::new(
-            id,
+            name,
             wgsl_code,
-            &generator.inner.device,
+            &generator.inner,
+            output_format,
+            sampler_options.map(|s| &s.inner),
+        )?;
+
+        Ok(Self { inner })
+    }
+
+    /// composable module 群を naga_oil で合成し、その naga IR からシェーダーを作る。
+    ///
+    /// `name` はパイプラインキャッシュのキーにもなるため、同じシェーダーを異なる
+    /// `shader_defs` で合成する場合は必ず別の `name` を渡すこと。
+    ///
+    /// 実際に使われるフォーマットは `max(generatorのimage_format, min_output_format)`
+    /// (精度の高い方)。`min_output_format` は「これより下げてはいけない」という
+    /// フロアであり、強制フォーマットではないのでgeneratorの設定がそれより高精度なら
+    /// そちらがそのまま使われる。省略した場合はフロア無し(常にgeneratorの設定に従う)。
+    #[staticmethod]
+    #[pyo3(signature = (name, composable_modules, naga_module, generator, sampler_options=None, min_output_format=None))]
+    pub fn compose_new(
+        name: &str,
+        composable_modules: Vec<PyRef<'_, PyComposableModuleDescriptor>>,
+        naga_module: &PyNagaModuleDescriptor,
+        generator: &PyImageGenerator,
+        sampler_options: Option<&PySamplerOptions>,
+        min_output_format: Option<WrappedImagePixelFormat>,
+    ) -> Result<Self, PyErr> {
+        let composable_modules: Vec<_> = composable_modules.iter().map(|m| &m.inner).collect();
+        let floor = min_output_format
+            .map(|f| f.to_native())
+            .unwrap_or(gpu_util::ImagePixelFormat::Rgba8Unorm);
+        let output_format = generator.inner.image_format().max(floor).to_wgpu();
+
+        let inner = compiled_wgsl::CompiledWgsl::compose_new(
+            name,
+            &composable_modules,
+            &naga_module.inner,
+            &generator.inner,
+            output_format,
             sampler_options.map(|s| &s.inner),
         )?;
 
@@ -248,6 +318,29 @@ impl PySharedTextureHandle {
     }
 }
 
+/// `IdTree`を対応するPythonオブジェクトに変換する。leafは`str`、`Parallel`は
+/// `{parallelのid: [各ブランチの全ステップidリスト...]}`という1要素の`dict`になる。
+fn id_tree_to_py(py: Python<'_>, tree: &IdTree) -> PyResult<Py<PyAny>> {
+    Ok(match tree {
+        IdTree::Single(s) => PyString::new(py, s).into_any().unbind(),
+        IdTree::Parallel { id, branches } => {
+            // branchesは`Vec<Vec<IdTree>>`(各ブランチの全ステップ列)なので、
+            // 1段(ブランチのリスト)→さらに1段(各ブランチ自身のステップリスト)変換する。
+            let branch_lists: PyResult<Vec<Py<PyAny>>> =
+                branches.iter().map(|branch| id_trees_to_py(py, branch)).collect();
+            let list = PyList::new(py, branch_lists?)?;
+            let dict = PyDict::new(py);
+            dict.set_item(id, list)?;
+            dict.into_any().unbind()
+        }
+    })
+}
+
+fn id_trees_to_py(py: Python<'_>, trees: &[IdTree]) -> PyResult<Py<PyAny>> {
+    let converted: PyResult<Vec<Py<PyAny>>> = trees.iter().map(|t| id_tree_to_py(py, t)).collect();
+    Ok(PyList::new(py, converted?)?.into_any().unbind())
+}
+
 #[pymethods]
 impl PyImageGenerateBuilder {
     #[new]
@@ -271,6 +364,23 @@ impl PyImageGenerateBuilder {
                 .clone()
                 .add_wgsl(wgsl.inner.clone(), params, output_width, output_height);
 
+        Self { inner: new_inner }
+    }
+
+    /// このビルダーが持つ全ステップの自動採番idを、追加順のリストとして返す
+    /// (空のビルダーなら空リスト)。leafは文字列、`Parallel`は`{parallelのid:
+    /// [各ブランチの全ステップidリスト...]}`という1要素の辞書になる(再帰的にネストしうる)。
+    /// 最後に追加したステップのidだけ欲しい場合は、リストの`[-1]`を取り、それが`dict`なら
+    /// その唯一の値(ブランチのリスト)の`[-1]`(=最後のブランチ、これも1つのリスト)の
+    /// `[-1]`を、というように再帰的にたどればよい。
+    pub fn get_id_tree(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
+        self.inner.id_tree().iter().map(|t| id_tree_to_py(py, t)).collect()
+    }
+
+    /// 実際には計算を行わず、同じフレーム内で`linked_id`(`get_id_tree`で取得したもの)が指す
+    /// 既存ステップの出力をそのまま使い回すステップを追加する。
+    pub fn add_linked(&self, linked_id: String, output_width: u32, output_height: u32) -> Self {
+        let new_inner = self.inner.clone().add_linked(linked_id, output_width, output_height);
         Self { inner: new_inner }
     }
 
@@ -329,10 +439,18 @@ impl PyImageGenerateBuilder {
 // TODO: experimental-asyncを使った非同期処理
 impl PyImageGenerator {
     #[new]
-    pub fn new() -> Result<Self> {
+    pub fn new(format: WrappedImagePixelFormat) -> Result<Self> {
         let rt = Runtime::new()?;
-        let inner = rt.block_on(async { image_generator::ImageGenerator::new().await })?;
+        let inner =
+            rt.block_on(async { image_generator::ImageGenerator::new(format.to_native()).await })?;
         Ok(Self { inner, rt })
+    }
+
+    /// このデバイスで確保できる2Dテクスチャの最大辺長（px）。
+    /// キャンバスを広げるエフェクトが拡張量を切り詰める上限として使う。
+    #[getter]
+    pub fn maximum_texture_size(&self) -> u32 {
+        self.inner.maximum_texture_size
     }
 
     pub fn generate_buf(
@@ -392,5 +510,15 @@ pub mod gpu_util_register {
     #[pymodule_export]
     use super::PyTexture;
     #[pymodule_export]
+    use super::WrappedImagePixelFormat;
+    #[pymodule_export]
     use super::WrappedSharedTextureFormat;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::create_composable_module;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::create_naga_module;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::PyComposableModuleDescriptor;
+    #[pymodule_export]
+    use crate::python::modules::compose_wgsl::PyNagaModuleDescriptor;
 }

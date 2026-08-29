@@ -41,6 +41,8 @@ const ConfigableRow = memo(
           <Float
             value={value as number}
             suffix={param.suffix}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );
@@ -50,6 +52,8 @@ const ConfigableRow = memo(
           <Int
             value={value as number}
             suffix={param.suffix}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );
@@ -63,6 +67,8 @@ const ConfigableRow = memo(
             value={value as Vec2Value}
             suffix={param.suffix}
             isInt={true}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );
@@ -73,6 +79,8 @@ const ConfigableRow = memo(
             value={value as Vec2Value}
             suffix={param.suffix}
             isInt={false}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );
@@ -83,6 +91,8 @@ const ConfigableRow = memo(
             value={value as Vec3Value}
             suffix={param.suffix}
             isInt={true}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );
@@ -93,6 +103,8 @@ const ConfigableRow = memo(
             value={value as Vec3Value}
             suffix={param.suffix}
             isInt={false}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );
@@ -103,6 +115,8 @@ const ConfigableRow = memo(
             value={value as Vec4Value}
             suffix={param.suffix}
             isInt={true}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );
@@ -113,6 +127,8 @@ const ConfigableRow = memo(
             value={value as Vec4Value}
             suffix={param.suffix}
             isInt={false}
+            min={param.min}
+            max={param.max}
             onChange={onChange}
           />
         );

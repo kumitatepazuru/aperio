@@ -12,6 +12,9 @@ class PluginBase:
         self.name = "BasePlugin"
         self.display_name = "Base Plugin"
         self.description = "This is a base plugin class."
+        self.is_hidden = False
+        """True の場合、UI のプラグイン一覧(オブジェクト追加メニュー等)から除外される。
+        内部専用のサブプラグイン(additionalItem の解決用など)に使う。"""
 
     def get_display_info(self) -> str:
         """
@@ -43,6 +46,7 @@ class MainPluginBase(PluginBase):
         super().__init__()
         self.version = "0.1.0"
         self.author = "Your Name"
+        self.num_sub_plugins = -1
 
     def get_display_info(self) -> str:
         """

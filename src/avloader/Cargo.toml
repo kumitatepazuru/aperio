@@ -12,6 +12,7 @@ gpu_util = { path = "../gpu_util" }
 anyhow = { workspace = true }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
+half = "2"
 
 [build-dependencies]
 cc = "1"

@@ -244,8 +244,12 @@ fn create_texture_from_dmabuf(
             raw_device_clone.free_memory(memory, None);
         });
 
-        let hal_texture =
-            device_guard.texture_from_raw(image, &hal_texture_desc, Some(drop_callback));
+        let hal_texture = device_guard.texture_from_raw(
+            image,
+            &hal_texture_desc,
+            Some(drop_callback),
+            wgpu::hal::vulkan::TextureMemory::External,
+        );
 
         // deviceガードをドロップしてからcreate_texture_from_halを呼ぶ
         drop(device_guard);
@@ -270,6 +274,8 @@ fn create_texture_from_dmabuf(
                         | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },
+                // 直後に LoadOp::Clear で描き込むため、初期状態は未定義扱いでよい
+                wgpu::TextureUses::UNINITIALIZED,
             );
 
         Ok(texture)

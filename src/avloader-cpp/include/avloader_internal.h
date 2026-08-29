@@ -29,6 +29,20 @@ struct AvLoader {
     double        start_time       = 0.0;
     int64_t       probed_nb_frames = 0;
 
+    // Set at open time when `pix_fmt` is a single-plane/packed format (e.g.
+    // GRAY8, PAL8, RGB24, RGBA — common for still-image codecs like PNG/BMP/GIF)
+    // that the GPU texture pipeline's plane classification (`yuv_layout_from_pix_fmt`
+    // on the Rust side) cannot represent: it only recognises 2-plane semi-planar
+    // and 4-plane alpha-YUV formats explicitly, and otherwise assumes a genuine
+    // 3-plane YUV layout. Every decoded frame is transparently converted (via
+    // `sws_normalize`) from `pix_fmt` into `normalized_pix_fmt` (YUV420P/YUVA420P)
+    // before any caller sees it, so `pix_fmt` keeps meaning "what the codec
+    // actually outputs" while all plane/format queries report the converted,
+    // pipeline-safe format instead (see `effective_pix_fmt()`).
+    bool          needs_pix_normalize = false;
+    AVPixelFormat normalized_pix_fmt  = AV_PIX_FMT_NONE;
+    SwsContext*   sws_normalize       = nullptr;
+
     // Hardware decoding
     AVBufferRef*  hw_device_ctx = nullptr;
     AVPixelFormat hw_pix_fmt    = AV_PIX_FMT_NONE;
@@ -50,6 +64,7 @@ struct AvLoader {
     ~AvLoader() {
         if (sws_rgb)       sws_freeContext(sws_rgb);
         if (sws_rgba)      sws_freeContext(sws_rgba);
+        if (sws_normalize) sws_freeContext(sws_normalize);
         if (hw_frame)      av_frame_free(&hw_frame);
         if (frame)         av_frame_free(&frame);
         if (packet)        av_packet_free(&packet);

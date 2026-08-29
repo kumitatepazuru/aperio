@@ -12,21 +12,10 @@
         "x265",
         "dav1d",
         "vpx",
-        {
-          "platform": "linux | (!osx & !uwp & !(arm64 & windows))",
-          "name": "nvcodec"
-        },
-        {
-          "platform": "((x86 | x64) & (android | linux)) | (windows & !uwp)",
-          "name": "qsv"
-        },
-        {
-          "platform": "linux & !arm64",
-          "name": "vaapi"
-        },
         "vorbis",
         "vulkan",
-        "swresample"
+        "swresample",
+        "zlib"
       ]
     }
   ]

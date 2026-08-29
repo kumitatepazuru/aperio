@@ -20,14 +20,30 @@ static const AVHWDeviceType kHwPriority[] = {
 
 // ─── plane helpers ───────────────────────────────────────────────────────────
 
+// The format every plane/layout query should describe: the codec's native
+// `pix_fmt` normally, but `normalized_pix_fmt` whenever `pix_fmt` is a
+// single-plane/packed format that `decode_to_time()` transparently converts
+// every decoded frame into (see `avloader_internal.h` for the full rationale).
+static AVPixelFormat effective_pix_fmt(const AvLoader* ldr) {
+    return ldr->needs_pix_normalize ? ldr->normalized_pix_fmt : ldr->pix_fmt;
+}
+
 static void compute_plane_info(const AvLoader* ldr, int plane_idx,
                                int* tex_w, int* tex_h, int* bpt) {
-    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(ldr->pix_fmt);
-    if (plane_idx == 0 || !desc) {
+    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(effective_pix_fmt(ldr));
+    // The alpha plane of a 4-component YUVA layout (YUVA420P/422P/444P) is always
+    // full luma resolution in FFmpeg -- it is never chroma-subsampled, unlike the
+    // U/V planes. Treat it like plane 0 instead of falling through to the
+    // chroma-shift branch below (which would otherwise quarter its dimensions for
+    // 4:2:0 sources and corrupt the alpha channel, e.g. for PNGs normalized to
+    // YUVA420P).
+    bool is_alpha_plane = desc && desc->nb_components == 4 && desc->comp[3].plane == plane_idx;
+    if (plane_idx == 0 || is_alpha_plane || !desc) {
         if (tex_w) *tex_w = ldr->width;
         if (tex_h) *tex_h = ldr->height;
         // comp[0].step gives bytes per luma texel (1 for 8-bit, 2 for 10/12/16-bit)
-        if (bpt)   *bpt   = (desc && desc->nb_components > 0) ? desc->comp[0].step : 1;
+        int ci = (plane_idx == 0 || !desc) ? 0 : 3;
+        if (bpt)   *bpt   = (desc && desc->nb_components > 0) ? desc->comp[ci].step : 1;
         return;
     }
 
@@ -46,8 +62,8 @@ static void compute_plane_info(const AvLoader* ldr, int plane_idx,
     }
 }
 
-static int plane_count_for(const AvLoader* ldr) {
-    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(ldr->pix_fmt);
+static int plane_count_for_fmt(AVPixelFormat fmt) {
+    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(fmt);
     if (!desc) return 3;
     int planes = 0;
     for (int i = 0; i < 4; i++) {
@@ -56,6 +72,40 @@ static int plane_count_for(const AvLoader* ldr) {
         }
     }
     return std::max(1, planes);
+}
+
+static int plane_count_for(const AvLoader* ldr) {
+    return plane_count_for_fmt(effective_pix_fmt(ldr));
+}
+
+// Converts a freshly decoded frame (still in its native `ldr->pix_fmt`) into
+// `ldr->normalized_pix_fmt` in place, replacing `ldr->frame`. Only called when
+// `ldr->needs_pix_normalize` is set (single-plane/packed source format).
+static bool normalize_decoded_frame(AvLoader* ldr) {
+    ldr->sws_normalize = sws_getCachedContext(
+        ldr->sws_normalize,
+        ldr->frame->width, ldr->frame->height, static_cast<AVPixelFormat>(ldr->frame->format),
+        ldr->frame->width, ldr->frame->height, ldr->normalized_pix_fmt,
+        SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (!ldr->sws_normalize) return false;
+
+    AVFrame* dst = av_frame_alloc();
+    if (!dst) return false;
+    dst->format = ldr->normalized_pix_fmt;
+    dst->width  = ldr->frame->width;
+    dst->height = ldr->frame->height;
+    if (av_frame_get_buffer(dst, 0) < 0) {
+        av_frame_free(&dst);
+        return false;
+    }
+
+    sws_scale(ldr->sws_normalize, ldr->frame->data, ldr->frame->linesize, 0, ldr->frame->height,
+              dst->data, dst->linesize);
+
+    av_frame_unref(ldr->frame);
+    av_frame_move_ref(ldr->frame, dst);
+    av_frame_free(&dst);
+    return true;
 }
 
 // ─── HW helpers ──────────────────────────────────────────────────────────────
@@ -321,6 +371,12 @@ static bool decode_to_time(AvLoader* ldr, double target_time, double target_fps)
         av_frame_free(&candidate);
     }
 
+    if (found && ldr->needs_pix_normalize && ldr->frame->data[0] != nullptr) {
+        if (!normalize_decoded_frame(ldr)) {
+            found = false;
+        }
+    }
+
     if (!found) {
         printf("[avloader] DECODE failed  target=%.3fs\n", target_time);
         // Reset so the next sequential frame triggers a fresh seek+flush instead
@@ -425,6 +481,19 @@ AvLoaderHandle avloader_video_open(const char* path) {
         ldr->pix_fmt = ldr->codec_ctx->pix_fmt;
     }
 
+    // Still-image codecs (PNG/BMP/GIF/TGA/...) routinely decode to single-plane
+    // packed formats (GRAY8, PAL8, RGB24, RGBA, ...) that the GPU plane-texture
+    // pipeline cannot represent (see `avloader_internal.h`). Detect that up
+    // front — before `probe_media()` on the Rust side ever queries plane counts
+    // — so every subsequent query reports the format `decode_to_time()` will
+    // actually produce after normalization.
+    if (plane_count_for_fmt(ldr->pix_fmt) == 1) {
+        const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(ldr->pix_fmt);
+        bool has_alpha = desc && (desc->flags & AV_PIX_FMT_FLAG_ALPHA);
+        ldr->normalized_pix_fmt  = has_alpha ? AV_PIX_FMT_YUVA420P : AV_PIX_FMT_YUV420P;
+        ldr->needs_pix_normalize = true;
+    }
+
     ldr->width  = ldr->codec_ctx->width;
     ldr->height = ldr->codec_ctx->height;
 
@@ -451,7 +520,7 @@ void avloader_video_close(AvLoaderHandle h) {
 
 int    avloader_video_width(AvLoaderHandle h)        { return static_cast<AvLoader*>(h)->width; }
 int    avloader_video_height(AvLoaderHandle h)       { return static_cast<AvLoader*>(h)->height; }
-int    avloader_video_pixel_format(AvLoaderHandle h) { return static_cast<int>(static_cast<AvLoader*>(h)->pix_fmt); }
+int    avloader_video_pixel_format(AvLoaderHandle h) { return static_cast<int>(effective_pix_fmt(static_cast<AvLoader*>(h))); }
 int    avloader_video_color_range(AvLoaderHandle h)  { return static_cast<int>(static_cast<AvLoader*>(h)->color_range); }
 double  avloader_video_native_fps(AvLoaderHandle h)  { return static_cast<AvLoader*>(h)->native_fps; }
 int64_t avloader_video_frame_count(AvLoaderHandle h) {
@@ -512,7 +581,7 @@ int avloader_video_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double
     if (!decode_to_time(ldr, target_time, target_fps)) return -1;
 
     AVPixelFormat src_fmt = static_cast<AVPixelFormat>(ldr->frame->format);
-    AVPixelFormat dst_fmt = (channels == 4) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_RGB24;
+    AVPixelFormat dst_fmt = (channels == 4) ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGB48LE;
     SwsContext*&  sws_ref = (channels == 4) ? ldr->sws_rgba : ldr->sws_rgb;
 
     if (sws_ref && src_fmt != ldr->pix_fmt) {
@@ -524,11 +593,18 @@ int avloader_video_decode_frame_rgb(AvLoaderHandle h, uint64_t frame_num, double
                                  ldr->width, ldr->height, dst_fmt,
                                  SWS_BICUBIC, nullptr, nullptr, nullptr);
         if (!sws_ref) return -1;
+
+        // Explicitly match the GPU shader path (BT.709, source's actual
+        // limited/full range) instead of relying on swscale's defaults.
+        const int* coeff = sws_getCoefficients(SWS_CS_ITU709);
+        int src_range = (ldr->color_range == AVCOL_RANGE_JPEG) ? 1 : 0;
+        sws_setColorspaceDetails(sws_ref, coeff, src_range, coeff, /*dstRange=*/1,
+                                 0, 1 << 16, 1 << 16);
         ldr->pix_fmt = src_fmt;
     }
 
     uint8_t* dst_data[4]     = { out_buf, nullptr, nullptr, nullptr };
-    int      dst_linesize[4] = { ldr->width * channels, 0, 0, 0 };
+    int      dst_linesize[4] = { ldr->width * channels * 2, 0, 0, 0 };
 
     sws_scale(sws_ref,
               const_cast<const uint8_t**>(ldr->frame->data), ldr->frame->linesize,

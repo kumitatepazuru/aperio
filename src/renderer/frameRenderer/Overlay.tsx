@@ -39,16 +39,21 @@ const Overlay = () => {
     e.stopPropagation();
 
     const item = timelineItems.find((i) => i.id === itemId);
+    const result = frameResults[itemId];
     if (!item || item.type !== "Video") return;
 
-    // ハンドルの親要素（アイテムdiv）の中心 = 回転中心をクライアント座標で取得
-    const itemRect = (
-      e.currentTarget as HTMLElement
-    ).parentElement?.getBoundingClientRect();
-    if (!itemRect) return;
+    // 回転中心 = 枠の transform-origin (エフェクトの座標オフセット込み) をクライアント座標に変換
+    // rotate button → item div → overlay div
+    const overlayEl = (e.currentTarget as HTMLElement).parentElement?.parentElement;
+    const overlayRect = overlayEl?.getBoundingClientRect();
+    if (!overlayRect) return;
 
-    const centerClientX = (itemRect.left + itemRect.right) / 2;
-    const centerClientY = (itemRect.top + itemRect.bottom) / 2;
+    const pctW = width / frameState.width;
+    const pctH = height / frameState.height;
+    const originFrameX = item.x + (result?.pos?.[0] ?? 0);
+    const originFrameY = item.y + (result?.pos?.[1] ?? 0);
+    const centerClientX = overlayRect.left + (frameState.width / 2 + originFrameX) * pctW;
+    const centerClientY = overlayRect.top + (frameState.height / 2 + originFrameY) * pctH;
 
     const initialAngle = Math.atan2(
       e.clientY - centerClientY,
@@ -121,11 +126,24 @@ const Overlay = () => {
     const toLocalX = (gx: number, gy: number) => cosR * gx - sinR * gy;
     const toLocalY = (gx: number, gy: number) => sinR * gx + cosR * gy;
 
+    // エフェクトが返した拡大率・座標は item.scale/x/y の外側に乗る固定倍率・固定オフセット。
+    // 枠の描画と同じものを使わないとハンドルを掴んだ瞬間に飛ぶ。
+    const resScaleX = result.scale?.[0] ?? 1;
+    const resScaleY = result.scale?.[1] ?? 1;
+    const posX = result.pos?.[0] ?? 0;
+    const posY = result.pos?.[1] ?? 0;
+
     const initScale = item.scale;
-    const initX = item.x;
-    const initY = item.y;
-    const initHalfW = (result.width * initScale) / 200;
-    const initHalfH = (result.height * initScale) / 200;
+    const initX = item.x + posX;
+    const initY = item.y + posY;
+    const initHalfW = (result.width * initScale * resScaleX) / 200;
+    const initHalfH = (result.height * initScale * resScaleY) / 200;
+
+    // center_x/y はスケール前のテクスチャピクセル単位なのでスケールを掛ける
+    const centerXRaw = result.centerX ?? 0;
+    const centerYRaw = result.centerY ?? 0;
+    const initCenterXScaled = centerXRaw * (initScale / 100) * resScaleX;
+    const initCenterYScaled = centerYRaw * (initScale / 100) * resScaleY;
 
     const cornerSign = {
       se: { signX: 1, signY: 1 },
@@ -135,17 +153,19 @@ const Overlay = () => {
     };
     const { signX, signY } = cornerSign[direction];
 
-    // ドラッグ頂点・アンカーのローカル座標
-    const dragLocalX = signX * initHalfW + handleOffsetX;
-    const dragLocalY = signY * initHalfH + handleOffsetY;
-    const anchLocalX = -dragLocalX;
-    const anchLocalY = -dragLocalY;
+    // ドラッグ頂点・アンカーのローカル座標（centerオフセット込み）
+    // シェーダーはテクスチャの (dims/2 + center) を item.x/y にマップするため、
+    // 各コーナーのローカル座標は ±halfW/H から center 分だけずれる
+    const dragLocalX = signX * initHalfW - initCenterXScaled + handleOffsetX;
+    const dragLocalY = signY * initHalfH - initCenterYScaled + handleOffsetY;
+    const anchLocalX = -signX * initHalfW - initCenterXScaled - handleOffsetX;
+    const anchLocalY = -signY * initHalfH - initCenterYScaled - handleOffsetY;
 
     // アンカーのグローバル（フレーム）座標 — スケーリング中ここが固定される
     const anchorX = initX + toGlobalX(anchLocalX, anchLocalY);
     const anchorY = initY + toGlobalY(anchLocalX, anchLocalY);
 
-    // 対角線ベクトル（ローカル座標系で射影するため、ローカルで計算）
+    // 対角線ベクトル（centerオフセットは drag-anch で相殺され影響なし = 2*sign*half）
     const diagX = dragLocalX - anchLocalX;
     const diagY = dragLocalY - anchLocalY;
     const diagLen = Math.sqrt(diagX * diagX + diagY * diagY);
@@ -181,16 +201,25 @@ const Overlay = () => {
 
       const scaleFactor = newDiagLen / diagLen;
       const newScale = initScale * scaleFactor;
-      const newHalfW = (result.width * newScale) / 200;
-      const newHalfH = (result.height * newScale) / 200;
+      const newHalfW = (result.width * newScale * resScaleX) / 200;
+      const newHalfH = (result.height * newScale * resScaleY) / 200;
 
-      // 新ドラッグ頂点のローカル座標（offsetはスケール対象外として固定）
-      const newDragLocalX = signX * newHalfW + handleOffsetX;
-      const newDragLocalY = signY * newHalfH + handleOffsetY;
+      // スケール後の center オフセット（テクスチャpx × 新scale）
+      const newCenterXScaled = centerXRaw * (newScale / 100) * resScaleX;
+      const newCenterYScaled = centerYRaw * (newScale / 100) * resScaleY;
 
       // アンカーを固定したまま新しい中心座標を計算
-      const newItemX = anchorX + toGlobalX(newDragLocalX, newDragLocalY);
-      const newItemY = anchorY + toGlobalY(newDragLocalX, newDragLocalY);
+      // newCenter = anchor - toGlobal(newAnchLocal)
+      // newAnchLocal = (-signX*newHalfW - newCenterXScaled, -signY*newHalfH - newCenterYScaled)
+      // → newCenter = anchor + toGlobal(signX*newHalfW + newCenterXScaled, signY*newHalfH + newCenterYScaled)
+      const newItemX = anchorX + toGlobalX(
+        signX * newHalfW + newCenterXScaled,
+        signY * newHalfH + newCenterYScaled,
+      );
+      const newItemY = anchorY + toGlobalY(
+        signX * newHalfW + newCenterXScaled,
+        signY * newHalfH + newCenterYScaled,
+      );
 
       setTimelineItems(
         timelineItems.map((i) => {
@@ -199,8 +228,9 @@ const Overlay = () => {
             return {
               ...i,
               scale: orgFloor(newScale, 100),
-              x: Math.round(newItemX),
-              y: Math.round(newItemY),
+              // newItemX/Y はエフェクトのオフセット込みの位置なので、item.x/y へ戻す
+              x: Math.round(newItemX - posX),
+              y: Math.round(newItemY - posY),
             };
           }
           const initS = initOtherScales.get(i.id);
@@ -291,17 +321,30 @@ const Overlay = () => {
 
         const percentWidth = width / frameState.width;
         const percentHeight = height / frameState.height;
+        // エフェクトが返した拡大率・座標も枠に反映する。
+        // TODO: 3D回転(result.rotate)とZ座標による遠近はCSSの矩形では表現できないため、
+        // 枠は従来どおり item.rotation だけで回す(回転エフェクトを足すと枠と描画結果はずれる)。
+        const effScaleX = (item.scale / 100) * (result.scale?.[0] ?? 1);
+        const effScaleY = (item.scale / 100) * (result.scale?.[1] ?? 1);
+        const effX = item.x + (result.pos?.[0] ?? 0);
+        const effY = item.y + (result.pos?.[1] ?? 0);
         // scaleとborderの幅を考慮したサイズ
-        const scaledWidth = (result.width * item.scale) / 100 + 4;
-        const scaledHeight = (result.height * item.scale) / 100 + 4;
-        // アイテムの中心がframeStateの中心に来るように配置
-        const startX = (item.x - scaledWidth / 2) * percentWidth;
+        const scaledWidth = result.width * effScaleX + 4;
+        const scaledHeight = result.height * effScaleY + 4;
+        // center_x/y はテクスチャpx単位なのでscaleを掛けてフレーム座標へ変換
+        const cxScaled = (result.centerX ?? 0) * effScaleX;
+        const cyScaled = (result.centerY ?? 0) * effScaleY;
+        // バウンディングボックス中心 = (effX - cxScaled, effY - cyScaled)
+        const startX = (effX - cxScaled - scaledWidth / 2) * percentWidth;
         const itemWidth = scaledWidth * percentWidth;
-        const startY = (item.y - scaledHeight / 2) * percentHeight;
+        const startY = (effY - cyScaled - scaledHeight / 2) * percentHeight;
         const itemHeight = scaledHeight * percentHeight;
         // 真ん中が0,0のためオフセットで修正
         const offsetX = (frameState.width / 2) * percentWidth;
         const offsetY = (frameState.height / 2) * percentHeight;
+        // 回転中心 (item.x, item.y) がdiv内のどの位置かを transform-origin に指定
+        const originX = cxScaled * percentWidth + itemWidth / 2;
+        const originY = cyScaled * percentHeight + itemHeight / 2;
 
         return (
           <div
@@ -312,7 +355,8 @@ const Overlay = () => {
               width: itemWidth,
               top: startY + offsetY,
               height: itemHeight,
-              transform: `rotate(${-item.rotation}deg)`,
+              transform: `rotate(${item.rotation}deg)`,
+              transformOrigin: `${originX}px ${originY}px`,
               opacity: selected ? 1 : 0,
               cursor: selected ? "move" : "default",
               borderColor: mainSelected

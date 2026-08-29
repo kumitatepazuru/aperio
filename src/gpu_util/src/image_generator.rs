@@ -1,9 +1,12 @@
 // image_generator.rs
 pub mod cpu_func_process;
 pub mod final_process;
+pub(crate) mod linked_memo;
 pub mod parallel_process;
 pub mod texture_func_process;
 pub mod wgsl_process;
+
+pub(crate) use linked_memo::LinkedMemo;
 
 #[cfg(target_os = "linux")]
 use crate::texture_to_native::linux::*;
@@ -19,6 +22,7 @@ use crate::{
         parallel_process::handle_parallel_step, texture_func_process::handle_texture_func_step,
         wgsl_process::handle_wgsl_step,
     },
+    image_pixel_format::ImagePixelFormat,
     resource_pool::{LruCache, ResourcePool},
     SharedTextureFormat,
 };
@@ -38,6 +42,7 @@ pub(crate) struct PipelineCacheKey {
     input_texture_count: usize,
     has_storage: bool,
     has_sampler: bool,
+    format: wgpu::TextureFormat,
 }
 
 // テクスチャキャッシュのキーとなる構造体
@@ -89,6 +94,11 @@ pub(crate) type ProcessingState = Vec<StepOutput>;
 pub struct ImageGenerator {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
+    /// このデバイスで確保できる2Dテクスチャの最大辺長（px）。
+    /// キャンバスを広げるエフェクトが拡張量を切り詰める上限として使う。
+    pub maximum_texture_size: u32,
+    /// パイプライン内部のワーキングテクスチャのフォーマット。
+    image_format: ImagePixelFormat,
     // 後処理用のパイプラインと関連リソース
     pub(crate) post_process_pipeline: ComputePipeline,
     pub(crate) blit_f32_to_f16_pipeline: RenderPipeline,
@@ -108,7 +118,7 @@ pub struct ImageGenerator {
 
 impl ImageGenerator {
     /// 新しいImageGeneratorインスタンスを非同期で作成します。
-    pub async fn new() -> Result<Self> {
+    pub async fn new(format: ImagePixelFormat) -> Result<Self> {
         let backends = if cfg!(target_os = "windows") {
             wgpu::Backends::DX12
         } else if cfg!(target_os = "linux") {
@@ -118,10 +128,10 @@ impl ImageGenerator {
         } else {
             bail!("Unsupported OS for ImageGenerator");
         };
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
-            flags: wgpu::InstanceFlags::advanced_debugging(),
-            ..Default::default()
+            flags: wgpu::InstanceFlags::from_env_or_default(),
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions::default())
@@ -149,6 +159,7 @@ impl ImageGenerator {
         device.set_device_lost_callback(|reason, msg| {
             eprintln!("DEVICE LOST: {reason:?} msg={msg}");
         });
+        let maximum_texture_size = device.limits().max_texture_dimension_2d;
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
@@ -246,6 +257,8 @@ impl ImageGenerator {
         Ok(Self {
             device,
             queue,
+            maximum_texture_size,
+            image_format: format,
             post_process_pipeline,
             blit_f32_to_f16_pipeline,
             blit_f32_to_bgra8_pipeline,
@@ -260,6 +273,11 @@ impl ImageGenerator {
             // バッファリソースプールの初期化
             buffer_pool: Arc::new(Mutex::new(ResourcePool::new(10))),
         })
+    }
+
+    /// パイプライン内部のワーキングテクスチャのフォーマットを返す
+    pub fn image_format(&self) -> ImagePixelFormat {
+        self.image_format
     }
 
     /// パイプラインキャッシュの最大サイズを設定します。
@@ -329,6 +347,7 @@ impl ImageGenerator {
         &self,
         steps: &[PipelineStep],
         initial_state: ProcessingState,
+        memo: &LinkedMemo,
     ) -> Result<ProcessingState> {
         let mut state = initial_state;
 
@@ -339,17 +358,19 @@ impl ImageGenerator {
                     params,
                     output_height,
                     output_width,
+                    ..
                 } => {
                     handle_wgsl_step(self, &state, wgsl, params, i, *output_width, *output_height)?
                 }
-                PipelineStep::Parallel { pipelines } => {
-                    handle_parallel_step(self, &mut state, pipelines, i).await?
+                PipelineStep::Parallel { pipelines, .. } => {
+                    handle_parallel_step(self, &mut state, pipelines, i, memo).await?
                 }
                 PipelineStep::CpuFunc {
                     func,
                     params,
                     output_width,
                     output_height,
+                    ..
                 } => {
                     handle_cpu_func_step(
                         self,
@@ -366,6 +387,7 @@ impl ImageGenerator {
                     params,
                     output_width,
                     output_height,
+                    ..
                 } => {
                     handle_texture_func_step(
                         self,
@@ -377,7 +399,10 @@ impl ImageGenerator {
                     )
                     .await?
                 }
+                PipelineStep::Linked { linked_id, .. } => memo.resolve(linked_id)?,
             };
+
+            memo.record_if_target(step.id(), &state);
         }
 
         Ok(state)
@@ -393,7 +418,11 @@ impl ImageGenerator {
         self.texture_pool.lock().unwrap().reset_used();
         self.buffer_pool.lock().unwrap().reset_used();
 
-        let final_state_vec = self.execute_pipeline(&builder.steps, Vec::new()).await?;
+        let memo = LinkedMemo::new(&builder.steps);
+
+        let final_state_vec = self
+            .execute_pipeline(&builder.steps, Vec::new(), &memo)
+            .await?;
 
         // final_state_vecは単一の要素を持つはず
         if final_state_vec.len() != 1 {
@@ -459,7 +488,7 @@ impl ImageGenerator {
             visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::StorageTexture {
                 access: wgpu::StorageTextureAccess::WriteOnly,
-                format: wgpu::TextureFormat::Rgba32Float,
+                format: key.format,
                 view_dimension: wgpu::TextureViewDimension::D2,
             },
             count: None,
@@ -505,8 +534,8 @@ impl ImageGenerator {
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some(&format!("PL for {}", key.id)),
-                bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(),
-                push_constant_ranges: &[],
+                bind_group_layouts: &bind_group_layouts.iter().map(Some).collect::<Vec<_>>(),
+                immediate_size: 0,
             });
 
         let pipeline = Arc::new(self.device.create_compute_pipeline(

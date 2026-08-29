@@ -56,6 +56,7 @@ pub fn blit_texture_with_render_pass(
             depth_stencil_attachment: None,
             occlusion_query_set: None,
             timestamp_writes: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(&pipeline.pipeline);
