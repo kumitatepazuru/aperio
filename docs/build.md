@@ -13,7 +13,7 @@
 3. npm install もしくは bun install を実行して、Node.jsの依存関係をインストール
 4. uv syncを実行して、Pythonの依存関係をインストール
   - numpyの他にaperioプラグインを開発するためのstubファイルもインストールされる
-5. src/avloader-cpp/に移動し、vcpkg installを実行しC++の依存関係をインストール
+5. src/avloader/cpp/に移動し、vcpkg installを実行しC++の依存関係をインストール
   - 15分程度かかる
   - project rootからも実行できるようにmesonを使ったビルドスクリプトの作成を検討中
   - windowsの場合は利便性の観点からstatic tripletでのインストールが強く推奨される。--triplet=x64-windows-staticまたは--triplet=arm64-windows-staticをつけてインストールすること

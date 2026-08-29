@@ -21,7 +21,7 @@ fn main() {
     });
 
     let vcpkg_installed = format!(
-        "{}/../avloader-cpp/vcpkg_installed/{}",
+        "{}/./cpp/vcpkg_installed/{}",
         env!("CARGO_MANIFEST_DIR"),
         triplet
     );
@@ -32,10 +32,10 @@ fn main() {
     cc::Build::new()
         .cpp(true)
         .std("c++17")
-        .file("../avloader-cpp/src/avloader.cpp")
-        .file("../avloader-cpp/src/video_decoder.cpp")
-        .file("../avloader-cpp/src/audio_decoder.cpp")
-        .include("../avloader-cpp/include")
+        .file("./cpp/src/avloader.cpp")
+        .file("./cpp/src/video_decoder.cpp")
+        .file("./cpp/src/audio_decoder.cpp")
+        .include("./cpp/include")
         .include(&ffmpeg_include)
         // MSVC: enable exceptions, suppress deprecation warnings from FFmpeg headers
         .flag_if_supported("/EHsc")
@@ -96,7 +96,7 @@ fn main() {
 
     // ── bindgen ────────────────────────────────────────────────────────────
     let out_dir = env::var("OUT_DIR").unwrap();
-    let header = "../avloader-cpp/include/avloader.h";
+    let header = "./cpp/include/avloader.h";
 
     let bindings = bindgen::Builder::default()
         .header(header)
@@ -108,9 +108,9 @@ fn main() {
         .write_to_file(PathBuf::from(&out_dir).join("avloader_bindings.rs"))
         .expect("Couldn't write avloader_bindings.rs");
 
-    println!("cargo:rerun-if-changed=../avloader-cpp/include/avloader.h");
-    println!("cargo:rerun-if-changed=../avloader-cpp/include/avloader_internal.h");
-    println!("cargo:rerun-if-changed=../avloader-cpp/src/avloader.cpp");
-    println!("cargo:rerun-if-changed=../avloader-cpp/src/video_decoder.cpp");
-    println!("cargo:rerun-if-changed=../avloader-cpp/src/audio_decoder.cpp");
+    println!("cargo:rerun-if-changed=./cpp/include/avloader.h");
+    println!("cargo:rerun-if-changed=./cpp/include/avloader_internal.h");
+    println!("cargo:rerun-if-changed=./cpp/src/avloader.cpp");
+    println!("cargo:rerun-if-changed=./cpp/src/video_decoder.cpp");
+    println!("cargo:rerun-if-changed=./cpp/src/audio_decoder.cpp");
 }
