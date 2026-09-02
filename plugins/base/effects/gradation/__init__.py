@@ -3,10 +3,10 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 _SHAPE_INDEX = {"line": 0, "circle": 1, "rectangle": 2, "convex": 3}
 _BLEND_INDEX = {
@@ -34,10 +34,7 @@ class GradationEffect(VideoEffectGeneratorBase):
         self.description = "Fills the frame with a 2-color gradient (line/circle/rectangle/convex) blended onto the object below."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        self.gradation_shader = compose_common_shader(
-            "gradation", [color_module], current_dir, "gradation.wgsl"
-        )
+        self.gradation_shader = shared_slang_shader("gradation", current_dir, "gradation.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -92,7 +89,7 @@ class GradationEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         strength = max(0.0, min(100.0, float(args.get("strength", 100.0)))) / 100.0
         center = args.get("center", (0, 0))
@@ -131,4 +128,4 @@ class GradationEffect(VideoEffectGeneratorBase):
             blend_mode, w, h,
         )
 
-        return GeneratorWgslReturn(self.gradation_shader, shader_params, ItemResult(w, h))
+        return GeneratorShaderReturn(self.gradation_shader, shader_params, ItemResult(w, h))

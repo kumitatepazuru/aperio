@@ -1,13 +1,12 @@
 import struct
 
 import aperio_plugin
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class Rotation90Effect(VideoEffectGeneratorBase):
@@ -18,7 +17,7 @@ class Rotation90Effect(VideoEffectGeneratorBase):
         self.description = "Rotates the canvas in 90-degree increments."
 
         current_dir, _ = effect_dirs(__file__)
-        self.shader = shared_shader("base_effect_rotation90", current_dir, "rotation90.wgsl")
+        self.shader = shared_slang_shader("base_effect_rotation90", current_dir, "rotation90.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -36,10 +35,10 @@ class Rotation90Effect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         raw = int(params.args.get("rot90", 0))
         if raw == 0 or raw == 4 or raw == -4:
-            return GeneratorBuilderReturn(gpu_util.PyImageGenerateBuilder(), ItemResult(params.width, params.height))
+            return None
 
         mode = raw % 4
 
@@ -56,8 +55,4 @@ class Rotation90Effect(VideoEffectGeneratorBase):
 
         shader_params = struct.pack("iii", mode, new_width, new_height)
 
-        return GeneratorWgslReturn(
-            self.shader,
-            shader_params,
-            ItemResult(new_width, new_height),
-        )
+        return GeneratorShaderReturn(self.shader, shader_params, ItemResult(new_width, new_height))

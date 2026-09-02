@@ -1,18 +1,21 @@
 import math
-import os
 import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.gpu_util import PyCompiledWgsl
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import (
+    GeneratorBuilderReturn,
+    GeneratorShaderReturn,
+    VideoEffectGeneratorBase,
+    VideoGenerateParameters,
+)
 
 from ...common.border_correction import ab_constant
 from ...common.color import bt601_encode
 from ...common.params import clamp, make_generator_information, pack_box_average_dir_params
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class ConvertGamutEffect(VideoEffectGeneratorBase):
@@ -24,32 +27,22 @@ class ConvertGamutEffect(VideoEffectGeneratorBase):
 
         current_dir, common_dir = effect_dirs(__file__)
 
-        color_module = lib_module(common_dir, "color")
-        blur_module = lib_module(common_dir, "blur")
-        gamut_module = gpu_util.create_composable_module(os.path.join(current_dir, "common.wgsl"))
-
-        self.flat_shader = PyCompiledWgsl.compose_new(
-            "convert_gamut_flat",
-            [color_module, gamut_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "flat.wgsl")),
-            aperio_plugin.image_generator,
+        self.flat_shader = shared_slang_shader(
+            "convert_gamut_flat", current_dir, "flat.slang",
         )
-        self.border_pass1_shader = PyCompiledWgsl.compose_new(
-            "convert_gamut_border_pass1",
-            [color_module, gamut_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "border_pass1.wgsl")),
-            aperio_plugin.image_generator,
+        self.border_pass1_shader = shared_slang_shader(
+            "convert_gamut_border_pass1", current_dir, "border_pass1.slang",
         )
-        self.box_average_dir_shader = compose_common_shader(
-            "convert_gamut_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
+        self.box_average_dir_shader = shared_slang_shader(
+            "convert_gamut_box_average_dir", common_dir, "box_average_dir.slang",
         )
-        self.border_pass3_shader = PyCompiledWgsl.compose_new(
-            "convert_gamut_border_pass3",
-            [blur_module, color_module, gamut_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "border_pass3.wgsl")),
-            aperio_plugin.image_generator,
+        self.border_pass3_shader = shared_slang_shader(
+            "convert_gamut_border_pass3", current_dir, "border_pass3.slang",
         )
-        self.select_shader = shared_shader("convert_gamut_select", common_dir, "select.wgsl")
+        self.select_shader = shared_slang_shader(
+            "convert_gamut_select", common_dir, "select.slang", input_texture_layout="variable",
+            sampler_options=gpu_util.PySamplerOptions("clamp_to_edge", "nearest"),
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -75,7 +68,7 @@ class ConvertGamutEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | GeneratorBuilderReturn:
         args = params.args
         before_color = args.get("before_color", (0.0, 1.0, 0.0, 1.0))
         after_color = args.get("after_color", (0.0, 0.0, 1.0, 1.0))
@@ -104,22 +97,21 @@ class ConvertGamutEffect(VideoEffectGeneratorBase):
                 after_cr, after_cb, after_y,
                 hue_range_turns, sat_range,
             )
-            builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.flat_shader, flat_params, w, h)
-            return GeneratorBuilderReturn(builder, ItemResult(w, h))
+            return GeneratorShaderReturn(self.flat_shader, flat_params, ItemResult(w, h))
 
         r = border_correction
         a_const = ab_constant(r)
 
         pass1_params = struct.pack("ffff", key_hue, key_sat, hue_range_turns, sat_range)
-        pass1_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.border_pass1_shader, pass1_params, w, h)
+        pass1_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.border_pass1_shader, pass1_params, w, h)
         original_branch = gpu_util.PyImageGenerateBuilder()
         # state: [0]=距離dマップ(パス1), [1]=元画像
         stage1 = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([pass1_branch, original_branch])
 
         v_params = pack_box_average_dir_params(r, 0, 1, w, h)
-        v_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.box_average_dir_shader, v_params, w, h)
-        keep_dist_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 0), w, h)
-        keep_orig_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 1), w, h)
+        v_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.box_average_dir_shader, v_params, w, h)
+        keep_dist_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.select_shader, struct.pack("i", 0), w, h)
+        keep_orig_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.select_shader, struct.pack("i", 1), w, h)
         # state: [0]=垂直方向に平均済みの距離d, [1]=距離dそのまま(未ぼかし), [2]=元画像
         stage2 = stage1.add_parallel_wgsl([v_branch, keep_dist_branch, keep_orig_branch])
 
@@ -129,6 +121,6 @@ class ConvertGamutEffect(VideoEffectGeneratorBase):
             key_sat, key_y,
             after_cr, after_cb, after_y,
         )
-        builder = stage2.add_wgsl(self.border_pass3_shader, pass3_params, w, h)
+        builder = stage2.add_slang(self.border_pass3_shader, pass3_params, w, h)
 
         return GeneratorBuilderReturn(builder, ItemResult(w, h))

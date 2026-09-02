@@ -2,10 +2,10 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class MonochromaticEffect(VideoEffectGeneratorBase):
@@ -16,10 +16,7 @@ class MonochromaticEffect(VideoEffectGeneratorBase):
         self.description = "Pulls the image's chroma (and optionally luminance) toward a single target color."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        self.monochromatic_shader = compose_common_shader(
-            "monochromatic", [color_module], current_dir, "monochromatic.wgsl"
-        )
+        self.monochromatic_shader = shared_slang_shader("monochromatic", current_dir, "monochromatic.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -49,7 +46,7 @@ class MonochromaticEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
         strength = max(0.0, min(100.0, float(args.get("strength", 100.0)))) / 100.0
         color = args.get("color", (0.5, 0.5, 0.5, 1.0))
@@ -59,6 +56,6 @@ class MonochromaticEffect(VideoEffectGeneratorBase):
             "fifff", strength, int(preserve_luminance), color[0], color[1], color[2]
         )
 
-        return GeneratorWgslReturn(
+        return GeneratorShaderReturn(
             self.monochromatic_shader, shader_params, ItemResult(params.width, params.height)
         )

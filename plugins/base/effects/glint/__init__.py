@@ -5,10 +5,10 @@ import aperio_plugin
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import clamp, make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 # 光線の到達距離。中心から距離dのソース画素は D = 4d まで光を伸ばすので、
 # キャンバスは光条の端がちょうど収まる大きさに広げられる(README手順3)。
@@ -32,12 +32,11 @@ class GlintEffect(VideoEffectGeneratorBase):
         self.description = "Casts radial light streaks from a centre point by averaging the source along each pixel's ray."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
 
         # エフェクト全体が1シェーダー・1回のみの呼び出し(連鎖なし)。avg/avg_yは
         # BT.601係数の逆数(最大約8.8倍)で頭打ちのため16で足りる。
-        self.glint_shader = compose_common_shader(
-            "glint", [color_module], current_dir, "glint.wgsl",
+        self.glint_shader = shared_slang_shader(
+            "glint", current_dir, "glint.slang",
             min_output_format=gpu_util.WrappedImagePixelFormat.Rgba16Float,
         )
 
@@ -104,7 +103,7 @@ class GlintEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         # strengthはキャンバス拡張量にも掛かるため、負値は拡張の符号が反転して
         # 矩形が潰れうる(#5)。下限0のみ維持し、上限は既存のmax(0.0, ...)しきい値
@@ -150,8 +149,8 @@ class GlintEffect(VideoEffectGeneratorBase):
         ow, oh = x1 - x0, y1 - y0
 
         # mode: 0=前方に合成(加算)、1=後方に合成(通常)、2=光成分のみ。
-        # glint.wgsl は元オブジェクト座標(x, y)を自前で計算済みなので、旧
-        # expand.wgsl の逆写像と一致するその座標からベースピクセルを直接読み、
+        # glint.slang は元オブジェクト座標(x, y)を自前で計算済みなので、旧
+        # expand.slang の逆写像と一致するその座標からベースピクセルを直接読み、
         # 旧merge.wgslのブレンド式もそのまま内部で適用する(拡張・合成の
         # 2パスを削って1ディスパッチにまとめてある)。
         if blend_mode == "light_only":
@@ -172,13 +171,11 @@ class GlintEffect(VideoEffectGeneratorBase):
             mode,
         )
 
-        builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.glint_shader, glint_params, ow, oh)
-
         # 拡張後キャンバスの中心に対するオブジェクト中心のずれを打ち消して、
         # オブジェクトを元の位置に留める(実機のfpip+0xD4/+0xD8の補正と同じ式)。
         center_x = w // 2 - (x0 + ow // 2)
         center_y = h // 2 - (y0 + oh // 2)
-        return GeneratorBuilderReturn(builder, ItemResult(ow, oh, center_x=center_x, center_y=center_y))
+        return GeneratorShaderReturn(self.glint_shader, glint_params, ItemResult(ow, oh, center_x=center_x, center_y=center_y))
 
     def _grow_canvas(self, w: int, h: int, cx: int, cy: int, strength_ratio: float) -> tuple[int, int, int, int]:
         """光条の端がちょうど収まるまでキャンバスを広げ、上限で切り詰める(README手順3)。

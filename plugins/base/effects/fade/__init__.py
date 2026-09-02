@@ -2,10 +2,10 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 from ...common.timeline import in_out_ramp
 
 
@@ -17,7 +17,7 @@ class FadeEffect(VideoEffectGeneratorBase):
         self.description = "Fades the object's alpha in/out near the start/end of its duration."
 
         current_dir, _ = effect_dirs(__file__)
-        self.fade_shader = shared_shader("fade", current_dir, "fade.wgsl")
+        self.fade_shader = shared_slang_shader("fade", current_dir, "fade.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -44,7 +44,7 @@ class FadeEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         fade_in = args.get("fade_in", 0.5)
         fade_out = args.get("fade_out", 0.5)
@@ -57,4 +57,4 @@ class FadeEffect(VideoEffectGeneratorBase):
             return None
 
         shader_params = struct.pack("f", g)
-        return GeneratorWgslReturn(self.fade_shader, shader_params, ItemResult(params.width, params.height))
+        return GeneratorShaderReturn(self.fade_shader, shader_params, ItemResult(params.width, params.height))

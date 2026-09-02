@@ -2,10 +2,10 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 # exedit-inspect luma_key README §2: ex_data.typeの4項目。func_procの分岐は
 # 0/1/2/elseなので、コンボ以外の値が来た場合はelse(=2)側の式に倒れる。
@@ -24,10 +24,9 @@ class LumaKeyEffect(VideoEffectGeneratorBase):
         self.display_name = "ルミナンスキー"
         self.description = "Keys out pixels within a luminance band around a base level, with optional linear edge falloff."
 
-        current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
+        current_dir, _ = effect_dirs(__file__)
 
-        self.luma_key_shader = compose_common_shader("luma_key", [color_module], current_dir, "luma_key.wgsl")
+        self.luma_key_shader = shared_slang_shader("luma_key", current_dir, "luma_key.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -63,9 +62,9 @@ class LumaKeyEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
-        # README §7の通りこのエフェクトは元々クランプを持たない。luma_key.wgslの
+        # README §7の通りこのエフェクトは元々クランプを持たない。luma_key.slangの
         # 分岐(t<0とt<blurの排他性)によりblur<=0でもゼロ除算は起きないため安全。
         base_ui = args.get("base_luminance", 2048)
         blur_ui = args.get("blur", 512)
@@ -79,4 +78,4 @@ class LumaKeyEffect(VideoEffectGeneratorBase):
 
         shader_params = struct.pack("ffi", base, blur, key_type)
 
-        return GeneratorWgslReturn(self.luma_key_shader, shader_params, ItemResult(params.width, params.height))
+        return GeneratorShaderReturn(self.luma_key_shader, shader_params, ItemResult(params.width, params.height))

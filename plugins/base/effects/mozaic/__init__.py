@@ -6,7 +6,7 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class MozaicEffect(VideoEffectGeneratorBase):
@@ -17,13 +17,11 @@ class MozaicEffect(VideoEffectGeneratorBase):
         self.description = "Applies a mosaic effect to the input frame, aligned to the center."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        math_module = lib_module(common_dir, "math")
 
-        self.mozaic_h_shader = compose_common_shader("mozaic_h", [math_module], current_dir, "mozaic_h.wgsl")
+        self.mozaic_h_shader = shared_slang_shader("mozaic_h", current_dir, "mozaic_h.slang")
         # エフェクト最終段の単発。ベベルの輝度/色差補正は固定±25%のみで超過は僅かなため16で足りる。
-        self.mozaic_v_shader = compose_common_shader(
-            "mozaic_v", [math_module, color_module], current_dir, "mozaic_v.wgsl",
+        self.mozaic_v_shader = shared_slang_shader(
+            "mozaic_v", current_dir, "mozaic_v.slang",
             min_output_format=gpu_util.WrappedImagePixelFormat.Rgba16Float,
         )
 
@@ -68,8 +66,8 @@ class MozaicEffect(VideoEffectGeneratorBase):
 
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_wgsl(self.mozaic_h_shader, h_params, width, height)
-            .add_wgsl(self.mozaic_v_shader, v_params, width, height)
+            .add_slang(self.mozaic_h_shader, h_params, width, height)
+            .add_slang(self.mozaic_v_shader, v_params, width, height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(width, height))

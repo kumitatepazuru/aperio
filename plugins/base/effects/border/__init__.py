@@ -8,11 +8,11 @@ from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, Vid
 
 from ...common.params import make_generator_information, pack_expand_params
 from ...common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 def _pack_occupancy_dir_params(radius: int, step_x: int, step_y: int, w: int, h: int, gain: float) -> bytes:
-    """occupancy_dir.wgsl 用パラメータ。"""
+    """occupancy_dir.slang 用パラメータ。"""
     return struct.pack("iiiiif", radius, step_x, step_y, w, h, gain)
 
 
@@ -24,16 +24,15 @@ class BorderEffect(VideoEffectGeneratorBase):
         self.description = "Dilates the object's alpha silhouette into a solid- or pattern-filled outline surrounding it."
 
         current_dir, common_dir = effect_dirs(__file__)
-        blur_module = lib_module(common_dir, "blur")
 
-        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
-        self.occupancy_dir_shader = compose_common_shader(
-            "border_occupancy_dir", [blur_module], current_dir, "occupancy_dir.wgsl"
+        self.expand_shader = shared_slang_shader("expand", common_dir, "expand.slang")
+        self.occupancy_dir_shader = shared_slang_shader(
+            "border_occupancy_dir", current_dir, "occupancy_dir.slang"
         )
-        self.encode_color_shader = shared_shader("encode_color", common_dir, "encode_color.wgsl")
-        self.encode_pattern_shader = shared_shader("encode_pattern", common_dir, "encode_pattern.wgsl")
-        self.tile_shader = shared_shader("tile", common_dir, "tile.wgsl")
-        self.composite_shader = shared_shader("composite", common_dir, "composite.wgsl")
+        self.encode_color_shader = shared_slang_shader("encode_color", common_dir, "encode_color.slang")
+        self.encode_pattern_shader = shared_slang_shader("encode_pattern", common_dir, "encode_pattern.slang")
+        self.tile_shader = shared_slang_shader("tile", common_dir, "tile.slang")
+        self.composite_shader = shared_slang_shader("composite", common_dir, "composite.slang")
 
         self.pattern_cache = PatternImageCache("border_pattern")
 
@@ -112,14 +111,14 @@ class BorderEffect(VideoEffectGeneratorBase):
         entry = self.pattern_cache.get(pattern_path) if pattern_path else None
 
         # --- オブジェクトをキャンバス中央(サイズ, サイズ)へ配置(README §3.2/§3.3) ---
-        object_full = gpu_util.PyImageGenerateBuilder().add_wgsl(
+        object_full = gpu_util.PyImageGenerateBuilder().add_slang(
             self.expand_shader, pack_expand_params(size, size, box_w, box_h), box_w, box_h
         )
 
         # --- 被覆マップ(垂直→水平の2パス「割らないボックス和」、README §4) ---
         mask_chain = object_full
         for step_x, step_y in ((0, 1), (1, 0)):
-            mask_chain = mask_chain.add_wgsl(
+            mask_chain = mask_chain.add_slang(
                 self.occupancy_dir_shader,
                 _pack_occupancy_dir_params(size, step_x, step_y, box_w, box_h, gain),
                 box_w,
@@ -131,15 +130,15 @@ class BorderEffect(VideoEffectGeneratorBase):
             tiled_branch = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_texture_func(pattern_func, None, loader.width, loader.height)
-                .add_wgsl(self.tile_shader, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
+                .add_slang(self.tile_shader, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
             )
             edge_layer = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_parallel_wgsl([mask_chain, tiled_branch])
-                .add_wgsl(self.encode_pattern_shader, struct.pack("f", 1.0), box_w, box_h)
+                .add_slang(self.encode_pattern_shader, struct.pack("f", 1.0), box_w, box_h)
             )
         else:
-            edge_layer = mask_chain.add_wgsl(
+            edge_layer = mask_chain.add_slang(
                 self.encode_color_shader, struct.pack("ffff", 1.0, color[0], color[1], color[2]), box_w, box_h
             )
 
@@ -147,7 +146,7 @@ class BorderEffect(VideoEffectGeneratorBase):
         final_builder = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel_wgsl([object_full, edge_layer])
-            .add_wgsl(self.composite_shader, None, box_w, box_h)
+            .add_slang(self.composite_shader, None, box_w, box_h)
         )
 
         return GeneratorBuilderReturn(final_builder, ItemResult(box_w, box_h))

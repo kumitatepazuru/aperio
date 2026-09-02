@@ -7,7 +7,7 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information, pack_box_blur_dir_params, pack_expand_params
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 # 拡散ループの初期半径(px)・パス数・等比数列の指数。元のAviUtl版のディス
 # アセンブル解析で確認された定数で、半径は 2px -> 拡散(生値)px まで6パスで
@@ -48,63 +48,62 @@ class LuminousEffect(VideoEffectGeneratorBase):
         self.description = "Extracts bright areas, diffuses them with a multi-scale blur, and blends them back as a colored glow."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        math_module = lib_module(common_dir, "math")
-        blur_module = lib_module(common_dir, "blur")
 
         rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
         rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
 
         # threshold: 単発(直後のcombined_initへ1回渡すのみ、まだオフセット等は
         # 付与されていない)で値も高々±2程度なので16で足りる。
-        self.threshold_shader = compose_common_shader(
-            "luminous_threshold", [color_module], current_dir, "threshold.wgsl", min_output_format=rgba16float
+        self.threshold_shader = shared_slang_shader(
+            "luminous_threshold", current_dir, "threshold.slang", min_output_format=rgba16float
         )
         # curve: pow(base, x*256)-1 は base=1.1,x=1で約4e10に達しRgba16Floatの
         # 最大値(約65504)を超えてInfになりうるため32必須。
-        self.curve_shader = compose_common_shader(
-            "curve", [math_module], common_dir, "curve.wgsl", min_output_format=rgba32float
+        self.curve_shader = shared_slang_shader(
+            "curve", common_dir, "curve.slang", min_output_format=rgba32float
         )
         # expand: combined_init直後の1回だが、diffusion_speed>0時はcombined_initが
         # curve_forwardで作った(pow(base,x*256)-1由来の)巨大な値を複製するため32必須。
-        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl", min_output_format=rgba32float)
+        self.expand_shader = shared_slang_shader("expand", common_dir, "expand.slang", min_output_format=rgba32float)
         # box_blur_dir: 6パス拡散の深い連鎖(最大12回のh/v呼び出し)でオフセット付き
         # 表現を運び続け、diffusion_speed>0時はcurve空間の値もブラーするため32必須。
-        self.box_blur_dir_shader = compose_common_shader(
-            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl", min_output_format=rgba32float
+        self.box_blur_dir_shader = shared_slang_shader(
+            "box_blur_dir", common_dir, "box_blur_dir.slang", min_output_format=rgba32float
         )
         # select: ループの毎パスでchain/accumulatorの状態を持ち越す深い連鎖
         # (最大5〜6回)。オフセット桁落ちとcurve空間の値の両方を運ぶため32必須。
-        self.select_shader = shared_shader(
-            "luminous_select", common_dir, "select.wgsl", min_output_format=rgba32float
+        self.select_shader = shared_slang_shader(
+            "luminous_select", common_dir, "select.slang", min_output_format=rgba32float,
+            input_texture_layout="variable",
+            sampler_options=gpu_util.PySamplerOptions("clamp_to_edge", "nearest"),
         )
         # 以下のアキュムレータ群は深い連鎖(selectで毎パス再読込)+オフセット桁落ち/
         # curve空間の値の単純加算(飽和なし)のいずれかに該当するため32必須。
-        self.accumulate_saturating_shader = shared_shader(
-            "luminous_accumulate_saturating", current_dir, "accumulate_saturating.wgsl", min_output_format=rgba32float
+        self.accumulate_saturating_shader = shared_slang_shader(
+            "luminous_accumulate_saturating", current_dir, "accumulate_saturating.slang", min_output_format=rgba32float
         )
-        self.combined_init_shader = compose_common_shader(
-            "luminous_combined_init", [math_module], current_dir, "combined_init.wgsl", min_output_format=rgba32float
+        self.combined_init_shader = shared_slang_shader(
+            "luminous_combined_init", current_dir, "combined_init.slang", min_output_format=rgba32float
         )
-        self.accumulate_chroma_shader = shared_shader(
-            "luminous_accumulate_chroma", current_dir, "accumulate_chroma.wgsl", min_output_format=rgba32float
+        self.accumulate_chroma_shader = shared_slang_shader(
+            "luminous_accumulate_chroma", current_dir, "accumulate_chroma.slang", min_output_format=rgba32float
         )
-        self.accumulate_luma_combined_shader = shared_shader(
-            "luminous_accumulate_luma_combined", current_dir, "accumulate_luma_combined.wgsl",
+        self.accumulate_luma_combined_shader = shared_slang_shader(
+            "luminous_accumulate_luma_combined", current_dir, "accumulate_luma_combined.slang",
             min_output_format=rgba32float,
         )
         # reconstruct: パイプライン最終段の単発。出力はクランプ無しで最大約2.4倍
         # 程度の超過にとどまり(既定マゼンタで実測)、curveのような爆発は無いため16で足りる。
-        self.reconstruct_shader = compose_common_shader(
-            "luminous_reconstruct", [color_module], current_dir, "reconstruct.wgsl", min_output_format=rgba16float
+        self.reconstruct_shader = shared_slang_shader(
+            "luminous_reconstruct", current_dir, "reconstruct.slang", min_output_format=rgba16float
         )
         # 「高速化」ON時の近似ぼかし(縮小ピラミッド)用。fast_modeとdiffusion_speedは
         # 独立に有効化できるため、box_blur_dir同様にcurve空間の値を想定して32必須。
-        self.downsample_shader = shared_shader(
-            "luminous_downsample", current_dir, "downsample.wgsl", min_output_format=rgba32float
+        self.downsample_shader = shared_slang_shader(
+            "luminous_downsample", current_dir, "downsample.slang", min_output_format=rgba32float
         )
-        self.upsample_shader = compose_common_shader(
-            "luminous_upsample", [math_module], current_dir, "upsample.wgsl", min_output_format=rgba32float
+        self.upsample_shader = shared_slang_shader(
+            "luminous_upsample", current_dir, "upsample.slang", min_output_format=rgba32float
         )
 
     @event(type=GeneratorEvent.New)
@@ -169,7 +168,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
-        # strength/thresholdはthreshold.wgslの`clamp(..., 0.0, 1.0)`が最終値を
+        # strength/thresholdはthreshold.slangの`clamp(..., 0.0, 1.0)`が最終値を
         # 自己ガードするためクランプ不要。diffusion_speedもmax(1,min(100,...))の
         # 内側クランプが既にあるため不要。
         strength_ui = args.get("strength", 20)
@@ -235,7 +234,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
 
         color_r, color_g, color_b = color[0], color[1], color[2]
         # 光色 -> BT.601 の輝度/色差偏差(光色指定モードで使う定数係数)。指定なし
-        # モードでは threshold.wgsl 側が元画素ごとに算出するのでここの値は使われない。
+        # モードでは threshold.slang 側が元画素ごとに算出するのでここの値は使われない。
         luma_color = 0.299 * color_r + 0.587 * color_g + 0.114 * color_b
         cr_dev = (color_r - luma_color) / 1.402000
         cb_dev = (color_b - luma_color) / 1.772000
@@ -257,11 +256,11 @@ class LuminousEffect(VideoEffectGeneratorBase):
             max_radius, max_radius, new_width, new_height, border=(chroma_offset, chroma_offset, 0.0, 1.0)
         )
 
-        base_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.expand_shader, expand_params, new_width, new_height)
+        base_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.expand_shader, expand_params, new_width, new_height)
 
         # 明部抽出は1回だけ。出力は {r=amount*Cr係数, g=amount*Cb係数,
         # b=amount*輝度係数, a=amount} で、以降 combined_init だけがこれを読む。
-        threshold_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
+        threshold_branch = gpu_util.PyImageGenerateBuilder().add_slang(
             self.threshold_shader, threshold_params, width, height
         )
 
@@ -275,7 +274,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
             curve_base = 1.0 + diffusion_speed_clamped * 0.001
 
         def select_branch(index: int) -> gpu_util.PyImageGenerateBuilder:
-            return gpu_util.PyImageGenerateBuilder().add_wgsl(
+            return gpu_util.PyImageGenerateBuilder().add_slang(
                 self.select_shader, struct.pack("i", index), new_width, new_height
             )
 
@@ -286,13 +285,13 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 return select_branch(0)
             return (
                 gpu_util.PyImageGenerateBuilder()
-                .add_wgsl(
+                .add_slang(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(r_h, 1, 0, new_width, new_height, offset=0, border_mode=0, divisor_mode=0),
                     new_width,
                     new_height,
                 )
-                .add_wgsl(
+                .add_slang(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(r_v, 0, 1, new_width, new_height, offset=0, border_mode=0, divisor_mode=0),
                     new_width,
@@ -318,20 +317,20 @@ class LuminousEffect(VideoEffectGeneratorBase):
             rs_v = min(rs, max(0, small_h // 2 - 1))
             return (
                 gpu_util.PyImageGenerateBuilder()
-                .add_wgsl(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
-                .add_wgsl(
+                .add_slang(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
+                .add_slang(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(rs_h, 1, 0, small_w, small_h, offset=0, border_mode=0, divisor_mode=0),
                     small_w,
                     small_h,
                 )
-                .add_wgsl(
+                .add_slang(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(rs_v, 0, 1, small_w, small_h, offset=0, border_mode=0, divisor_mode=0),
                     small_w,
                     small_h,
                 )
-                .add_wgsl(self.upsample_shader, struct.pack("iii", factor, new_width, new_height), new_width, new_height)
+                .add_slang(self.upsample_shader, struct.pack("iii", factor, new_width, new_height), new_width, new_height)
             )
 
         # --- 両経路共通の入口: 抽出結果を6パスぼかしに乗せる形へ整える ---
@@ -342,10 +341,10 @@ class LuminousEffect(VideoEffectGeneratorBase):
         combined_init_params = struct.pack(
             "ffi", curve_base, chroma_offset, 1 if use_diffusion_curve else 0
         )
-        combined_cont = threshold_branch.add_wgsl(
+        combined_cont = threshold_branch.add_slang(
             self.combined_init_shader, combined_init_params, width, height
         )
-        combined_cont = combined_cont.add_wgsl(self.expand_shader, combined_expand_params, new_width, new_height)
+        combined_cont = combined_cont.add_slang(self.expand_shader, combined_expand_params, new_width, new_height)
 
         # 6パスのぼかしは前段の出力を次段が再びぼかす「連鎖」で、各パスのぼかし
         # 結果を毎回アキュムレータへ蓄積する(AviUtl版が垂直パスのたびに蓄積
@@ -361,10 +360,17 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 # state = [new_chain] (初回) または [new_chain, old_accum] (2回目以降)
 
                 if state_len == 1:
-                    # 初回はambient state = [new_chain] の1枚だけ。is_first=1で
-                    # inputTex[0](新チェーン)だけを読み、旧蓄積は0扱いにする。
-                    accumulate_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
-                        self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height
+                    # 初回はambient state = [new_chain] の1枚だけ。accumulate_saturating_shaderは
+                    # 固定長2入力(Mesaのバグでリテラルインデックスでの配列アクセスができないため
+                    # inputs.tex0/tex1という個別バインディング)なので、常にちょうど2枚渡す必要が
+                    # ある。中身の無い空のビルダーを2つparallelに渡すと、実際には何もディスパッチ
+                    # されず同じテクスチャのArcが複製されるだけ(コピー用シェーダーの追加実行や
+                    # テクスチャ確保は発生しない)。is_first=1でinputs.tex1(2枚目、実体は
+                    # inputs.tex0と同一)は読まれないので、複製した内容自体は無視される。
+                    accumulate_branch = (
+                        gpu_util.PyImageGenerateBuilder()
+                        .add_parallel_wgsl([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
+                        .add_slang(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
                     )
                 else:
                     # accumulate_saturatingは[新チェーン, 旧蓄積]の2枚を前提に
@@ -372,7 +378,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     accumulate_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel_wgsl([select_branch(0), select_branch(1)])
-                        .add_wgsl(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height)
+                        .add_slang(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height)
                     )
                 combined_cont = combined_cont.add_parallel_wgsl([select_branch(0), accumulate_branch])
                 state_len = 2
@@ -398,12 +404,19 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 # state = [new_chain] (初回) または [new_chain, old_luma_accum, old_chroma_accum]
 
                 if combined_state_len == 1:
-                    # 初回はambient state = [new_chain] の1枚だけ。
-                    luma_accum_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
-                        self.accumulate_luma_combined_shader, struct.pack("i", 1), new_width, new_height
+                    # 初回はambient state = [new_chain] の1枚だけ。accumulate_luma_combined_shader/
+                    # accumulate_chroma_shaderも固定長2入力(理由はaccumulate_saturating_shaderと
+                    # 同様)なので、空のビルダー2つで同じテクスチャを複製して常に2枚渡す
+                    # (追加のディスパッチ・テクスチャ確保は発生しない)。
+                    luma_accum_branch = (
+                        gpu_util.PyImageGenerateBuilder()
+                        .add_parallel_wgsl([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
+                        .add_slang(self.accumulate_luma_combined_shader, struct.pack("i", 1), new_width, new_height)
                     )
-                    chroma_accum_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
-                        self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height
+                    chroma_accum_branch = (
+                        gpu_util.PyImageGenerateBuilder()
+                        .add_parallel_wgsl([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
+                        .add_slang(self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
                     )
                 else:
                     # accumulate_*は[新チェーン, 旧蓄積]の2枚を前提にinputTex[0]/[1]を
@@ -411,12 +424,12 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     luma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel_wgsl([select_branch(0), select_branch(1)])
-                        .add_wgsl(self.accumulate_luma_combined_shader, struct.pack("i", 0), new_width, new_height)
+                        .add_slang(self.accumulate_luma_combined_shader, struct.pack("i", 0), new_width, new_height)
                     )
                     chroma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel_wgsl([select_branch(0), select_branch(2)])
-                        .add_wgsl(
+                        .add_slang(
                             self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height
                         )
                     )
@@ -428,21 +441,21 @@ class LuminousEffect(VideoEffectGeneratorBase):
             # state = [chain(不要), luma_accum, chroma_accum]。輝度だけカーブ逆変換で
             # a=y_finalに戻し、色差はそのままreconstructへ渡す(reconstruct_shader
             # 自体の呼び出しは最上位のparallelで行う)。
-            finalize_luma = gpu_util.PyImageGenerateBuilder().add_wgsl(
+            finalize_luma = gpu_util.PyImageGenerateBuilder().add_slang(
                 self.select_shader, struct.pack("i", 1), new_width, new_height
-            ).add_wgsl(self.curve_shader, struct.pack("fii", curve_base, 1, 3), new_width, new_height)
-            finalize_chroma = gpu_util.PyImageGenerateBuilder().add_wgsl(
+            ).add_slang(self.curve_shader, struct.pack("fii", curve_base, 1, 3), new_width, new_height)
+            finalize_chroma = gpu_util.PyImageGenerateBuilder().add_slang(
                 self.select_shader, struct.pack("i", 2), new_width, new_height
             )
             glow_branch = combined_cont.add_parallel_wgsl([finalize_luma, finalize_chroma])
 
         # parallel_process.rs はサブビルダーの結果をリスト順にフラット結合するため、
         # inputTex[0]=base、[1]=luma_accum、[2]=chroma_accum としてreconstruct_shaderに
-        # 渡る(旧luminous/merge.wglをreconstruct.wgslへ統合済み。2パス→1パス)。
+        # 渡る(旧luminous/merge.wglをreconstruct.slangへ統合済み。2パス→1パス)。
         builder = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel_wgsl([base_branch, glow_branch])
-            .add_wgsl(self.reconstruct_shader, None, new_width, new_height)
+            .add_slang(self.reconstruct_shader, None, new_width, new_height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(new_width, new_height))

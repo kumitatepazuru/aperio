@@ -3,10 +3,10 @@ import struct
 import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class RippleEffect(VideoEffectGeneratorBase):
@@ -17,10 +17,7 @@ class RippleEffect(VideoEffectGeneratorBase):
         self.description = "Displaces pixels along concentric rings expanding from a center point."
 
         current_dir, common_dir = effect_dirs(__file__)
-        math_module = lib_module(common_dir, "math")
-        self.ripple_shader = compose_common_shader(
-            "ripple", [math_module], current_dir, "ripple.wgsl",
-        )
+        self.ripple_shader = shared_slang_shader("ripple", current_dir, "ripple.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -56,7 +53,7 @@ class RippleEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
         center_x = float(args.get("center_x", 0.0))
         center_y = float(args.get("center_y", 0.0))
@@ -77,4 +74,4 @@ class RippleEffect(VideoEffectGeneratorBase):
             center_x, center_y, ring_spacing, max_displacement,
             wavefront, ring_count, ring_interval, ramp_count, w, h,
         )
-        return GeneratorWgslReturn(self.ripple_shader, shader_params, ItemResult(w, h))
+        return GeneratorShaderReturn(self.ripple_shader, shader_params, ItemResult(w, h))

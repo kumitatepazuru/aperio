@@ -1,9 +1,8 @@
 import math
 
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ..common.params import make_generator_information
 from ..common.random import rand_unit
@@ -43,7 +42,7 @@ class VibrationEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> ItemResult:
         args = params.args
         amp = (
             float(args.get("amplitude_x", 10.0)),
@@ -86,7 +85,4 @@ class VibrationEffect(VideoEffectGeneratorBase):
                     r = 1.0
                 disp[axis] += weight * amp[axis] * r * s
 
-        return GeneratorBuilderReturn(
-            gpu_util.PyImageGenerateBuilder(),
-            ItemResult(params.width, params.height, pos=(disp[0], disp[1], disp[2])),
-        )
+        return ItemResult(params.width, params.height, pos=(disp[0], disp[1], disp[2]))

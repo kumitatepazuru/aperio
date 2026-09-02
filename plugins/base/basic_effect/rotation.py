@@ -1,7 +1,6 @@
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ..common.params import make_generator_information
 
@@ -40,13 +39,10 @@ class RotationEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> ItemResult:
         args = params.args
         rx = float(args.get("rotate_x", 0.0))
         ry = float(args.get("rotate_y", 0.0))
         rz = float(args.get("rotate_z", 0.0))
 
-        return GeneratorBuilderReturn(
-            gpu_util.PyImageGenerateBuilder(),
-            ItemResult(params.width, params.height, rotate=(rx, ry, rz)),
-        )
+        return ItemResult(params.width, params.height, rotate=(rx, ry, rz))

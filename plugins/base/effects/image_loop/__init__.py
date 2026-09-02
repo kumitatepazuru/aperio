@@ -7,7 +7,7 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class ImageLoopEffect(VideoEffectGeneratorBase):
@@ -18,12 +18,9 @@ class ImageLoopEffect(VideoEffectGeneratorBase):
         self.description = "Tiles the object and scrolls the tiled result."
 
         current_dir, common_dir = effect_dirs(__file__)
-        math_module = lib_module(common_dir, "math")
 
-        self.resize_shader = compose_common_shader(
-            "resize_bilinear", [math_module], common_dir, "resize_bilinear.wgsl",
-        )
-        self.tile_shader = shared_shader("image_loop", current_dir, "image_loop.wgsl")
+        self.resize_shader = shared_slang_shader("resize_bilinear", common_dir, "resize_bilinear.slang")
+        self.tile_shader = shared_slang_shader("image_loop", current_dir, "image_loop.slang")
 
     # TODO: 原作の「個別オブジェクト」チェックボックスは未実装。
     # AviUtl側は複数オブジェクトへの分身生成だが、Aperioは「1エフェクト→1画像」のモデルのため対応する概念が存在しない。
@@ -68,13 +65,13 @@ class ImageLoopEffect(VideoEffectGeneratorBase):
 
         builder = gpu_util.PyImageGenerateBuilder()
         if scale < 1.0:
-            builder = builder.add_wgsl(self.resize_shader, struct.pack("ii", tile_w, tile_h), tile_w, tile_h)
+            builder = builder.add_slang(self.resize_shader, struct.pack("ii", tile_w, tile_h), tile_w, tile_h)
 
         elapsed_frames = params.frame_number - params.layer.start
         offset_x = round(speed_x * scale * elapsed_frames) % tile_w
         offset_y = round(speed_y * scale * elapsed_frames) % tile_h
 
-        builder = builder.add_wgsl(
+        builder = builder.add_slang(
             self.tile_shader,
             struct.pack("iiiiii", tile_w, tile_h, offset_x, offset_y, ow, oh),
             ow, oh,

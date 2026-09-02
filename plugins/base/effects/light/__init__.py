@@ -8,7 +8,7 @@ from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, Vid
 
 from ...common.color import bt601_encode
 from ...common.params import clamp, make_generator_information, pack_box_average_dir_params, pack_expand_params
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class LightEffect(VideoEffectGeneratorBase):
@@ -19,26 +19,25 @@ class LightEffect(VideoEffectGeneratorBase):
         self.description = "Adds a colored shading pass over the object and a soft halo behind it, both driven by the object's own alpha."
 
         current_dir, common_dir = effect_dirs(__file__)
-        blur_module = lib_module(common_dir, "blur")
 
         rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
 
-        self.box_average_dir_shader = compose_common_shader(
-            "light_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
+        self.box_average_dir_shader = shared_slang_shader(
+            "light_box_average_dir", common_dir, "box_average_dir.slang"
         )
         # expand: shadow_apply_shaderの出力(最大約2.0、クランプなし)を1回だけ運ぶ
         # 単発の使用。桁落ちする設計ではないため16で足りる。
-        self.expand_shader = shared_shader(
-            "expand", common_dir, "expand.wgsl", min_output_format=rgba16float
+        self.expand_shader = shared_slang_shader(
+            "expand", common_dir, "expand.slang", min_output_format=rgba16float
         )
-        self.invert_alpha_shader = shared_shader("light_invert_alpha", current_dir, "invert_alpha.wgsl")
+        self.invert_alpha_shader = shared_slang_shader("light_invert_alpha", current_dir, "invert_alpha.slang")
         # shadow_apply: 単発。base.rgb+light_color*mは最大約2.0程度で16で足りる。
-        self.shadow_apply_shader = shared_shader(
-            "light_shadow_apply", current_dir, "shadow_apply.wgsl", min_output_format=rgba16float
+        self.shadow_apply_shader = shared_slang_shader(
+            "light_shadow_apply", current_dir, "shadow_apply.slang", min_output_format=rgba16float
         )
         # composite: エフェクト最終段の単発。halo_rgbはBT.601係数の逆数で頭打ちのため16で足りる。
-        self.composite_shader = shared_shader(
-            "light_composite", current_dir, "composite.wgsl", min_output_format=rgba16float
+        self.composite_shader = shared_slang_shader(
+            "light_composite", current_dir, "composite.slang", min_output_format=rgba16float
         )
 
     @event(type=GeneratorEvent.New)
@@ -123,13 +122,13 @@ class LightEffect(VideoEffectGeneratorBase):
         if B_frac > 0:
             avg_branch = gpu_util.PyImageGenerateBuilder()
             if backlight:
-                avg_branch = avg_branch.add_wgsl(self.invert_alpha_shader, None, w, h)
+                avg_branch = avg_branch.add_slang(self.invert_alpha_shader, None, w, h)
             avg_branch = (
-                avg_branch.add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 1, 0, w, h), w, h)
-                .add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 0, 1, w, h), w, h)
+                avg_branch.add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 1, 0, w, h), w, h)
+                .add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 0, 1, w, h), w, h)
             )
             shadow_params = struct.pack("iffff", 1 if backlight else 0, B_frac, color[0], color[1], color[2])
-            shadowed = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, avg_branch]).add_wgsl(
+            shadowed = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, avg_branch]).add_slang(
                 self.shadow_apply_shader, shadow_params, w, h
             )
         else:
@@ -148,12 +147,12 @@ class LightEffect(VideoEffectGeneratorBase):
         nw, nh = w + 2 * r_halo, h + 2 * r_halo
         expand_params = pack_expand_params(r_halo, r_halo, nw, nh)
 
-        base_branch = shadowed.add_wgsl(self.expand_shader, expand_params, nw, nh)
+        base_branch = shadowed.add_slang(self.expand_shader, expand_params, nw, nh)
         avg2d_branch = (
             gpu_util.PyImageGenerateBuilder()
-            .add_wgsl(self.expand_shader, expand_params, nw, nh)
-            .add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 1, 0, nw, nh), nw, nh)
-            .add_wgsl(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 0, 1, nw, nh), nw, nh)
+            .add_slang(self.expand_shader, expand_params, nw, nh)
+            .add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 1, 0, nw, nh), nw, nh)
+            .add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 0, 1, nw, nh), nw, nh)
         )
 
         # 光色をY=1.0で復元した固定RGB(後光のストレート色)と、光色自身の輝度
@@ -164,7 +163,7 @@ class LightEffect(VideoEffectGeneratorBase):
         halo_b = 1.0 + 1.772 * cb
 
         composite_params = struct.pack("fffff", A_frac, halo_r, halo_g, halo_b, y)
-        final_builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([base_branch, avg2d_branch]).add_wgsl(
+        final_builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([base_branch, avg2d_branch]).add_slang(
             self.composite_shader, composite_params, nw, nh
         )
 

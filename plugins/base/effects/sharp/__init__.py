@@ -6,7 +6,7 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import clamp, make_generator_information, pack_box_blur_dir_params, split_radius
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class SharpEffect(VideoEffectGeneratorBase):
@@ -17,20 +17,18 @@ class SharpEffect(VideoEffectGeneratorBase):
         self.description = "Unsharp-masks the object: blurs a copy with a box blur, then adds back the difference from the original."
 
         current_dir, common_dir = effect_dirs(__file__)
-        blur_module = lib_module(common_dir, "blur")
-        color_module = lib_module(common_dir, "color")
 
         # box_blur_dir: `ぼかし`の`サイズ固定`オン版と命令単位で同一(README §4)。
         # blur.pyと同じ名前・フォーマットフロアでコンパイルしてパイプラインキャッシュを
         # 共有する。light_intensity経由の用途と共有しているため32必須。
-        self.box_blur_dir_shader = compose_common_shader(
-            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl",
+        self.box_blur_dir_shader = shared_slang_shader(
+            "box_blur_dir", common_dir, "box_blur_dir.slang",
             min_output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
         )
         # sharp_composite: strengthの上限(表示800.0 = ×8)と1/pの増幅(最大4096倍、
         # README §5.2)が重なると値が大きく張り出しうるため32必須。
-        self.composite_shader = compose_common_shader(
-            "sharp_composite", [color_module], current_dir, "sharp_composite.wgsl",
+        self.composite_shader = shared_slang_shader(
+            "sharp_composite", current_dir, "sharp_composite.slang",
             min_output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
         )
 
@@ -78,7 +76,7 @@ class SharpEffect(VideoEffectGeneratorBase):
             if radius <= 0:
                 return b
             shader_params = pack_box_blur_dir_params(radius, step_x, step_y, w, h, divisor_mode=1)
-            return b.add_wgsl(self.box_blur_dir_shader, shader_params, w, h)
+            return b.add_slang(self.box_blur_dir_shader, shader_params, w, h)
 
         # 元画像の退避(README「スクラッチ」に相当) ―― 何もしないブランチがそのまま
         # 上流の状態(素の入力)を素通しする。
@@ -94,7 +92,7 @@ class SharpEffect(VideoEffectGeneratorBase):
         blur_branch = blur_pass(blur_branch, r_lo, 1, 0)
 
         composite_params = struct.pack("f", strength)
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, blur_branch]).add_wgsl(
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, blur_branch]).add_slang(
             self.composite_shader, composite_params, w, h
         )
 

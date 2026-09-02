@@ -3,10 +3,10 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class DiagonalClippingEffect(VideoEffectGeneratorBase):
@@ -17,7 +17,7 @@ class DiagonalClippingEffect(VideoEffectGeneratorBase):
         self.description = "Clips the object's alpha along a line at any angle, with a soft gradient edge and half-plane/keep-band/remove-band modes."
 
         current_dir, _ = effect_dirs(__file__)
-        self.shader = shared_shader("diagonal_clipping", current_dir, "diagonal_clipping.wgsl")
+        self.shader = shared_slang_shader("diagonal_clipping", current_dir, "diagonal_clipping.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -68,7 +68,7 @@ class DiagonalClippingEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
         center_x = args.get("center_x", 0)
         center_y = args.get("center_y", 0)
@@ -91,4 +91,4 @@ class DiagonalClippingEffect(VideoEffectGeneratorBase):
         band = float(blur + 1)
 
         shader_params = struct.pack("ffffff", cx, cy, nx, ny, band, float(width))
-        return GeneratorWgslReturn(self.shader, shader_params, ItemResult(w, h))
+        return GeneratorShaderReturn(self.shader, shader_params, ItemResult(w, h))

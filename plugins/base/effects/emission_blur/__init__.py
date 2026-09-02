@@ -4,10 +4,10 @@ import struct
 import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import clamp, make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class EmissionBlurEffect(VideoEffectGeneratorBase):
@@ -23,7 +23,7 @@ class EmissionBlurEffect(VideoEffectGeneratorBase):
         # サンプル(範囲外は0扱い、各<=1)の単純平均で常に[0,1]に収まる単発パス。
         # straightなアルファ入出力でカーブ/対数の増幅も無いため、min_output_format
         # 指定は不要(docs/plugin.md基準表の「なし」に該当。directional_blurと同型)。
-        self.emission_blur_shader = shared_shader("emission_blur", current_dir, "emission_blur.wgsl")
+        self.emission_blur_shader = shared_slang_shader("emission_blur", current_dir, "emission_blur.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -60,7 +60,7 @@ class EmissionBlurEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         range_ui = max(0.0, args.get("range", 20.0))
         center = args.get("center", (0, 0))
@@ -107,12 +107,12 @@ class EmissionBlurEffect(VideoEffectGeneratorBase):
         )
 
         # glint.py同様、拡張後キャンバス座標のまま元の(未拡張)ソーステクスチャを
-        # オフセット付きで直接読む1発シェーダーなので、expand.wgslの別パスは不要。
+        # オフセット付きで直接読む1発シェーダーなので、expand.slangの別パスは不要。
         # 拡張後キャンバスの中心に対するオブジェクト中心のずれを打ち消して、
         # オブジェクトを元の位置に留める(実機のfpip+0xD4/+0xD8の補正と同じ式)。
         center_x = w // 2 - (x0 + ow // 2)
         center_y = h // 2 - (y0 + oh // 2)
-        return GeneratorWgslReturn(
+        return GeneratorShaderReturn(
             self.emission_blur_shader, shader_params, ItemResult(ow, oh, center_x=center_x, center_y=center_y)
         )
 

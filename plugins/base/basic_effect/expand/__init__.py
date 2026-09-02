@@ -1,13 +1,12 @@
 import struct
 
 import aperio_plugin
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class ExpandEffect(VideoEffectGeneratorBase):
@@ -18,7 +17,7 @@ class ExpandEffect(VideoEffectGeneratorBase):
         self.description = "Extends the canvas in specified directions."
 
         current_dir, _ = effect_dirs(__file__)
-        self.expand_shader = shared_shader("base_effect_expand", current_dir, "expand.wgsl")
+        self.expand_shader = shared_slang_shader("base_effect_expand", current_dir, "expand.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -62,7 +61,7 @@ class ExpandEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         top = max(0, int(args.get("top", 0)))
         bottom = max(0, int(args.get("bottom", 0)))
@@ -80,7 +79,7 @@ class ExpandEffect(VideoEffectGeneratorBase):
         bottom = min(bottom, room_h - top)
 
         if top == 0 and bottom == 0 and left == 0 and right == 0:
-            return GeneratorBuilderReturn(gpu_util.PyImageGenerateBuilder(), ItemResult(params.width, params.height))
+            return None
 
         new_width = params.width + left + right
         new_height = params.height + top + bottom
@@ -90,8 +89,6 @@ class ExpandEffect(VideoEffectGeneratorBase):
 
         shader_params = struct.pack("iiiii", left, top, new_width, new_height, 1 if fill else 0)
 
-        return GeneratorWgslReturn(
-            self.expand_shader,
-            shader_params,
-            ItemResult(new_width, new_height, center_x=center_x, center_y=center_y),
+        return GeneratorShaderReturn(
+            self.expand_shader, shader_params, ItemResult(new_width, new_height, center_x=center_x, center_y=center_y)
         )

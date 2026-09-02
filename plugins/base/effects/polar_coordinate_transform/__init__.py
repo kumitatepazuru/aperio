@@ -4,10 +4,10 @@ import struct
 import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class PolarCoordinateTransformEffect(VideoEffectGeneratorBase):
@@ -18,7 +18,7 @@ class PolarCoordinateTransformEffect(VideoEffectGeneratorBase):
         self.description = "Wraps the object into a ring: source rows become concentric circles, source columns become radial lines."
 
         current_dir, _ = effect_dirs(__file__)
-        self.shader = shared_shader("polar_coordinate_transform", current_dir, "polar_coordinate_transform.wgsl")
+        self.shader = shared_slang_shader("polar_coordinate_transform", current_dir, "polar_coordinate_transform.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -41,7 +41,7 @@ class PolarCoordinateTransformEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         center_hole = max(0, int(args.get("center_hole", 0)))
         scale_percent = max(100.0, float(args.get("scale_percent", 100.0)))
@@ -59,6 +59,4 @@ class PolarCoordinateTransformEffect(VideoEffectGeneratorBase):
         swirl_rate = swirl * 2.0 * math.pi / max(1e-3, r - center_hole)
 
         shader_params = struct.pack("ifffii", center_hole, r, rotation_rad, swirl_rate, s, s)
-        return GeneratorWgslReturn(
-            self.shader, shader_params, ItemResult(s, s)
-        )
+        return GeneratorShaderReturn(self.shader, shader_params, ItemResult(s, s))
