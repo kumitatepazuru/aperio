@@ -1,8 +1,11 @@
 // `rhi::Backend`のVulkan(ash)実装。素のVulkanハンドルを薄くラップするのみ
 
+pub mod command;
+pub mod descriptor;
 pub mod device;
 pub mod instance;
 pub mod memory;
+pub mod pipeline;
 pub mod resources;
 
 pub use device::VulkanDevice;
