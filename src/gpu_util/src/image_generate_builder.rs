@@ -1,23 +1,13 @@
 // image_generate_builder.rs
 
 use crate::compiled_func::{CompiledFunc, CompiledTextureFunc};
-use crate::compiled_wgsl::CompiledWgsl;
 use std::sync::Arc;
 use uuid::Uuid;
 
 /// パイプラインの各ステップを表すenum。
 #[derive(Clone)]
 pub enum PipelineStep {
-    /// 単一のWGSLシェーダーを実行するステップ。
-    Wgsl {
-        /// このステップ固有の自動採番id(フレーム内でのテクスチャ使い回しの照合に使う)。
-        id: String,
-        wgsl: Arc<CompiledWgsl>,
-        params: Option<Vec<u8>>,
-        output_width: u32,
-        output_height: u32,
-    },
-    /// 複数のWGSLシェーダーを並列に実行するステップ。
+    /// 複数のシェーダーパイプラインを並列に実行するステップ。
     Parallel {
         /// このステップ固有の自動採番id。IDはテクスチャごとではなくstepごとに
         /// 振られるべきという方針のもと、他のバリアントと同様に持つ
@@ -54,8 +44,7 @@ impl PipelineStep {
     /// このステップ固有の自動採番id。全バリアントが持つため`Option`ではない。
     pub fn id(&self) -> &str {
         match self {
-            PipelineStep::Wgsl { id, .. }
-            | PipelineStep::Parallel { id, .. }
+            PipelineStep::Parallel { id, .. }
             | PipelineStep::CpuFunc { id, .. }
             | PipelineStep::TextureFunc { id, .. }
             | PipelineStep::Linked { id, .. } => id,
@@ -112,40 +101,12 @@ impl ImageGenerateBuilder {
         }
     }
 
-    /// WGSL処理ステップをパイプラインに追加します（直列実行）。
+    /// 複数のシェーダーパイプラインステップをパイプラインに追加します（並列実行）。
     ///
-    /// # Arguments
-    ///
-    /// * `wgsl` - `CompiledWgsl`のArc参照。
-    /// * `params` - シェーダーのStorage Bufferに渡すパラメータ。`bytemuck`でシリアライズされたバイト列を渡します。
-    /// * `output_width` - このステップの出力画像の幅。
-    /// * `output_height` - このステップの出力画像の高さ。
-    pub fn add_wgsl(
-        self,
-        wgsl: CompiledWgsl,
-        params: Option<Vec<u8>>,
-        output_width: u32,
-        output_height: u32,
-    ) -> Self {
-        let wgsl = Arc::new(wgsl);
-        let id = Uuid::new_v4().to_string();
-
-        // Copy-on-Write: 新しいVecを作成して要素を追加
-        let mut new_steps = (*self.steps).clone();
-        new_steps.push(PipelineStep::Wgsl {
-            id,
-            wgsl,
-            params,
-            output_width,
-            output_height,
-        });
-
-        Self {
-            steps: Arc::new(new_steps),
-        }
-    }
-
-    /// 複数のWGSL処理ステップをパイプラインに追加します（並列実行）。
+    /// メソッド名に`wgsl`と付いているが、内部的にはシェーダー種別に依存しない
+    /// (`Parallel`バリアントは単に複数の`ImageGenerateBuilder`を束ねるだけ)。
+    /// Python側の`add_parallel_wgsl`が既に外部(`plugins/`)から呼ばれているため、
+    /// 互換性のためこの名前のまま維持している。
     ///
     /// # Arguments
     ///

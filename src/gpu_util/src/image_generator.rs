@@ -1,10 +1,8 @@
-// image_generator.rs
 pub mod cpu_func_process;
 pub mod final_process;
 pub(crate) mod linked_memo;
 pub mod parallel_process;
 pub mod texture_func_process;
-pub mod wgsl_process;
 
 pub(crate) use linked_memo::LinkedMemo;
 
@@ -20,7 +18,6 @@ use crate::{
     image_generator::{
         cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
         parallel_process::handle_parallel_step, texture_func_process::handle_texture_func_step,
-        wgsl_process::handle_wgsl_step,
     },
     image_pixel_format::ImagePixelFormat,
     resource_pool::{LruCache, ResourcePool},
@@ -353,15 +350,6 @@ impl ImageGenerator {
 
         for (i, step) in steps.iter().enumerate() {
             state = match step {
-                PipelineStep::Wgsl {
-                    wgsl,
-                    params,
-                    output_height,
-                    output_width,
-                    ..
-                } => {
-                    handle_wgsl_step(self, &state, wgsl, params, i, *output_width, *output_height)?
-                }
                 PipelineStep::Parallel { pipelines, .. } => {
                     handle_parallel_step(self, &mut state, pipelines, i, memo).await?
                 }

@@ -11,11 +11,7 @@ use gpu_util::compiled_func::{
 };
 use gpu_util::image_generate_builder::{IdTree, ImageGenerateBuilder};
 use gpu_util::image_generator;
-use gpu_util::{compiled_wgsl, image_generate_builder, SharedTextureFormat};
-
-use crate::python::modules::compose_wgsl::{
-    PyComposableModuleDescriptor, PyNagaModuleDescriptor,
-};
+use gpu_util::{image_generate_builder, sampler_options, SharedTextureFormat};
 
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
@@ -55,12 +51,7 @@ impl WrappedImagePixelFormat {
 // Pythonで動かすためのライブラリのラッパーを作る
 #[pyclass]
 pub struct PySamplerOptions {
-    pub inner: compiled_wgsl::SamplerOptions,
-}
-
-#[pyclass]
-pub struct PyCompiledWgsl {
-    pub inner: compiled_wgsl::CompiledWgsl,
+    pub inner: sampler_options::SamplerOptions,
 }
 
 #[pyclass]
@@ -204,76 +195,11 @@ impl PySamplerOptions {
         };
 
         Ok(Self {
-            inner: compiled_wgsl::SamplerOptions {
+            inner: sampler_options::SamplerOptions {
                 address_mode,
                 filter,
             },
         })
-    }
-}
-
-#[pymethods]
-impl PyCompiledWgsl {
-    #[new]
-    #[pyo3(signature = (name, wgsl_code, generator, sampler_options=None, min_output_format=None))]
-    pub fn new(
-        name: &str,
-        wgsl_code: &str,
-        generator: &PyImageGenerator,
-        sampler_options: Option<&PySamplerOptions>,
-        min_output_format: Option<WrappedImagePixelFormat>,
-    ) -> Result<Self, PyErr> {
-        let floor = min_output_format
-            .map(|f| f.to_native())
-            .unwrap_or(gpu_util::ImagePixelFormat::Rgba8Unorm);
-        let output_format = generator.inner.image_format().max(floor).to_wgpu();
-
-        let inner = compiled_wgsl::CompiledWgsl::new(
-            name,
-            wgsl_code,
-            &generator.inner,
-            output_format,
-            sampler_options.map(|s| &s.inner),
-        )?;
-
-        Ok(Self { inner })
-    }
-
-    /// composable module 群を naga_oil で合成し、その naga IR からシェーダーを作る。
-    ///
-    /// `name` はパイプラインキャッシュのキーにもなるため、同じシェーダーを異なる
-    /// `shader_defs` で合成する場合は必ず別の `name` を渡すこと。
-    ///
-    /// 実際に使われるフォーマットは `max(generatorのimage_format, min_output_format)`
-    /// (精度の高い方)。`min_output_format` は「これより下げてはいけない」という
-    /// フロアであり、強制フォーマットではないのでgeneratorの設定がそれより高精度なら
-    /// そちらがそのまま使われる。省略した場合はフロア無し(常にgeneratorの設定に従う)。
-    #[staticmethod]
-    #[pyo3(signature = (name, composable_modules, naga_module, generator, sampler_options=None, min_output_format=None))]
-    pub fn compose_new(
-        name: &str,
-        composable_modules: Vec<PyRef<'_, PyComposableModuleDescriptor>>,
-        naga_module: &PyNagaModuleDescriptor,
-        generator: &PyImageGenerator,
-        sampler_options: Option<&PySamplerOptions>,
-        min_output_format: Option<WrappedImagePixelFormat>,
-    ) -> Result<Self, PyErr> {
-        let composable_modules: Vec<_> = composable_modules.iter().map(|m| &m.inner).collect();
-        let floor = min_output_format
-            .map(|f| f.to_native())
-            .unwrap_or(gpu_util::ImagePixelFormat::Rgba8Unorm);
-        let output_format = generator.inner.image_format().max(floor).to_wgpu();
-
-        let inner = compiled_wgsl::CompiledWgsl::compose_new(
-            name,
-            &composable_modules,
-            &naga_module.inner,
-            &generator.inner,
-            output_format,
-            sampler_options.map(|s| &s.inner),
-        )?;
-
-        Ok(Self { inner })
     }
 }
 
@@ -348,23 +274,6 @@ impl PyImageGenerateBuilder {
         let inner = ImageGenerateBuilder::new();
 
         Self { inner }
-    }
-
-    pub fn add_wgsl<'py>(
-        &self,
-        wgsl: &PyCompiledWgsl,
-        params: Option<&Bound<'py, PyBytes>>,
-        output_width: u32,
-        output_height: u32,
-    ) -> Self {
-        let params = params.map(|p| p.as_bytes().to_vec());
-
-        let new_inner =
-            self.inner
-                .clone()
-                .add_wgsl(wgsl.inner.clone(), params, output_width, output_height);
-
-        Self { inner: new_inner }
     }
 
     /// このビルダーが持つ全ステップの自動採番idを、追加順のリストとして返す
@@ -498,8 +407,6 @@ pub mod gpu_util_register {
     #[pymodule_export]
     use super::PyCompiledTextureFunc;
     #[pymodule_export]
-    use super::PyCompiledWgsl;
-    #[pymodule_export]
     use super::PyImageGenerateBuilder;
     #[pymodule_export]
     use super::PyImageGenerator;
@@ -513,12 +420,4 @@ pub mod gpu_util_register {
     use super::WrappedImagePixelFormat;
     #[pymodule_export]
     use super::WrappedSharedTextureFormat;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::create_composable_module;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::create_naga_module;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::PyComposableModuleDescriptor;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::PyNagaModuleDescriptor;
 }
