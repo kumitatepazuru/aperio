@@ -1,36 +1,17 @@
-// `rhi::Backend`のVulkan(ash)実装。素のVulkanハンドルを薄くラップするのみで、
-// 所有権/解放の管理(サブアロケータ、パイプライン/ディスクリプタキャッシュ等)は
-// 後続のコミットで`device.rs`側に積み上げていく。
+// `rhi::Backend`のVulkan(ash)実装。素のVulkanハンドルを薄くラップするのみ
 
 pub mod device;
 pub mod instance;
+pub mod memory;
+pub mod resources;
 
 pub use device::VulkanDevice;
 pub use instance::VulkanInstance;
+pub use resources::{Buffer, Sampler, Texture, TextureView};
 
 use crate::rhi::Backend;
 use ash::vk;
 use std::sync::Mutex;
-
-#[derive(Clone, Copy)]
-pub struct Buffer {
-    pub handle: vk::Buffer,
-}
-
-#[derive(Clone, Copy)]
-pub struct Texture {
-    pub handle: vk::Image,
-}
-
-#[derive(Clone, Copy)]
-pub struct TextureView {
-    pub handle: vk::ImageView,
-}
-
-#[derive(Clone, Copy)]
-pub struct Sampler {
-    pub handle: vk::Sampler,
-}
 
 pub struct ComputePipeline {
     pub handle: vk::Pipeline,

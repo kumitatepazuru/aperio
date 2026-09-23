@@ -303,7 +303,7 @@ class AperioManager(PluginManager, EventManager):
 
             builder = (
                 gpu_util.PyImageGenerateBuilder()
-                .add_parallel_wgsl(layer_builders)
+                .add_parallel(layer_builders)
                 .add_wgsl(
                     self.compose_wgsl, b"".join(generator_params), width, height
                 ) # TODO: render Passを使っての高速化と簡潔化を試みる

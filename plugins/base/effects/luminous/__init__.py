@@ -356,7 +356,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
             state_len = 1
             for radius in radii:
                 passthrough = [select_branch(1)] if state_len > 1 else []
-                combined_cont = combined_cont.add_parallel_wgsl([blur_branch_for(radius)] + passthrough)
+                combined_cont = combined_cont.add_parallel([blur_branch_for(radius)] + passthrough)
                 # state = [new_chain] (初回) または [new_chain, old_accum] (2回目以降)
 
                 if state_len == 1:
@@ -369,7 +369,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     # inputs.tex0と同一)は読まれないので、複製した内容自体は無視される。
                     accumulate_branch = (
                         gpu_util.PyImageGenerateBuilder()
-                        .add_parallel_wgsl([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
+                        .add_parallel([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
                         .add_slang(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
                     )
                 else:
@@ -377,17 +377,17 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     # inputTex[0]/[1]を読むので、その2枚だけを詰め直してから呼ぶ。
                     accumulate_branch = (
                         gpu_util.PyImageGenerateBuilder()
-                        .add_parallel_wgsl([select_branch(0), select_branch(1)])
+                        .add_parallel([select_branch(0), select_branch(1)])
                         .add_slang(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height)
                     )
-                combined_cont = combined_cont.add_parallel_wgsl([select_branch(0), accumulate_branch])
+                combined_cont = combined_cont.add_parallel([select_branch(0), accumulate_branch])
                 state_len = 2
 
             # state = [chain(不要), accum]。accumを両入力(inputTex[1].a=Σy,
             # inputTex[2].r/g=Σcr/Σcb)としてreconstructへ渡す。reconstruct_shader
             # 自体の呼び出しは最上位のparallel(base_branchとの合流、旧mergeパス
             # 統合済み)で行うので、ここではparallelステップで終わらせておく。
-            glow_branch = combined_cont.add_parallel_wgsl(
+            glow_branch = combined_cont.add_parallel(
                 [select_branch(1), select_branch(1)]
             )
         else:
@@ -400,7 +400,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
             combined_state_len = 1
             for radius in radii:
                 combined_passthrough = [select_branch(1), select_branch(2)] if combined_state_len > 1 else []
-                combined_cont = combined_cont.add_parallel_wgsl([blur_branch_for(radius)] + combined_passthrough)
+                combined_cont = combined_cont.add_parallel([blur_branch_for(radius)] + combined_passthrough)
                 # state = [new_chain] (初回) または [new_chain, old_luma_accum, old_chroma_accum]
 
                 if combined_state_len == 1:
@@ -410,12 +410,12 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     # (追加のディスパッチ・テクスチャ確保は発生しない)。
                     luma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
-                        .add_parallel_wgsl([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
+                        .add_parallel([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
                         .add_slang(self.accumulate_luma_combined_shader, struct.pack("i", 1), new_width, new_height)
                     )
                     chroma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
-                        .add_parallel_wgsl([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
+                        .add_parallel([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
                         .add_slang(self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
                     )
                 else:
@@ -423,17 +423,17 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     # 読むため、輝度用・色差用それぞれ必要な2枚だけを詰め直して呼ぶ。
                     luma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
-                        .add_parallel_wgsl([select_branch(0), select_branch(1)])
+                        .add_parallel([select_branch(0), select_branch(1)])
                         .add_slang(self.accumulate_luma_combined_shader, struct.pack("i", 0), new_width, new_height)
                     )
                     chroma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
-                        .add_parallel_wgsl([select_branch(0), select_branch(2)])
+                        .add_parallel([select_branch(0), select_branch(2)])
                         .add_slang(
                             self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height
                         )
                     )
-                combined_cont = combined_cont.add_parallel_wgsl(
+                combined_cont = combined_cont.add_parallel(
                     [select_branch(0), luma_accum_branch, chroma_accum_branch]
                 )
                 combined_state_len = 2
@@ -447,14 +447,14 @@ class LuminousEffect(VideoEffectGeneratorBase):
             finalize_chroma = gpu_util.PyImageGenerateBuilder().add_slang(
                 self.select_shader, struct.pack("i", 2), new_width, new_height
             )
-            glow_branch = combined_cont.add_parallel_wgsl([finalize_luma, finalize_chroma])
+            glow_branch = combined_cont.add_parallel([finalize_luma, finalize_chroma])
 
         # parallel_process.rs はサブビルダーの結果をリスト順にフラット結合するため、
         # inputTex[0]=base、[1]=luma_accum、[2]=chroma_accum としてreconstruct_shaderに
         # 渡る(旧luminous/merge.wglをreconstruct.slangへ統合済み。2パス→1パス)。
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([base_branch, glow_branch])
+            .add_parallel([base_branch, glow_branch])
             .add_slang(self.reconstruct_shader, None, new_width, new_height)
         )
 

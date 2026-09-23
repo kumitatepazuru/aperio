@@ -128,7 +128,7 @@ class LightEffect(VideoEffectGeneratorBase):
                 .add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 0, 1, w, h), w, h)
             )
             shadow_params = struct.pack("iffff", 1 if backlight else 0, B_frac, color[0], color[1], color[2])
-            shadowed = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, avg_branch]).add_slang(
+            shadowed = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, avg_branch]).add_slang(
                 self.shadow_apply_shader, shadow_params, w, h
             )
         else:
@@ -163,7 +163,7 @@ class LightEffect(VideoEffectGeneratorBase):
         halo_b = 1.0 + 1.772 * cb
 
         composite_params = struct.pack("fffff", A_frac, halo_r, halo_g, halo_b, y)
-        final_builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([base_branch, avg2d_branch]).add_slang(
+        final_builder = gpu_util.PyImageGenerateBuilder().add_parallel([base_branch, avg2d_branch]).add_slang(
             self.composite_shader, composite_params, nw, nh
         )
 

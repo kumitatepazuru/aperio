@@ -74,7 +74,7 @@ def apply_generate_result(
         # 空のbuilder（ステップ未追加）の場合はパイプラインを変更しない
         if not generate_result.builder.get_id_tree():
             return builder
-        return builder.add_parallel_wgsl([generate_result.builder])
+        return builder.add_parallel([generate_result.builder])
     return builder
 
 

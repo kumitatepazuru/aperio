@@ -198,7 +198,7 @@ class GlowEffect(VideoEffectGeneratorBase):
                 v_branch = gpu_util.PyImageGenerateBuilder().add_slang(
                     self.box_average_dir_shader, box_average_params(r, 0, 1), nw, nh
                 )
-                glow_chain = glow_chain.add_parallel_wgsl([v_branch, select_branch(0)])
+                glow_chain = glow_chain.add_parallel([v_branch, select_branch(0)])
                 glow_chain = glow_chain.add_slang(
                     self.line_accumulate_shader, line_accumulate_params(r, 1, 0, gain, i == 0), nw, nh
                 )
@@ -213,7 +213,7 @@ class GlowEffect(VideoEffectGeneratorBase):
                     accumulate_branch = gpu_util.PyImageGenerateBuilder().add_slang(
                         self.line_accumulate_shader, line_accumulate_params(radius_val, dx, dy, gain, is_first), nw, nh
                     )
-                    glow_chain = glow_chain.add_parallel_wgsl([select_branch(0), accumulate_branch])
+                    glow_chain = glow_chain.add_parallel([select_branch(0), accumulate_branch])
                     is_first = False
             # state = [source_const, accum] -> accum(index=1)だけを残す
             glow_chain = glow_chain.add_slang(self.select_shader, struct.pack("i", 1), nw, nh)
@@ -230,7 +230,7 @@ class GlowEffect(VideoEffectGeneratorBase):
 
         # --- 最終合成(README §8) ---
         base_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.expand_shader, expand_params, nw, nh)
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([base_branch, glow_chain]).add_slang(
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([base_branch, glow_chain]).add_slang(
             self.composite_shader, struct.pack("i", 1 if light_only else 0), nw, nh
         )
 

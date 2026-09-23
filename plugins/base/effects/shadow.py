@@ -117,7 +117,7 @@ def _build_shadow_layer(
 ) -> ShadowLayerResult:
     """クランプ済みの影パラメータから、影レイヤー(box_w x box_h、ストレートアルファ)の
     builderを組み立てる。影の起点となるシルエットは、暗黙のパイプライン合流
-    (add_parallel_wgsl経由で前段のstateを継承する仕組み)によって、呼び出し元の直前までの
+    (add_parallel経由で前段のstateを継承する仕組み)によって、呼び出し元の直前までの
     累積結果から引き継がれる。"""
     density, r, color, pattern_path = (
         shadow_params.density,
@@ -153,7 +153,7 @@ def _build_shadow_layer(
         )
         shadow_layer = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([mask_chain, tiled_branch])
+            .add_parallel([mask_chain, tiled_branch])
             .add_slang(shaders.encode_pattern, struct.pack("f", density), box_w, box_h)
         )
     else:
@@ -276,7 +276,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
         )
         final_builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([object_full_branch, shadow_full_branch])
+            .add_parallel([object_full_branch, shadow_full_branch])
             .add_slang(self.composite_shader, None, nw, nh)
         )
         # キャンバスは|X|/|Y|ぶん片側にだけ伸びる(2rは対称)ので、オブジェクト自身の

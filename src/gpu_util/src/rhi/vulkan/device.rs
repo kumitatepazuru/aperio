@@ -3,18 +3,21 @@
 // 下流のSlangシェーダーが前提とするbindlessパターンに必要な Vulkan 1.2 コア機能
 // (descriptor indexing関連のフィーチャービット)を満たす物理デバイスのみを候補とする。
 
+use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use ash::vk;
 
-use super::{instance::VulkanInstance, Queue};
+use super::{instance::VulkanInstance, memory::VulkanAllocator, Queue};
 
 pub struct VulkanDevice {
     pub instance: VulkanInstance,
     pub physical_device: vk::PhysicalDevice,
     pub device: ash::Device,
     pub queue_family: u32,
+    
+    pub(crate) allocator: ManuallyDrop<VulkanAllocator>,
 }
 
 impl VulkanDevice {
@@ -22,12 +25,14 @@ impl VulkanDevice {
         let instance = VulkanInstance::new()?;
         let (physical_device, queue_family) = pick_physical_device(&instance)?;
         let device = create_logical_device(&instance, physical_device, queue_family)?;
+        let allocator = VulkanAllocator::new(&instance, &device, physical_device)?;
 
         Ok(Arc::new(Self {
             instance,
             physical_device,
             device,
             queue_family,
+            allocator: ManuallyDrop::new(allocator),
         }))
     }
 
@@ -47,6 +52,9 @@ impl Drop for VulkanDevice {
         unsafe {
             // 保留中の作業が残っていればここでブロックして待つ。
             let _ = self.device.device_wait_idle();
+            // アロケータの解放(残存メモリブロックのvkFreeMemory)は、まだ生きている`self.device`を使って行う必要があるため、
+            // destroy_deviceより先に明示的に行う。
+            ManuallyDrop::drop(&mut self.allocator);
             self.device.destroy_device(None);
         }
     }

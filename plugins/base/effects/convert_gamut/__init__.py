@@ -106,14 +106,14 @@ class ConvertGamutEffect(VideoEffectGeneratorBase):
         pass1_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.border_pass1_shader, pass1_params, w, h)
         original_branch = gpu_util.PyImageGenerateBuilder()
         # state: [0]=距離dマップ(パス1), [1]=元画像
-        stage1 = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([pass1_branch, original_branch])
+        stage1 = gpu_util.PyImageGenerateBuilder().add_parallel([pass1_branch, original_branch])
 
         v_params = pack_box_average_dir_params(r, 0, 1, w, h)
         v_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.box_average_dir_shader, v_params, w, h)
         keep_dist_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.select_shader, struct.pack("i", 0), w, h)
         keep_orig_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.select_shader, struct.pack("i", 1), w, h)
         # state: [0]=垂直方向に平均済みの距離d, [1]=距離dそのまま(未ぼかし), [2]=元画像
-        stage2 = stage1.add_parallel_wgsl([v_branch, keep_dist_branch, keep_orig_branch])
+        stage2 = stage1.add_parallel([v_branch, keep_dist_branch, keep_orig_branch])
 
         pass3_params = struct.pack(
             "iiiffffff",

@@ -130,7 +130,7 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
                 new_h,
             )
 
-            current = current.add_parallel_wgsl([blur_branch, src_branch]).add_slang(
+            current = current.add_parallel([blur_branch, src_branch]).add_slang(
                 self.composite_shader, struct.pack("f", strength), new_w, new_h
             )
             cur_w, cur_h = new_w, new_h

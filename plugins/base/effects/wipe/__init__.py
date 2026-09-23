@@ -148,7 +148,7 @@ class WipeEffect(VideoEffectGeneratorBase):
         # --- 最終合成(README §7) ---
         # 何もしないブランチが上流の状態(元のオブジェクト)をそのまま素通しする。
         original_branch = gpu_util.PyImageGenerateBuilder()
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, mask_branch]).add_slang(
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, mask_branch]).add_slang(
             self.composite_shader, None, w, h
         )
 

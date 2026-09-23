@@ -101,7 +101,7 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         h_params = struct.pack("iiiiii", rx, width, height, 0, 1, 0)
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([box_blur_v_branch, gpu_util.PyImageGenerateBuilder()])
+            .add_parallel([box_blur_v_branch, gpu_util.PyImageGenerateBuilder()])
             .add_slang(self.box_blur_h_alpha_merge_shader, h_params, width, height)
         )
 

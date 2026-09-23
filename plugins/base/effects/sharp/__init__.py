@@ -92,7 +92,7 @@ class SharpEffect(VideoEffectGeneratorBase):
         blur_branch = blur_pass(blur_branch, r_lo, 1, 0)
 
         composite_params = struct.pack("f", strength)
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, blur_branch]).add_slang(
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, blur_branch]).add_slang(
             self.composite_shader, composite_params, w, h
         )
 

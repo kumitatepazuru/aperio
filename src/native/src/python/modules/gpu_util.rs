@@ -293,7 +293,7 @@ impl PyImageGenerateBuilder {
         Self { inner: new_inner }
     }
 
-    pub fn add_parallel_wgsl<'py>(
+    pub fn add_parallel<'py>(
         &self,
         py: Python<'py>,
         pipelines: Vec<Py<PyImageGenerateBuilder>>,
@@ -306,7 +306,7 @@ impl PyImageGenerateBuilder {
             })
             .collect();
         let pipelines = pipelines?;
-        let new_inner = self.inner.clone().add_parallel_wgsl(pipelines);
+        let new_inner = self.inner.clone().add_parallel(pipelines);
 
         Ok(Self { inner: new_inner })
     }

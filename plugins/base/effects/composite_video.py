@@ -146,7 +146,7 @@ class CompositeVideoEffect(VideoEffectGeneratorBase):
         mode_index = _MEDIA_MODE_INDEX.get(mode, 0)
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([media_branch, dst_branch])
+            .add_parallel([media_branch, dst_branch])
             .add_slang(self.media_composite_mode_shader, struct.pack("i", mode_index), w, h)
         )
 

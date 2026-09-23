@@ -134,7 +134,7 @@ class BorderEffect(VideoEffectGeneratorBase):
             )
             edge_layer = (
                 gpu_util.PyImageGenerateBuilder()
-                .add_parallel_wgsl([mask_chain, tiled_branch])
+                .add_parallel([mask_chain, tiled_branch])
                 .add_slang(self.encode_pattern_shader, struct.pack("f", 1.0), box_w, box_h)
             )
         else:
@@ -145,7 +145,7 @@ class BorderEffect(VideoEffectGeneratorBase):
         # --- 最後の合成(README §5): オブジェクトを縁の上に通常合成で重ねる ---
         final_builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([object_full, edge_layer])
+            .add_parallel([object_full, edge_layer])
             .add_slang(self.composite_shader, None, box_w, box_h)
         )
 

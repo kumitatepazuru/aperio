@@ -103,15 +103,10 @@ impl ImageGenerateBuilder {
 
     /// 複数のシェーダーパイプラインステップをパイプラインに追加します（並列実行）。
     ///
-    /// メソッド名に`wgsl`と付いているが、内部的にはシェーダー種別に依存しない
-    /// (`Parallel`バリアントは単に複数の`ImageGenerateBuilder`を束ねるだけ)。
-    /// Python側の`add_parallel_wgsl`が既に外部(`plugins/`)から呼ばれているため、
-    /// 互換性のためこの名前のまま維持している。
-    ///
     /// # Arguments
     ///
     /// * `pipelines` - 並列実行するパイプラインの配列。
-    pub fn add_parallel_wgsl(self, pipelines: Vec<ImageGenerateBuilder>) -> Self {
+    pub fn add_parallel(self, pipelines: Vec<ImageGenerateBuilder>) -> Self {
         let id = Uuid::new_v4().to_string();
 
         // Copy-on-Write: 新しいVecを作成して要素を追加
