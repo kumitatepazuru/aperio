@@ -2,10 +2,11 @@ import os
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.gpu_util import PyCompiledWgsl
+from aperio.gpu_util import PyCompiledShader
 
 
 COMMON_DIR = os.path.dirname(os.path.abspath(__file__))
+LIB_DIR = os.path.join(COMMON_DIR, "lib")
 
 
 def effect_dirs(file: str) -> tuple[str, str]:
@@ -18,42 +19,39 @@ def load_text(path: str) -> str:
     with open(path, "r") as f:
         return f.read()
 
-
-def lib_module(common_dir: str, name: str):
-    """common/lib/{name}.wgsl を composable module として読み込む。"""
-    return gpu_util.create_composable_module(os.path.join(common_dir, "lib", f"{name}.wgsl"))
-
-
-def shared_shader(
-    name: str, directory: str, filename: str, min_output_format: "gpu_util.WrappedImagePixelFormat | None" = None
-) -> PyCompiledWgsl:
-    """{directory}/{filename} を compose せずそのまま PyCompiledWgsl 化する
-    (各エフェクトが個別に持っていた `load()` + PyCompiledWgsl(...) の定型を
-    まとめたもの。common_dir 配下(expand.wgsl / select.wgsl)にも
-    current_dir 配下(エフェクト専用のシェーダー)にも使える)。
-    """
-    return PyCompiledWgsl(
-        name, load_text(os.path.join(directory, filename)), aperio_plugin.image_generator, None,
-        min_output_format=min_output_format,
-    )
-
-
-def compose_common_shader(
+# TODO: nameとmin_output_formatが同じになってしまうと内部で同じキャッシュが使われてしまうため、
+# プラグインをまたいだ名前の重複に対して対応するコードを挿入したい。
+# 例：元プラグインのnameを識別子に組み込む　そもそもこのutilityたちをplugin managerの管理下に置くことを検討したほうがいい
+def shared_slang_shader(
     name: str,
-    modules: list,
     directory: str,
     filename: str,
+    search_dirs: list[str] | None = None,
+    defines: dict[str, str] | None = None,
     min_output_format: "gpu_util.WrappedImagePixelFormat | None" = None,
-) -> PyCompiledWgsl:
-    """{directory}/{filename} を modules と合成して PyCompiledWgsl 化する
-    (各エフェクトが個別に持っていた compose_new(..., create_naga_module(...), ...)
-    の定型をまとめたもの。common_dir 配下の共有シェーダー(box_average_dir.wgsl
-    等)にも current_dir 配下のエフェクト専用シェーダーにも使える)。
+    input_texture_layout: str = "fixed",
+    sampler_options: "gpu_util.PySamplerOptions | None" = None,
+) -> PyCompiledShader:
+    """{directory}/{filename} を PyCompiledShader として読み込む
+    (各エフェクトが個別に持っていた `load()` + コンパイルの定型をまとめたもの)。Slangは`import`をモジュール検索パスから解決するため、
+    naga_oil時代の`shared_shader`/`compose_common_shader`の使い分けは不要になり、
+    このヘルパー1つで単一ファイル・複数ファイル合成のどちらにも対応する。
+
+    `search_dirs`省略時は[directory, COMMON_DIR, LIB_DIR]
+    (エフェクト固有のcommon.slang・common/直下・common/lib/のいずれもimportできる)。
+
+    `input_texture_layout`はシェーダーの入力テクスチャ配列(group0)が固定長("fixed",
+    既定)か可変長("variable")かを指定する。シェーダー自体の性質で決まる値なので、
+    同じ`.slang`ファイルを使うすべての呼び出し元で同じ値を渡すこと。
     """
-    return PyCompiledWgsl.compose_new(
+    resolved_search_dirs = search_dirs if search_dirs is not None else [directory, COMMON_DIR, LIB_DIR]
+    return PyCompiledShader.from_slang(
         name,
-        modules,
-        gpu_util.create_naga_module(os.path.join(directory, filename)),
+        load_text(os.path.join(directory, filename)),
         aperio_plugin.image_generator,
+        search_paths=resolved_search_dirs,
+        defines=defines,
         min_output_format=min_output_format,
+        input_texture_layout=input_texture_layout,
+        sampler_options=sampler_options,
     )

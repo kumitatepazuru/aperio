@@ -2,10 +2,10 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class ClipEffect(VideoEffectGeneratorBase):
@@ -16,7 +16,7 @@ class ClipEffect(VideoEffectGeneratorBase):
         self.description = "Clips the input frame from specified directions."
 
         current_dir, _ = effect_dirs(__file__)
-        self.clip_shader = shared_shader("clip", current_dir, "clip.wgsl")
+        self.clip_shader = shared_slang_shader("clip", current_dir, "clip.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -60,7 +60,7 @@ class ClipEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
         clip_top = max(0, args.get("clip_top", 0))
         clip_bottom = max(0, args.get("clip_bottom", 0))
@@ -78,11 +78,13 @@ class ClipEffect(VideoEffectGeneratorBase):
         shader_params = struct.pack("iiii", shader_clip_left, shader_clip_top, new_width, new_height)
 
         if move_center:
-            return GeneratorWgslReturn(self.clip_shader, shader_params, ItemResult(new_width, new_height))
+            return GeneratorShaderReturn(self.clip_shader, shader_params, ItemResult(new_width, new_height))
 
         # center_x/center_y でクリップ前の位置を維持する
         # クランプ後の実効 shader_clip_left/top と new_width/height から逆算することで、
         # クリップ量が width/height を超えた場合でもズレが生じない。
         center_x = params.width // 2 - (shader_clip_left + new_width // 2)
         center_y = params.height // 2 - (shader_clip_top + new_height // 2)
-        return GeneratorWgslReturn(self.clip_shader, shader_params, ItemResult(new_width, new_height, center_x=center_x, center_y=center_y))
+        return GeneratorShaderReturn(
+            self.clip_shader, shader_params, ItemResult(new_width, new_height, center_x=center_x, center_y=center_y)
+        )

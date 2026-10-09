@@ -8,7 +8,7 @@ from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, Vid
 
 from .. import read_video_sync_frame, write_video_sync_frame
 from ..common.params import make_generator_information, pack_expand_params
-from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ..common.shader_loader import effect_dirs, shared_slang_shader
 from ..common.video_cache import VideoLoaderCache
 
 _MEDIA_MODE_INDEX = {"overwrite_color": 0, "luma_overwrite": 1, "luma_multiply": 2}
@@ -24,16 +24,12 @@ class CompositeVideoEffect(VideoEffectGeneratorBase):
         self.description = "Extracts one frame of a video file and composites it onto the object below."
 
         _, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        math_module = lib_module(common_dir, "math")
 
-        self.expand_shader = shared_shader("expand", common_dir, "expand.wgsl")
-        self.resize_bilinear_shader = compose_common_shader(
-            "resize_bilinear", [math_module], common_dir, "resize_bilinear.wgsl"
-        )
-        self.tile_shader = shared_shader("tile", common_dir, "tile.wgsl")
-        self.media_composite_mode_shader = compose_common_shader(
-            "media_composite_mode", [color_module], common_dir, "media_composite_mode.wgsl"
+        self.expand_shader = shared_slang_shader("expand", common_dir, "expand.slang")
+        self.resize_bilinear_shader = shared_slang_shader("resize_bilinear", common_dir, "resize_bilinear.slang")
+        self.tile_shader = shared_slang_shader("tile", common_dir, "tile.slang")
+        self.media_composite_mode_shader = shared_slang_shader(
+            "media_composite_mode", common_dir, "media_composite_mode.slang"
         )
 
         self.video_cache = VideoLoaderCache("composite_video_frame")
@@ -137,21 +133,21 @@ class CompositeVideoEffect(VideoEffectGeneratorBase):
             video_func, (video_frame, fps), loader.width, loader.height
         )
         if target_w != loader.width or target_h != loader.height:
-            media_branch = media_branch.add_wgsl(
+            media_branch = media_branch.add_shader(
                 self.resize_bilinear_shader, struct.pack("ii", target_w, target_h), target_w, target_h
             )
 
         if tile_image:
-            media_branch = media_branch.add_wgsl(self.tile_shader, struct.pack("iiii", x, y, w, h), w, h)
+            media_branch = media_branch.add_shader(self.tile_shader, struct.pack("iiii", x, y, w, h), w, h)
         else:
-            media_branch = media_branch.add_wgsl(self.expand_shader, pack_expand_params(x, y, w, h), w, h)
+            media_branch = media_branch.add_shader(self.expand_shader, pack_expand_params(x, y, w, h), w, h)
 
         dst_branch = gpu_util.PyImageGenerateBuilder()
         mode_index = _MEDIA_MODE_INDEX.get(mode, 0)
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([media_branch, dst_branch])
-            .add_wgsl(self.media_composite_mode_shader, struct.pack("i", mode_index), w, h)
+            .add_parallel([media_branch, dst_branch])
+            .add_shader(self.media_composite_mode_shader, struct.pack("i", mode_index), w, h)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(w, h))

@@ -7,7 +7,7 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import clamp, make_generator_information, pack_box_blur_dir_params, pack_expand_params
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 # 拡散を2つのボックスぼかし半径に分割する係数。1/2.236(≒1/√5)そのもの。
 # r2 = round(拡散*係数), r1 = 拡散 - r2 で、常に r1 >= r2 になる。
@@ -28,27 +28,25 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
         self.description = "Diffuses the image with a two-pass box blur and screens the brightened result back over the source."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        blur_module = lib_module(common_dir, "blur")
 
         rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
 
         # 符号付きYCbCr偏差を、拡散半径2回×(ぼかしv/h/合成)の計6〜7段の連鎖で
         # 使い回す(deep cascade)ため、下記4箇所はすべて32必須。
-        self.box_blur_dir_shader = compose_common_shader(
-            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl", min_output_format=rgba32float
+        self.box_blur_dir_shader = shared_slang_shader(
+            "box_blur_dir", common_dir, "box_blur_dir.slang", min_output_format=rgba32float
         )
-        self.expand_shader = shared_shader(
-            "expand", common_dir, "expand.wgsl", min_output_format=rgba32float
+        self.expand_shader = shared_slang_shader(
+            "expand", common_dir, "expand.slang", min_output_format=rgba32float
         )
-        self.ycbcr_encode_shader = compose_common_shader(
-            "ycbcr_encode", [color_module], common_dir, "ycbcr_encode.wgsl", min_output_format=rgba32float
+        self.ycbcr_encode_shader = shared_slang_shader(
+            "ycbcr_encode", common_dir, "ycbcr_encode.slang", min_output_format=rgba32float
         )
-        self.composite_shader = shared_shader(
-            "diffusion_light_composite", current_dir, "composite.wgsl", min_output_format=rgba32float
+        self.composite_shader = shared_slang_shader(
+            "diffusion_light_composite", current_dir, "composite.slang", min_output_format=rgba32float
         )
         # ycbcr_decode: 終端(最終RGB出力)なのでフロア不要。
-        self.ycbcr_decode_shader = compose_common_shader("ycbcr_decode", [color_module], common_dir, "ycbcr_decode.wgsl")
+        self.ycbcr_decode_shader = shared_slang_shader("ycbcr_decode", common_dir, "ycbcr_decode.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -98,7 +96,7 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
         strength = strength_ui / 100.0
 
         cur_w, cur_h = params.width, params.height
-        current = gpu_util.PyImageGenerateBuilder().add_wgsl(self.ycbcr_encode_shader, None, cur_w, cur_h)
+        current = gpu_util.PyImageGenerateBuilder().add_shader(self.ycbcr_encode_shader, None, cur_w, cur_h)
 
         for radius in (r1, r2):
             if radius <= 0:
@@ -112,31 +110,31 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
 
             blur_branch = (
                 gpu_util.PyImageGenerateBuilder()
-                .add_wgsl(
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode),
                     cur_w,
                     new_h,
                 )
-                .add_wgsl(
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(radius, 1, 0, new_w, new_h, offset, border_mode, divisor_mode),
                     new_w,
                     new_h,
                 )
             )
-            src_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
+            src_branch = gpu_util.PyImageGenerateBuilder().add_shader(
                 self.expand_shader,
                 pack_expand_params(offset, offset, new_w, new_h),
                 new_w,
                 new_h,
             )
 
-            current = current.add_parallel_wgsl([blur_branch, src_branch]).add_wgsl(
+            current = current.add_parallel([blur_branch, src_branch]).add_shader(
                 self.composite_shader, struct.pack("f", strength), new_w, new_h
             )
             cur_w, cur_h = new_w, new_h
 
-        current = current.add_wgsl(self.ycbcr_decode_shader, None, cur_w, cur_h)
+        current = current.add_shader(self.ycbcr_decode_shader, None, cur_w, cur_h)
 
         return GeneratorBuilderReturn(current, ItemResult(cur_w, cur_h))

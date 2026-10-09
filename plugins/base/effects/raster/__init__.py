@@ -4,11 +4,11 @@ import struct
 import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
 from ...common.random import seed_u32
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class RasterEffect(VideoEffectGeneratorBase):
@@ -19,7 +19,7 @@ class RasterEffect(VideoEffectGeneratorBase):
         self.description = "Shifts each row (or column) sideways along a sine wave, warping the image."
 
         current_dir, _ = effect_dirs(__file__)
-        self.raster_shader = shared_shader("raster", current_dir, "raster.wgsl")
+        self.raster_shader = shared_slang_shader("raster", current_dir, "raster.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -45,7 +45,7 @@ class RasterEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         amplitude_px = float(args.get("amplitude_px", 100.0))
         wavelength_px = float(args.get("wavelength_px", 100.0))
@@ -80,7 +80,7 @@ class RasterEffect(VideoEffectGeneratorBase):
         )
         center_x = w // 2 - (x0 + ow // 2)
         center_y = h // 2 - (y0 + oh // 2)
-        return GeneratorWgslReturn(
+        return GeneratorShaderReturn(
             self.raster_shader, shader_params, ItemResult(ow, oh, center_x=center_x, center_y=center_y)
         )
 

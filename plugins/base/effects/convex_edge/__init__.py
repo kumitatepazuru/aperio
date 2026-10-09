@@ -4,10 +4,10 @@ import struct
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class ConvexEdgeEffect(VideoEffectGeneratorBase):
@@ -19,16 +19,16 @@ class ConvexEdgeEffect(VideoEffectGeneratorBase):
 
         current_dir, common_dir = effect_dirs(__file__)
 
-        color_module = lib_module(common_dir, "color")
-
-        self.convex_edge_shader = compose_common_shader(
+        self.convex_edge_shader = shared_slang_shader(
             "convex_edge",
-            [color_module],
             current_dir,
-            "convex_edge.wgsl",
+            "convex_edge.slang",
             min_output_format=gpu_util.WrappedImagePixelFormat.Rgba16Float,
         )
-        self.identity_shader = shared_shader("convex_edge_select", common_dir, "select.wgsl")
+        self.identity_shader = shared_slang_shader(
+            "convex_edge_select", common_dir, "select.slang", input_texture_layout="variable",
+            sampler_options=gpu_util.PySamplerOptions("clamp_to_edge", "nearest"),
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -62,7 +62,7 @@ class ConvexEdgeEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
         width = int(args.get("width", 4))
         height = args.get("height", 1.0)
@@ -77,7 +77,7 @@ class ConvexEdgeEffect(VideoEffectGeneratorBase):
         if steps <= 0:
             # README §2: 幅==0、またはクランプ後に幅<=0(=オブジェクトが2px未満)は
             # バッファを入れ替えない早期リターン。恒等コピーで代用する。
-            return GeneratorWgslReturn(self.identity_shader, struct.pack("i", 0), ItemResult(w, h))
+            return GeneratorShaderReturn(self.identity_shader, struct.pack("i", 0), ItemResult(w, h))
 
         # README §3: t = radians(角度)*-1。方向ベクトルは単位ベクトルのままシェーダーへ渡す
         # (Q16固定小数点への変換は原作バイナリの整数演算を再現するためだけの精度欠落なので廃止)。
@@ -86,4 +86,4 @@ class ConvexEdgeEffect(VideoEffectGeneratorBase):
         dir_y = math.cos(t)
 
         shader_params = struct.pack("ifff", steps, dir_x, dir_y, height)
-        return GeneratorWgslReturn(self.convex_edge_shader, shader_params, ItemResult(w, h))
+        return GeneratorShaderReturn(self.convex_edge_shader, shader_params, ItemResult(w, h))

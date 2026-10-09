@@ -3,11 +3,11 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from .noise_field import build_noise_field
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 _TYPE_INDEX = {"type1": 0, "type2": 1, "type3": 2, "type4": 3, "type5": 4, "type6": 5}
 _MODE_INDEX = {"alpha": 0, "luminance": 1}
@@ -29,8 +29,7 @@ class NoiseEffect(VideoEffectGeneratorBase):
         self.description = "Multiplies animated 3D value noise into the alpha or luminance channel."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        self.noise_shader = compose_common_shader("noise", [color_module], current_dir, "noise.wgsl")
+        self.noise_shader = shared_slang_shader("noise", current_dir, "noise.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -80,7 +79,7 @@ class NoiseEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
         strength = max(0.0, min(200.0, float(args.get("strength", 100.0)))) / 100.0
         velocity_x = float(args.get("velocity_x", 0.0))
@@ -132,4 +131,4 @@ class NoiseEffect(VideoEffectGeneratorBase):
             params.width, params.height,
         ) + _packed_noise_field()
 
-        return GeneratorWgslReturn(self.noise_shader, shader_params, ItemResult(params.width, params.height))
+        return GeneratorShaderReturn(self.noise_shader, shader_params, ItemResult(params.width, params.height))

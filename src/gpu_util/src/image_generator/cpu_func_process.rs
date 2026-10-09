@@ -3,101 +3,39 @@ use std::sync::Arc;
 
 use crate::compiled_func::{CompiledFunc, CpuInputImage};
 use crate::image_generator::{ImageGenerator, ProcessingState, StepOutput};
-use anyhow::{bail, Result};
-use futures::channel::oneshot;
+use crate::rhi::{Texture, TextureFormat};
+use anyhow::Result;
 use futures::future::join_all;
 use futures::FutureExt;
 
-/// テクスチャの実フォーマットにおける1ピクセルあたりのバイト数。
-fn bytes_per_pixel(format: wgpu::TextureFormat) -> Result<u32> {
-    match format {
-        wgpu::TextureFormat::Rgba8Unorm => Ok(4),
-        wgpu::TextureFormat::Rgba16Float => Ok(8),
-        wgpu::TextureFormat::Rgba32Float => Ok(16),
-        other => bail!("Unsupported texture format for CPU readback: {other:?}"),
-    }
-}
-
-/// depad済みの生バイト列を、フォーマットに応じて正規化非依存の`Vec<f32>`へ変換する。
-/// `CpuInputImage.data`の公開契約(常にf32・内部フォーマットに非依存)を保つための変換。
-fn raw_bytes_to_f32(format: wgpu::TextureFormat, raw_pixels: &[u8]) -> Result<Vec<f32>> {
-    match format {
-        // `raw_pixels`(Vec<u8>)はアラインメント1しか保証されないため、
-        // `bytemuck::cast_slice`によるu16/f32への直接キャストはアロケータ次第でpanicしうる。
-        // `chunks_exact`+`from_le_bytes`でバイト単位に明示変換し、この問題を回避する。
-        wgpu::TextureFormat::Rgba32Float => Ok(raw_pixels
+/// depad済みの生バイト列を、フォーマットに応じて正規化非依存のVec<f32>へ変換する。
+fn raw_bytes_to_f32(format: TextureFormat, raw_pixels: &[u8]) -> Result<Vec<f32>> {
+    Ok(match format {
+        TextureFormat::Rgba32Float => raw_pixels
             .chunks_exact(4)
             .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-            .collect()),
-        wgpu::TextureFormat::Rgba16Float => Ok(raw_pixels
+            .collect(),
+        TextureFormat::Rgba16Float => raw_pixels
             .chunks_exact(2)
             .map(|c| half::f16::from_le_bytes(c.try_into().unwrap()).to_f32())
-            .collect()),
-        wgpu::TextureFormat::Rgba8Unorm => {
-            Ok(raw_pixels.iter().map(|&b| b as f32 / 255.0).collect())
-        }
-        other => bail!("Unsupported texture format for CPU readback: {other:?}"),
-    }
+            .collect(),
+        TextureFormat::Rgba8Unorm => raw_pixels.iter().map(|&b| b as f32 / 255.0).collect(),
+        other => anyhow::bail!("{other:?} textures cannot be read back as RGBA f32"),
+    })
 }
 
+/// GPUテクスチャをCPU側のVec<f32>(常に正規化されたRGBA、内部フォーマット非依存)へダウンロードする。
 async fn download_gpu_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    texture_to_read: &Arc<wgpu::Texture>,
+    generator: &ImageGenerator,
+    texture_to_read: &Texture,
 ) -> Result<(Vec<f32>, u32, u32)> {
-    let (width, height) = (texture_to_read.width(), texture_to_read.height());
+    let width = texture_to_read.width();
+    let height = texture_to_read.height();
     let format = texture_to_read.format();
-    let row_size = width * bytes_per_pixel(format)?;
-    let bytes_per_row = ((row_size + 255) / 256) * 256;
-    let readback_buffer_size = (bytes_per_row * height) as u64;
 
-    let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Readback Buffer"),
-        size: readback_buffer_size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
+    let raw_pixels = generator.device.download_texture_data(texture_to_read)?;
 
-    let mut encoder = device.create_command_encoder(&Default::default());
-    // bytes_per_rowを256の倍数に揃える
-    encoder.copy_texture_to_buffer(
-        texture_to_read.as_image_copy(),
-        wgpu::TexelCopyBufferInfo {
-            buffer: &readback_buffer,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(bytes_per_row),
-                rows_per_image: Some(height),
-            },
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-
-    queue.submit(Some(encoder.finish()));
-
-    let buffer_slice = readback_buffer.slice(..);
-    let (tx, rx) = oneshot::channel();
-    buffer_slice.map_async(wgpu::MapMode::Read, move |result| tx.send(result).unwrap());
-    device.poll(wgpu::PollType::Wait {
-        submission_index: None,
-        timeout: None,
-    })?;
-    rx.await??;
-
-    let data = buffer_slice.get_mapped_range()?;
-
-    // パディングを外して詰め直し
-    let mut pixels = vec![0u8; (row_size * height) as usize];
-    for y in 0..height as usize {
-        let src = &data[y * bytes_per_row as usize..y * bytes_per_row as usize + row_size as usize];
-        let dst = &mut pixels[y * row_size as usize..(y + 1) * row_size as usize];
-        dst.copy_from_slice(src);
-    }
-    Ok((raw_bytes_to_f32(format, &pixels)?, width, height))
+    Ok((raw_bytes_to_f32(format, &raw_pixels)?, width, height))
 }
 
 pub async fn handle_cpu_func_step(
@@ -109,33 +47,22 @@ pub async fn handle_cpu_func_step(
     output_height: u32,
 ) -> Result<ProcessingState> {
     // --- 入力データの準備 ---
-    // 各ステップがsubmit済みのため、ここでは追加のsubmitは不要。
-    // GPUテクスチャのダウンロードはdownload_gpu_texture内でpollして完了を待つ。
     let mut download_futures = Vec::new();
     // 元の順序を保持しつつ、CPUデータとGPUダウンロード結果を区別する
     enum TempInput {
         Cpu(StepOutput),
-        GpuDownload(), // downloaded_dataのインデックス
+        GpuDownload(),
     }
     let mut temp_inputs: Vec<TempInput> = Vec::with_capacity(state.len());
 
     for input in state.drain(..) {
         match input {
             StepOutput::Gpu { texture, .. } => {
-                // generatorの中身をcloneして使う
-                let device = &generator.device;
-                let queue = &generator.queue;
-
-                // ダウンロード処理をFutureとして登録
-                let texture_clone = texture.clone();
-                let future =
-                    async move { download_gpu_texture(device, queue, &texture_clone).await };
+                let future = async move { download_gpu_texture(generator, &texture).await };
                 download_futures.push(future.boxed());
-                // プレースホルダーを登録
                 temp_inputs.push(TempInput::GpuDownload());
             }
             cpu_output @ StepOutput::Cpu { .. } => {
-                // CPUデータはそのままプレースホルダーとして登録
                 temp_inputs.push(TempInput::Cpu(cpu_output));
             }
         }
@@ -149,7 +76,7 @@ pub async fn handle_cpu_func_step(
         .into();
 
     // --- すべての入力を CpuInputImage にまとめる ---
-    let mut owned_cpu_data: Vec<StepOutput> = Vec::with_capacity(temp_inputs.len()); // 所有権を保持
+    let mut owned_cpu_data: Vec<StepOutput> = Vec::with_capacity(temp_inputs.len());
 
     for temp_input in temp_inputs {
         match temp_input {
@@ -157,7 +84,6 @@ pub async fn handle_cpu_func_step(
                 owned_cpu_data.push(cpu_output);
             }
             TempInput::GpuDownload() => {
-                // ダウンロード結果を先頭から取り出し、所有権を移す
                 let downloaded = downloaded_data.pop_front().unwrap();
                 owned_cpu_data.push(StepOutput::Cpu {
                     data: Arc::new(downloaded.0),

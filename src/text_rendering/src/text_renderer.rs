@@ -1,10 +1,15 @@
-use anyhow::Result;
-use cosmic_text::{Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, Weight};
+use anyhow::{Context, Result};
+use cosmic_text::{Attrs, Buffer as TextBuffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, Weight};
+use gpu_util::compiled_shader::compile_slang_to_spirv;
 use gpu_util::image_generator::ImageGenerator;
+use gpu_util::rhi::{
+    AddressMode, BindingDesc, BindingKind, BlendComponent, BlendFactor, BlendState, Buffer,
+    BufferUsage, Device, Draw, FilterMode, GraphicsPipeline, GraphicsPipelineDesc,
+    PipelineLayoutDesc, Resource, ResourceBinding, Sampler, SamplerOptions, SetLayoutDesc,
+    ShaderStages, Texture, TextureCopy, TextureFormat, TextureUsage, TextureView, VertexAttribute,
+    VertexBufferLayout, VertexFormat,
+};
 use std::collections::HashMap;
-use std::sync::Arc;
-use wgpu::include_wgsl;
-use wgpu::TextureUsages;
 
 use crate::glyph_atlas::GlyphAtlas;
 use crate::CharGlyphData;
@@ -45,150 +50,137 @@ pub struct PreparedText {
 /// 2. `run_render_text` で GPU レンダーパスを実行し出力テクスチャを返す
 /// 3. `run_render_chars` は `run_render_text` の結果を文字単位に切り抜いて返す
 pub struct TextRenderer {
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
+    device: Device,
     image_generator: ImageGenerator,
     font_system: FontSystem,
     swash_cache: SwashCache,
     atlas: GlyphAtlas,
     /// R8Unorm アトラス用パイプライン（マスクグリフ）
-    mask_pipeline: wgpu::RenderPipeline,
+    mask_pipeline: GraphicsPipeline,
     /// Rgba8Unorm アトラス用パイプライン（カラーグリフ）
-    color_pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
-    atlas_sampler: wgpu::Sampler,
+    color_pipeline: GraphicsPipeline,
+    atlas_sampler: Sampler,
+}
+
+const TEXT_RENDER_SLANG: &str = include_str!("shaders/text_render.slang");
+
+/// ホストから見えるバッファへバイト列を書き込む。
+fn write_buffer(buffer: &Buffer, bytes: &[u8]) -> Result<()> {
+    let ptr = buffer
+        .mapped_ptr()
+        .context("buffer is not host-mapped")?
+        .as_ptr()
+        .cast::<u8>();
+    // SAFETY: バッファは`bytes.len()`以上のサイズで作られており、同期submitのため
+    // GPUがこの領域を読んでいる最中に書き込むことはない。
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
+    Ok(())
 }
 
 impl TextRenderer {
-    /// `ImageGenerator` のデバイス / キューを共有して初期化する。
-    pub fn new(image_generator: &ImageGenerator) -> Self {
-        let device = &*image_generator.device;
+    /// `ImageGenerator` のデバイスを共有して初期化する。
+    pub fn new(image_generator: &ImageGenerator) -> Result<Self> {
+        let device = image_generator.device.clone();
 
-        // バインドグループレイアウト: atlas texture + sampler + uniform
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("TextRenderer BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
-        let shader = device.create_shader_module(include_wgsl!("shaders/text_render.wgsl"));
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("TextRenderer Pipeline Layout"),
-            bind_group_layouts: &[Some(&bgl)],
-            immediate_size: 0,
-        });
-
-        // インスタンスバッファ頂点属性（stride = 48 bytes）
-        let vertex_attrs = [
-            wgpu::VertexAttribute { shader_location: 0, offset: 0,  format: wgpu::VertexFormat::Float32x2 },
-            wgpu::VertexAttribute { shader_location: 1, offset: 8,  format: wgpu::VertexFormat::Float32x2 },
-            wgpu::VertexAttribute { shader_location: 2, offset: 16, format: wgpu::VertexFormat::Float32x2 },
-            wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x2 },
-            wgpu::VertexAttribute { shader_location: 4, offset: 32, format: wgpu::VertexFormat::Float32x4 },
-        ];
-        let vertex_buffer_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<GlyphInstance>() as u64,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &vertex_attrs,
+        // set 0: atlas texture + sampler + uniform
+        let binding = |binding: u32, kind: BindingKind, stages: ShaderStages| BindingDesc {
+            binding,
+            kind,
+            count: 1,
+            variable_count: false,
+            stages,
+        };
+        let layout = PipelineLayoutDesc {
+            sets: vec![SetLayoutDesc {
+                bindings: vec![
+                    binding(0, BindingKind::SampledImage, ShaderStages::FRAGMENT),
+                    binding(1, BindingKind::Sampler, ShaderStages::FRAGMENT),
+                    binding(2, BindingKind::UniformBuffer, ShaderStages::VERTEX),
+                ],
+            }],
         };
 
-        // 共通パイプライン設定クロージャ（出力フォーマットは常に Rgba16Float）
-        let make_pipeline = |label: &str, fs_entry: &str| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[Some(vertex_buffer_layout.clone())],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some(fs_entry),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba16Float,
-                        // ALPHA_BLENDING(色factor=SrcAlpha)だと、透明にクリアした
-                        // ターゲットへ被覆率の低い(アンチエイリアスされた)グリフを
-                        // 描画した際にrgbがcoverageで事前乗算された値として書き込まれて
-                        // しまい、fs_mask/fs_colorが返しているストレートアルファ
-                        // (rgbはcoverageで乗算しない。aperio全体の規約)が壊れる。
-                        // 色チャンネルは常にsrcで置き換え、アルファだけ通常のsrc-overで
-                        // 蓄積することで、意図通りのストレートアルファ出力にする
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::Zero,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent::OVER,
-                        }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview_mask: None,
-                cache: None,
-            })
+        // インスタンスバッファ頂点属性（stride = 48 bytes）
+        let attribute = |location, format, offset| VertexAttribute { location, format, offset };
+        let vertex_buffers = vec![VertexBufferLayout {
+            stride: std::mem::size_of::<GlyphInstance>() as u32,
+            per_instance: true,
+            attributes: vec![
+                attribute(0, VertexFormat::Float32x2, 0),
+                attribute(1, VertexFormat::Float32x2, 8),
+                attribute(2, VertexFormat::Float32x2, 16),
+                attribute(3, VertexFormat::Float32x2, 24),
+                attribute(4, VertexFormat::Float32x4, 32),
+            ],
+        }];
+
+        let compile = |entry: &str| {
+            compile_slang_to_spirv(
+                "text_render",
+                "text_render.slang",
+                TEXT_RENDER_SLANG,
+                entry,
+                &[],
+                &[],
+            )
+            .with_context(|| format!("Failed to compile text_render.slang ({entry})"))
+        };
+        let vertex_spirv = compile("vs_main")?;
+
+        // ALPHA_BLENDING(色factor=SrcAlpha)だと、透明にクリアしたターゲットへ被覆率の低い
+        // (アンチエイリアスされた)グリフを描画した際にrgbがcoverageで事前乗算された値として
+        // 書き込まれてしまい、fs_mask/fs_colorが返しているストレートアルファ(rgbはcoverageで
+        // 乗算しない。aperio全体の規約)が壊れる。色チャンネルは常にsrcで置き換え、
+        // アルファだけ通常のsrc-overで蓄積することで、意図通りのストレートアルファ出力にする
+        let blend = BlendState {
+            color: BlendComponent {
+                src_factor: BlendFactor::One,
+                dst_factor: BlendFactor::Zero,
+            },
+            alpha: BlendComponent {
+                src_factor: BlendFactor::One,
+                dst_factor: BlendFactor::OneMinusSrcAlpha,
+            },
+        };
+
+        // 共通パイプライン設定（出力フォーマットは常に Rgba16Float）。
+        // Slangは単一エントリポイントのSPIR-Vを常に"main"という名前で出力する。
+        let make_pipeline = |fragment_entry: &str| -> Result<GraphicsPipeline> {
+            let fragment_spirv = compile(fragment_entry)?;
+            device
+                .create_graphics_pipeline(&GraphicsPipelineDesc {
+                    vertex_spirv: &vertex_spirv,
+                    vertex_entry: "main",
+                    fragment_spirv: &fragment_spirv,
+                    fragment_entry: "main",
+                    layout: layout.clone(),
+                    vertex_buffers: vertex_buffers.clone(),
+                    color_format: TextureFormat::Rgba16Float,
+                    blend: Some(blend),
+                })
+                .with_context(|| format!("Failed to create the {fragment_entry} pipeline"))
         };
 
         // R8Unorm アトラス用（マスクグリフ）: fs_mask で coverage を .r チャンネルから読む
-        let mask_pipeline = make_pipeline("TextRenderer Mask Pipeline", "fs_mask");
+        let mask_pipeline = make_pipeline("fs_mask")?;
         // Rgba8Unorm アトラス用（カラーグリフ）: fs_color で RGBA をそのまま読む
-        let color_pipeline = make_pipeline("TextRenderer Color Pipeline", "fs_color");
+        let color_pipeline = make_pipeline("fs_color")?;
 
-        let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Atlas Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
+        let atlas_sampler = device.create_sampler(&SamplerOptions {
+            address_mode: AddressMode::ClampToEdge,
+            filter: FilterMode::Linear,
+        })?;
 
-        Self {
-            device: image_generator.device.clone(),
-            queue: image_generator.queue.clone(),
+        Ok(Self {
+            atlas: GlyphAtlas::new(device.clone())?,
+            device,
             image_generator: image_generator.clone(),
             font_system: FontSystem::new(),
             swash_cache: SwashCache::new(),
-            atlas: GlyphAtlas::new(image_generator.device.clone()),
             mask_pipeline,
             color_pipeline,
-            bind_group_layout: bgl,
             atlas_sampler,
-        }
+        })
     }
 
     /// テキストをシェイプしてグリフをアトラスに登録し、描画に必要なデータを返す。
@@ -197,7 +189,7 @@ impl TextRenderer {
         // 1. テキストをシェイプ
         let line_height = spec.font_size * 1.2;
         let metrics = Metrics::new(spec.font_size, line_height);
-        let mut buffer = Buffer::new(&mut self.font_system, metrics);
+        let mut buffer = TextBuffer::new(&mut self.font_system, metrics);
 
         if let Some(max_w) = spec.max_width {
             buffer.set_size(&mut self.font_system, Some(max_w as f32), None);
@@ -296,9 +288,8 @@ impl TextRenderer {
             self.atlas.ensure_glyph(
                 &mut self.font_system,
                 &mut self.swash_cache,
-                &self.queue,
                 info.cache_key,
-            );
+            )?;
         }
 
         // 5. ページ別インスタンスバッファと文字バウンドを同時に構築
@@ -393,20 +384,19 @@ impl TextRenderer {
     }
 
     /// `PreparedText` を受け取り GPU レンダーパスを実行して出力テクスチャを返す。
-    pub fn run_render_text(&mut self, prepared: &PreparedText) -> Result<Arc<wgpu::Texture>> {
+    pub fn run_render_text(&mut self, prepared: &PreparedText) -> Result<Texture> {
         let text_width = prepared.width;
         let text_height = prepared.height;
 
-        // 出力テクスチャ: Rgba16Float（COPY_SRC を含めて run_render_chars での切り抜きに対応）
+        // 出力テクスチャ: Rgba16Float（TRANSFER_SRC を含めて run_render_chars での切り抜きに対応）
         let output_tex = self.image_generator.get_or_create_texture(
             text_width,
             text_height,
-            wgpu::TextureFormat::Rgba16Float,
-            TextureUsages::TEXTURE_BINDING
-                | TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::COPY_SRC,
-            Some("Text Output"),
-        );
+            TextureFormat::Rgba16Float,
+            TextureUsage::SAMPLED | TextureUsage::COLOR_TARGET | TextureUsage::TRANSFER_SRC,
+            "Text Output",
+        )?;
+        let output_view = self.device.create_texture_view(&output_tex)?;
 
         // ユニフォームバッファ
         let uniforms = Uniforms {
@@ -415,113 +405,80 @@ impl TextRenderer {
         };
         let uniform_buf = self.image_generator.get_or_create_buffer(
             std::mem::size_of::<Uniforms>() as u64,
-            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            Some("Text Uniforms"),
-        );
-        self.queue
-            .write_buffer(&uniform_buf, 0, bytemuck::bytes_of(&uniforms));
+            BufferUsage::UNIFORM,
+            "Text Uniforms",
+        )?;
+        write_buffer(&uniform_buf, bytemuck::bytes_of(&uniforms))?;
 
-        // ページ別にバインドグループとインスタンスバッファを構築するヘルパー
+        // ページ別にアトラスのビューとインスタンスバッファを構築するヘルパー
         struct PageDraw {
-            bind_group: wgpu::BindGroup,
-            instance_buf: Arc<wgpu::Buffer>,
+            atlas_view: TextureView,
+            instance_buf: Buffer,
             count: u32,
         }
 
         let build_page_draws = |page_instances: &HashMap<usize, Vec<GlyphInstance>>,
-                                     textures: &[Arc<wgpu::Texture>]| {
+                                textures: &[Texture]|
+         -> Result<Vec<PageDraw>> {
             let mut page_order: Vec<usize> = page_instances.keys().copied().collect();
             page_order.sort_unstable();
             page_order
                 .iter()
                 .map(|&page| {
                     let insts = &page_instances[&page];
-                    let atlas_view = textures[page].create_view(&Default::default());
-                    let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("Text BG"),
-                        layout: &self.bind_group_layout,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(&atlas_view),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 1,
-                                resource: wgpu::BindingResource::Sampler(&self.atlas_sampler),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 2,
-                                resource: uniform_buf.as_entire_binding(),
-                            },
-                        ],
-                    });
                     let instance_buf = self.image_generator.get_or_create_buffer(
                         (std::mem::size_of::<GlyphInstance>() * insts.len()) as u64,
-                        wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                        Some("Glyph Instances"),
-                    );
-                    self.queue
-                        .write_buffer(&instance_buf, 0, bytemuck::cast_slice(insts));
-                    PageDraw {
-                        bind_group,
+                        BufferUsage::VERTEX,
+                        "Glyph Instances",
+                    )?;
+                    write_buffer(&instance_buf, bytemuck::cast_slice(insts))?;
+                    Ok(PageDraw {
+                        atlas_view: self.device.create_texture_view(&textures[page])?,
                         instance_buf,
                         count: insts.len() as u32,
-                    }
+                    })
                 })
-                .collect::<Vec<_>>()
+                .collect()
         };
 
         // マスクページ（R8Unorm）とカラーページ（Rgba8Unorm）を別々に構築
-        let mask_draws = build_page_draws(
-            &prepared.mask_page_instances,
-            &self.atlas.mask_textures,
-        );
-        let color_draws = build_page_draws(
-            &prepared.color_page_instances,
-            &self.atlas.color_textures,
-        );
+        let mask_draws = build_page_draws(&prepared.mask_page_instances, &self.atlas.mask_textures)?;
+        let color_draws =
+            build_page_draws(&prepared.color_page_instances, &self.atlas.color_textures)?;
 
-        // レンダーパスで全グリフを描画（マスク → カラーの順）
-        let output_view = output_tex.create_view(&Default::default());
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Text Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &output_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                ..Default::default()
-            });
+        // 全グリフを1つのレンダーパスで描画（マスク → カラーの順）
+        let page_draws: Vec<(&GraphicsPipeline, &PageDraw)> = mask_draws
+            .iter()
+            .map(|d| (&self.mask_pipeline, d))
+            .chain(color_draws.iter().map(|d| (&self.color_pipeline, d)))
+            .collect();
+        let bindings: Vec<[ResourceBinding; 3]> = page_draws
+            .iter()
+            .map(|(_, d)| {
+                [
+                    ResourceBinding { binding: 0, resource: Resource::Texture(&d.atlas_view) },
+                    ResourceBinding { binding: 1, resource: Resource::Sampler(&self.atlas_sampler) },
+                    ResourceBinding { binding: 2, resource: Resource::Buffer(&uniform_buf) },
+                ]
+            })
+            .collect();
+        let sets: Vec<[&[ResourceBinding]; 1]> = bindings.iter().map(|b| [&b[..]]).collect();
+        let vertex_buffers: Vec<[&Buffer; 1]> =
+            page_draws.iter().map(|(_, d)| [&d.instance_buf]).collect();
+        let draws: Vec<Draw> = page_draws
+            .iter()
+            .enumerate()
+            .map(|(i, (pipeline, d))| Draw {
+                pipeline,
+                sets: &sets[i],
+                vertex_buffers: &vertex_buffers[i],
+                vertex_count: 6,
+                instance_count: d.count,
+            })
+            .collect();
 
-            // マスクグリフ（R8Unorm アトラス）
-            if !mask_draws.is_empty() {
-                rpass.set_pipeline(&self.mask_pipeline);
-                for draw in &mask_draws {
-                    rpass.set_bind_group(0, &draw.bind_group, &[]);
-                    rpass.set_vertex_buffer(0, draw.instance_buf.slice(..));
-                    rpass.draw(0..6, 0..draw.count);
-                }
-            }
-
-            // カラーグリフ（Rgba8Unorm アトラス）
-            if !color_draws.is_empty() {
-                rpass.set_pipeline(&self.color_pipeline);
-                for draw in &color_draws {
-                    rpass.set_bind_group(0, &draw.bind_group, &[]);
-                    rpass.set_vertex_buffer(0, draw.instance_buf.slice(..));
-                    rpass.draw(0..6, 0..draw.count);
-                }
-            }
-        }
-
-        self.queue.submit(Some(encoder.finish()));
+        self.device
+            .render_pass(&output_view, Some([0.0; 4]), &draws)?;
         Ok(output_tex)
     }
 
@@ -531,38 +488,32 @@ impl TextRenderer {
     pub fn run_render_chars(
         &mut self,
         prepared: &PreparedText,
-    ) -> Result<Vec<(CharGlyphData, Arc<wgpu::Texture>)>> {
+    ) -> Result<Vec<(CharGlyphData, Texture)>> {
         let full_tex = self.run_render_text(prepared)?;
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        let mut result = Vec::new();
-
+        let mut result = Vec::with_capacity(prepared.char_bounds.len());
         for &(ch, x, y, w, h) in &prepared.char_bounds {
             let char_tex = self.image_generator.get_or_create_texture(
                 w,
                 h,
-                wgpu::TextureFormat::Rgba16Float,
-                TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                Some("Char Crop"),
-            );
-            encoder.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: full_tex.as_ref(),
-                    mip_level: 0,
-                    origin: wgpu::Origin3d { x, y, z: 0 },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                char_tex.as_image_copy(),
-                wgpu::Extent3d {
-                    width: w,
-                    height: h,
-                    depth_or_array_layers: 1,
-                },
-            );
+                TextureFormat::Rgba16Float,
+                TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST | TextureUsage::TRANSFER_SRC,
+                "Char Crop",
+            )?;
             result.push((CharGlyphData { ch, x, y, w, h }, char_tex));
         }
 
-        self.queue.submit(Some(encoder.finish()));
+        let copies: Vec<TextureCopy> = result
+            .iter()
+            .map(|(glyph, tex)| TextureCopy {
+                src: &full_tex,
+                src_origin: (glyph.x, glyph.y),
+                dst: tex,
+                dst_origin: (0, 0),
+                size: (glyph.w, glyph.h),
+            })
+            .collect();
+        self.device.copy_textures(&copies)?;
         Ok(result)
     }
 

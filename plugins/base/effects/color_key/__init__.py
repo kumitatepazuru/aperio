@@ -1,17 +1,20 @@
-import os
 import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.gpu_util import PyCompiledWgsl
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import (
+    GeneratorBuilderReturn,
+    GeneratorShaderReturn,
+    VideoEffectGeneratorBase,
+    VideoGenerateParameters,
+)
 
 from ...common.border_correction import ab_constant
 from ...common.color import bt601_encode
 from ...common.params import clamp, make_generator_information, pack_box_average_dir_params
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class ColorKeyEffect(VideoEffectGeneratorBase):
@@ -23,32 +26,22 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
 
         current_dir, common_dir = effect_dirs(__file__)
 
-        color_module = lib_module(common_dir, "color")
-        blur_module = lib_module(common_dir, "blur")
-        color_key_module = gpu_util.create_composable_module(os.path.join(current_dir, "common.wgsl"))
-
-        self.flat_shader = PyCompiledWgsl.compose_new(
-            "color_key_flat",
-            [color_module, color_key_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "color_key_flat.wgsl")),
-            aperio_plugin.image_generator,
+        self.flat_shader = shared_slang_shader(
+            "color_key_flat", current_dir, "color_key_flat.slang",
         )
-        self.border_pass1_shader = PyCompiledWgsl.compose_new(
-            "color_key_border_pass1",
-            [color_module, color_key_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "border_pass1.wgsl")),
-            aperio_plugin.image_generator,
+        self.border_pass1_shader = shared_slang_shader(
+            "color_key_border_pass1", current_dir, "border_pass1.slang",
         )
-        self.box_average_dir_shader = compose_common_shader(
-            "color_key_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
+        self.box_average_dir_shader = shared_slang_shader(
+            "color_key_box_average_dir", common_dir, "box_average_dir.slang",
         )
-        self.border_pass3_shader = PyCompiledWgsl.compose_new(
-            "color_key_border_pass3",
-            [blur_module],
-            gpu_util.create_naga_module(os.path.join(current_dir, "border_pass3.wgsl")),
-            aperio_plugin.image_generator,
+        self.border_pass3_shader = shared_slang_shader(
+            "color_key_border_pass3", current_dir, "border_pass3.slang",
         )
-        self.select_shader = shared_shader("color_key_select", common_dir, "select.wgsl")
+        self.select_shader = shared_slang_shader(
+            "color_key_select", common_dir, "select.slang", input_texture_layout="variable",
+            sampler_options=gpu_util.PySamplerOptions("clamp_to_edge", "nearest"),
+        )
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -87,7 +80,7 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | GeneratorBuilderReturn | None:
         args = params.args
         key_color = args.get("key_color", (0.0, 1.0, 0.0, 1.0))
         luma_range_ui = args.get("luma_range", 0)
@@ -107,25 +100,24 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
         key_params = struct.pack("fffff", key_y, key_cb, key_cr, luma_range, chroma_range)
 
         if border_correction == 0:
-            builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.flat_shader, key_params, w, h)
-            return GeneratorBuilderReturn(builder, ItemResult(w, h))
+            return GeneratorShaderReturn(self.flat_shader, key_params, ItemResult(w, h))
 
         r = border_correction
         a_const = ab_constant(r)
 
-        pass1_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.border_pass1_shader, key_params, w, h)
+        pass1_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.border_pass1_shader, key_params, w, h)
         original_branch = gpu_util.PyImageGenerateBuilder()
         # state: [0]=a0マップ(パス1), [1]=元画像
-        stage1 = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([pass1_branch, original_branch])
+        stage1 = gpu_util.PyImageGenerateBuilder().add_parallel([pass1_branch, original_branch])
 
         v_params = pack_box_average_dir_params(r, 0, 1, w, h)
-        v_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.box_average_dir_shader, v_params, w, h)
-        keep_a0_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 0), w, h)
-        keep_orig_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 1), w, h)
+        v_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.box_average_dir_shader, v_params, w, h)
+        keep_a0_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.select_shader, struct.pack("i", 0), w, h)
+        keep_orig_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.select_shader, struct.pack("i", 1), w, h)
         # state: [0]=垂直方向にボックス平均済みのa0, [1]=a0そのまま(未ぼかし), [2]=元画像
-        stage2 = stage1.add_parallel_wgsl([v_branch, keep_a0_branch, keep_orig_branch])
+        stage2 = stage1.add_parallel([v_branch, keep_a0_branch, keep_orig_branch])
 
         pass3_params = struct.pack("iiif", r, w, h, a_const)
-        builder = stage2.add_wgsl(self.border_pass3_shader, pass3_params, w, h)
+        builder = stage2.add_shader(self.border_pass3_shader, pass3_params, w, h)
 
         return GeneratorBuilderReturn(builder, ItemResult(w, h))

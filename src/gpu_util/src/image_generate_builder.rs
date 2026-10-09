@@ -1,23 +1,20 @@
-// image_generate_builder.rs
-
 use crate::compiled_func::{CompiledFunc, CompiledTextureFunc};
-use crate::compiled_wgsl::CompiledWgsl;
+use crate::compiled_shader::CompiledShader;
 use std::sync::Arc;
 use uuid::Uuid;
 
 /// パイプラインの各ステップを表すenum。
 #[derive(Clone)]
 pub enum PipelineStep {
-    /// 単一のWGSLシェーダーを実行するステップ。
-    Wgsl {
-        /// このステップ固有の自動採番id(フレーム内でのテクスチャ使い回しの照合に使う)。
+    /// 単一のSlangシェーダーを実行するステップ。
+    Slang {
         id: String,
-        wgsl: Arc<CompiledWgsl>,
+        shader: Arc<CompiledShader>,
         params: Option<Vec<u8>>,
         output_width: u32,
         output_height: u32,
     },
-    /// 複数のWGSLシェーダーを並列に実行するステップ。
+    /// 複数のシェーダーパイプラインを並列に実行するステップ。
     Parallel {
         /// このステップ固有の自動採番id。IDはテクスチャごとではなくstepごとに
         /// 振られるべきという方針のもと、他のバリアントと同様に持つ
@@ -54,7 +51,7 @@ impl PipelineStep {
     /// このステップ固有の自動採番id。全バリアントが持つため`Option`ではない。
     pub fn id(&self) -> &str {
         match self {
-            PipelineStep::Wgsl { id, .. }
+            PipelineStep::Slang { id, .. }
             | PipelineStep::Parallel { id, .. }
             | PipelineStep::CpuFunc { id, .. }
             | PipelineStep::TextureFunc { id, .. }
@@ -76,7 +73,10 @@ impl PipelineStep {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IdTree {
     Single(String),
-    Parallel { id: String, branches: Vec<Vec<IdTree>> },
+    Parallel {
+        id: String,
+        branches: Vec<Vec<IdTree>>,
+    },
 }
 
 /// 画像生成パイプラインを構築するためのビルダー。
@@ -112,29 +112,28 @@ impl ImageGenerateBuilder {
         }
     }
 
-    /// WGSL処理ステップをパイプラインに追加します（直列実行）。
+    /// Slang処理ステップをパイプラインに追加します（直列実行）。
     ///
     /// # Arguments
     ///
-    /// * `wgsl` - `CompiledWgsl`のArc参照。
-    /// * `params` - シェーダーのStorage Bufferに渡すパラメータ。`bytemuck`でシリアライズされたバイト列を渡します。
+    /// * `slang` - CompiledShaderのArc参照。
+    /// * `params` - シェーダーのStructuredBuffer<Params>に渡すパラメータ。bytemuckでシリアライズされたバイト列を渡します。
     /// * `output_width` - このステップの出力画像の幅。
     /// * `output_height` - このステップの出力画像の高さ。
-    pub fn add_wgsl(
+    pub fn add_shader(
         self,
-        wgsl: CompiledWgsl,
+        shader: impl Into<Arc<CompiledShader>>,
         params: Option<Vec<u8>>,
         output_width: u32,
         output_height: u32,
     ) -> Self {
-        let wgsl = Arc::new(wgsl);
+        let slang = shader.into();
         let id = Uuid::new_v4().to_string();
 
-        // Copy-on-Write: 新しいVecを作成して要素を追加
         let mut new_steps = (*self.steps).clone();
-        new_steps.push(PipelineStep::Wgsl {
+        new_steps.push(PipelineStep::Slang {
             id,
-            wgsl,
+            shader: slang,
             params,
             output_width,
             output_height,
@@ -145,12 +144,12 @@ impl ImageGenerateBuilder {
         }
     }
 
-    /// 複数のWGSL処理ステップをパイプラインに追加します（並列実行）。
+    /// 複数のシェーダーパイプラインステップをパイプラインに追加します（並列実行）。
     ///
     /// # Arguments
     ///
     /// * `pipelines` - 並列実行するパイプラインの配列。
-    pub fn add_parallel_wgsl(self, pipelines: Vec<ImageGenerateBuilder>) -> Self {
+    pub fn add_parallel(self, pipelines: Vec<ImageGenerateBuilder>) -> Self {
         let id = Uuid::new_v4().to_string();
 
         // Copy-on-Write: 新しいVecを作成して要素を追加

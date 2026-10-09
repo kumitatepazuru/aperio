@@ -1,7 +1,6 @@
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ..common.params import make_generator_information
 
@@ -43,7 +42,7 @@ class ZoomEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> ItemResult:
         args = params.args
         zoom = float(args.get("zoom", 100.0)) / 100.0
         zoom_x = float(args.get("zoom_x", 100.0)) / 100.0
@@ -52,7 +51,4 @@ class ZoomEffect(VideoEffectGeneratorBase):
         scale_x = zoom * zoom_x
         scale_y = zoom * zoom_y
 
-        return GeneratorBuilderReturn(
-            gpu_util.PyImageGenerateBuilder(),
-            ItemResult(params.width, params.height, scale=(scale_x, scale_y)),
-        )
+        return ItemResult(params.width, params.height, scale=(scale_x, scale_y))

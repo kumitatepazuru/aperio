@@ -251,7 +251,7 @@
 | `width`        | `int`                 | キャンバス幅（px）   |
 | `height`       | `int`                 | キャンバス高さ（px） |
 
-**戻り値:** `GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | None`
+**戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | None`
 
 ### 音声系
 

@@ -4,10 +4,10 @@ import struct
 import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 _SPLIT_TYPE_INDEX = {
     "red_green_a": 0,
@@ -27,10 +27,7 @@ class RgbSplitEffect(VideoEffectGeneratorBase):
         self.description = "Shifts two of the R/G/B channels in opposite directions, crossfaded with the original."
 
         current_dir, common_dir = effect_dirs(__file__)
-        math_module = lib_module(common_dir, "math")
-        self.rgb_split_shader = compose_common_shader(
-            "rgb_split", [math_module], current_dir, "rgb_split.wgsl"
-        )
+        self.rgb_split_shader = shared_slang_shader("rgb_split", current_dir, "rgb_split.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -63,7 +60,7 @@ class RgbSplitEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         shift_width = max(0.0, float(args.get("shift_width", 5.0)))
         angle = float(args.get("angle", 0.0))
@@ -95,7 +92,7 @@ class RgbSplitEffect(VideoEffectGeneratorBase):
 
         center_x = w // 2 - (x0 + ow // 2)
         center_y = h // 2 - (y0 + oh // 2)
-        return GeneratorWgslReturn(
+        return GeneratorShaderReturn(
             self.rgb_split_shader, shader_params, ItemResult(ow, oh, center_x=center_x, center_y=center_y)
         )
 

@@ -2,10 +2,10 @@ import struct
 
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class ColorAdjustmentEffect(VideoEffectGeneratorBase):
@@ -15,10 +15,9 @@ class ColorAdjustmentEffect(VideoEffectGeneratorBase):
         self.display_name = "色調補正"
         self.description = "Adjusts brightness, contrast, hue, luminance, and saturation."
 
-        current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
+        current_dir, _ = effect_dirs(__file__)
 
-        self.color_shader = compose_common_shader("color", [color_module], current_dir, "color.wgsl")
+        self.color_shader = shared_slang_shader("color", current_dir, "color.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -69,7 +68,7 @@ class ColorAdjustmentEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn:
         args = params.args
         brightness = args.get("brightness", 100)
         contrast = args.get("contrast", 100)
@@ -86,4 +85,4 @@ class ColorAdjustmentEffect(VideoEffectGeneratorBase):
             float(saturation),
         )
 
-        return GeneratorWgslReturn(self.color_shader, shader_params, ItemResult(params.width, params.height))
+        return GeneratorShaderReturn(self.color_shader, shader_params, ItemResult(params.width, params.height))

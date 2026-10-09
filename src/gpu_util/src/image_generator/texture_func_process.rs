@@ -1,5 +1,7 @@
 use crate::compiled_func::{CompiledTextureFunc, GpuInputTexture};
 use crate::image_generator::{ImageGenerator, ProcessingState, StepOutput};
+use crate::image_pixel_format::ImagePixelFormat;
+use crate::rhi::TextureUsage;
 use anyhow::Result;
 
 pub async fn handle_texture_func_step(
@@ -15,45 +17,24 @@ pub async fn handle_texture_func_step(
 
     for (i, input) in state.drain(..).enumerate() {
         match input {
-            StepOutput::Gpu {
-                texture,
-                width,
-                height,
-            } => {
-                gpu_inputs.push(GpuInputTexture {
-                    texture,
-                    width,
-                    height,
-                });
+            StepOutput::Gpu { texture, width, height } => {
+                gpu_inputs.push(GpuInputTexture { texture, width, height });
             }
             StepOutput::Cpu { data, width, height } => {
                 // CPUデータをGPUテクスチャにアップロード
                 let texture = generator.get_or_create_texture(
                     width,
                     height,
-                    wgpu::TextureFormat::Rgba32Float,
-                    wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                    Some(&format!("TextureFunc Input Upload {}", i)),
-                );
-                generator.queue.write_texture(
-                    texture.as_image_copy(),
-                    bytemuck::cast_slice(&data),
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * 4 * width), // 4 (bytes/f32) * 4 (components) * width
-                        rows_per_image: None,
-                    },
-                    wgpu::Extent3d {
-                        width,
-                        height,
-                        depth_or_array_layers: 1,
-                    },
-                );
-                gpu_inputs.push(GpuInputTexture {
-                    texture,
-                    width,
-                    height,
-                });
+                    ImagePixelFormat::Rgba32Float,
+                    TextureUsage::SAMPLED | TextureUsage::STORAGE | TextureUsage::TRANSFER_DST,
+                    &format!("TextureFunc Input Upload {i}"),
+                )?;
+
+                generator
+                    .device
+                    .upload_texture_data(&texture, bytemuck::cast_slice(&data))?;
+
+                gpu_inputs.push(GpuInputTexture { texture, width, height });
             }
         }
     }

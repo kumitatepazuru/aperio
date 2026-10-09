@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.gpu_util import PyCompiledWgsl
+from aperio.gpu_util import PyCompiledShader
 from aperio.item_structures import (
     AdditionalItem,
     FileFilter,
@@ -16,12 +16,17 @@ from aperio.item_structures import (
     RequestStructureParameter,
 )
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import (
+    GeneratorBuilderReturn,
+    GeneratorShaderReturn,
+    VideoEffectGeneratorBase,
+    VideoGenerateParameters,
+)
 from aperio_plugin.utils import build_link_prefix
 
 from ..common.params import make_generator_information, pack_box_average_dir_params, pack_expand_params
 from ..common.pattern_image import PATTERN_EXTENSIONS, PatternImageCache
-from ..common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ..common.shader_loader import effect_dirs, shared_slang_shader
 
 # 「影を別オブジェクトで描画」時、影レイヤーの計算だけを行う非表示エフェクトの名前。
 # ShadowEffect自身をチェーン末尾に再度置くと`separate_object`分岐に再突入して無限再帰する
@@ -44,24 +49,21 @@ class _ShadowLayerShaders:
     `ShadowEffect`と`_ShadowLayerEffect`の双方が`__init__`で自前にコンパイルして持つ
     (シェーダーコンパイルは起動時に1回だけのコストなので、複製しても問題ない)。"""
 
-    expand: PyCompiledWgsl
-    box_average_dir: PyCompiledWgsl
-    encode_color: PyCompiledWgsl
-    encode_pattern: PyCompiledWgsl
-    tile: PyCompiledWgsl
+    expand: PyCompiledShader
+    box_average_dir: PyCompiledShader
+    encode_color: PyCompiledShader
+    encode_pattern: PyCompiledShader
+    tile: PyCompiledShader
 
 
 def _compile_shadow_layer_shaders(source_file: str) -> _ShadowLayerShaders:
     _, common_dir = effect_dirs(source_file)
-    blur_module = lib_module(common_dir, "blur")
     return _ShadowLayerShaders(
-        expand=shared_shader("expand", common_dir, "expand.wgsl"),
-        box_average_dir=compose_common_shader(
-            "shadow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl"
-        ),
-        encode_color=shared_shader("encode_color", common_dir, "encode_color.wgsl"),
-        encode_pattern=shared_shader("encode_pattern", common_dir, "encode_pattern.wgsl"),
-        tile=shared_shader("tile", common_dir, "tile.wgsl"),
+        expand=shared_slang_shader("expand", common_dir, "expand.slang"),
+        box_average_dir=shared_slang_shader("shadow_box_average_dir", common_dir, "box_average_dir.slang"),
+        encode_color=shared_slang_shader("encode_color", common_dir, "encode_color.slang"),
+        encode_pattern=shared_slang_shader("encode_pattern", common_dir, "encode_pattern.slang"),
+        tile=shared_slang_shader("tile", common_dir, "tile.slang"),
     )
 
 
@@ -115,7 +117,7 @@ def _build_shadow_layer(
 ) -> ShadowLayerResult:
     """クランプ済みの影パラメータから、影レイヤー(box_w x box_h、ストレートアルファ)の
     builderを組み立てる。影の起点となるシルエットは、暗黙のパイプライン合流
-    (add_parallel_wgsl経由で前段のstateを継承する仕組み)によって、呼び出し元の直前までの
+    (add_parallel経由で前段のstateを継承する仕組み)によって、呼び出し元の直前までの
     累積結果から引き継がれる。"""
     density, r, color, pattern_path = (
         shadow_params.density,
@@ -132,11 +134,11 @@ def _build_shadow_layer(
     entry = pattern_cache.get(pattern_path) if pattern_path else None
     loader, pattern_func = entry if entry is not None else (None, None)
 
-    mask_chain = gpu_util.PyImageGenerateBuilder().add_wgsl(
+    mask_chain = gpu_util.PyImageGenerateBuilder().add_shader(
         shaders.expand, pack_expand_params(r, r, box_w, box_h), box_w, box_h
     )
     for radius, step_x, step_y in ((r2, 0, 1), (r2, 1, 0), (r1, 0, 1), (r1, 1, 0)):
-        mask_chain = mask_chain.add_wgsl(
+        mask_chain = mask_chain.add_shader(
             shaders.box_average_dir,
             pack_box_average_dir_params(radius, step_x, step_y, box_w, box_h),
             box_w,
@@ -147,15 +149,15 @@ def _build_shadow_layer(
         tiled_branch = (
             gpu_util.PyImageGenerateBuilder()
             .add_texture_func(pattern_func, None, loader.width, loader.height)
-            .add_wgsl(shaders.tile, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
+            .add_shader(shaders.tile, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
         )
         shadow_layer = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([mask_chain, tiled_branch])
-            .add_wgsl(shaders.encode_pattern, struct.pack("f", density), box_w, box_h)
+            .add_parallel([mask_chain, tiled_branch])
+            .add_shader(shaders.encode_pattern, struct.pack("f", density), box_w, box_h)
         )
     else:
-        shadow_layer = mask_chain.add_wgsl(
+        shadow_layer = mask_chain.add_shader(
             shaders.encode_color,
             struct.pack("ffff", density, color[0], color[1], color[2]),
             box_w,
@@ -174,8 +176,11 @@ class ShadowEffect(VideoEffectGeneratorBase):
 
         _, common_dir = effect_dirs(__file__)
         self.shaders = _compile_shadow_layer_shaders(__file__)
-        self.select_shader = shared_shader("shadow_select", common_dir, "select.wgsl")
-        self.composite_shader = shared_shader("composite", common_dir, "composite.wgsl")
+        self.select_shader = shared_slang_shader(
+            "shadow_select", common_dir, "select.slang", input_texture_layout="variable",
+            sampler_options=gpu_util.PySamplerOptions("clamp_to_edge", "nearest"),
+        )
+        self.composite_shader = shared_slang_shader("composite", common_dir, "composite.slang")
 
         self.pattern_cache = PatternImageCache("shadow_pattern")
 
@@ -242,7 +247,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | GeneratorBuilderReturn | None:
         args = params.args
         w, h = params.width, params.height
         max_dim = aperio_plugin.image_generator.maximum_texture_size
@@ -263,19 +268,19 @@ class ShadowEffect(VideoEffectGeneratorBase):
         shadow_box_x, shadow_box_y = max(X, 0), max(Y, 0)
         obj_x, obj_y = max(-X, 0) + r, max(-Y, 0) + r
 
-        shadow_full_branch = shadow.builder.add_wgsl(
+        shadow_full_branch = shadow.builder.add_shader(
             self.shaders.expand, pack_expand_params(shadow_box_x, shadow_box_y, nw, nh), nw, nh
         )
-        object_full_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
+        object_full_branch = gpu_util.PyImageGenerateBuilder().add_shader(
             self.shaders.expand, pack_expand_params(obj_x, obj_y, nw, nh), nw, nh
         )
         final_builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([object_full_branch, shadow_full_branch])
-            .add_wgsl(self.composite_shader, None, nw, nh)
+            .add_parallel([object_full_branch, shadow_full_branch])
+            .add_shader(self.composite_shader, None, nw, nh)
         )
         # キャンバスは|X|/|Y|ぶん片側にだけ伸びる(2rは対称)ので、オブジェクト自身の
-        # 見た目の位置・回転/拡縮の基点(compose.wgslのcenter_x/center_y)が
+        # 見た目の位置・回転/拡縮の基点(compose.slangのcenter_x/center_y)が
         # ずれないよう半分だけ戻す(README §3「fpip+0xD4/+0xD8の補正」に相当)。
         center_x = round(-X / 2)
         center_y = round(-Y / 2)
@@ -283,7 +288,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
 
     def _generate_separate_object(
         self, params: VideoGenerateParameters, w: int, h: int, shadow_params: _ShadowParams
-    ) -> GeneratorBuilderReturn:
+    ) -> GeneratorShaderReturn:
         """影を別オブジェクトで描画(README §7)。
 
         元のオブジェクトは1バイトも変わらずに素通しし、影は独立した`AdditionalItem`として
@@ -321,8 +326,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
         )
         additional_item = AdditionalItem(item=shadow_item, behind=True)
 
-        identity_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", 0), w, h)
-        return GeneratorBuilderReturn(identity_builder, ItemResult(w, h, additional_item=additional_item))
+        return GeneratorShaderReturn(self.select_shader, struct.pack("i", 0), ItemResult(w, h, additional_item=additional_item))
 
 
 class ShadowLayerEffect(VideoEffectGeneratorBase):

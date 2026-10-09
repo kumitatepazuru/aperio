@@ -1,7 +1,6 @@
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ..common.params import make_generator_information
 
@@ -40,13 +39,10 @@ class PositionEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> ItemResult:
         args = params.args
         x = float(args.get("x", 0.0))
         y = float(args.get("y", 0.0))
         z = float(args.get("z", 0.0))
 
-        return GeneratorBuilderReturn(
-            gpu_util.PyImageGenerateBuilder(),
-            ItemResult(params.width, params.height, pos=(x, y, z)),
-        )
+        return ItemResult(params.width, params.height, pos=(x, y, z))

@@ -1,5 +1,7 @@
+use anyhow::Result;
 use cosmic_text::{CacheKey, FontSystem, SwashCache, SwashContent};
-use std::{collections::HashMap, sync::Arc};
+use gpu_util::rhi::{Device, Texture, TextureFormat, TextureUsage};
+use std::collections::HashMap;
 
 use crate::ATLAS_SIZE;
 
@@ -19,13 +21,21 @@ struct SkylinePacker {
 
 impl SkylinePacker {
     fn new(width: u32, height: u32) -> Self {
-        Self { width, height, skyline: vec![(0, 0)] }
+        Self {
+            width,
+            height,
+            skyline: vec![(0, 0)],
+        }
     }
 
     /// 指定 x でのスカイライン高さを返す
     fn height_at(&self, x: u32) -> u32 {
         let idx = self.skyline.partition_point(|&(sx, _)| sx <= x);
-        if idx == 0 { 0 } else { self.skyline[idx - 1].1 }
+        if idx == 0 {
+            0
+        } else {
+            self.skyline[idx - 1].1
+        }
     }
 
     /// [x, x+w) 内のスカイライン最大高さを返す
@@ -77,7 +87,11 @@ impl SkylinePacker {
     fn raise_skyline(&mut self, x: u32, w: u32, new_h: u32) {
         let x_end = x + w;
         // x_end 直後の高さを保存（右端の切れ目を復元するため）
-        let h_after = if x_end < self.width { Some(self.height_at(x_end)) } else { None };
+        let h_after = if x_end < self.width {
+            Some(self.height_at(x_end))
+        } else {
+            None
+        };
 
         let insert_pos = self.skyline.partition_point(|&(sx, _)| sx < x);
         let remove_end = self.skyline.partition_point(|&(sx, _)| sx < x_end);
@@ -123,11 +137,11 @@ pub struct AtlasRegion {
 // ── GPU グリフアトラス ──────────────────────────────────────────────────────────
 
 pub(crate) struct GlyphAtlas {
-    device: Arc<wgpu::Device>,
+    device: Device,
     /// マスクグリフ用テクスチャ (R8Unorm): 通常アトラスページ + オーバーサイズ専用
-    pub(crate) mask_textures: Vec<Arc<wgpu::Texture>>,
+    pub(crate) mask_textures: Vec<Texture>,
     /// カラーグリフ用テクスチャ (Rgba8Unorm): 通常アトラスページ + オーバーサイズ専用
-    pub(crate) color_textures: Vec<Arc<wgpu::Texture>>,
+    pub(crate) color_textures: Vec<Texture>,
     /// mask_textures 先頭ページ群のパッカー
     mask_packers: Vec<SkylinePacker>,
     /// color_textures 先頭ページ群のパッカー
@@ -136,80 +150,24 @@ pub(crate) struct GlyphAtlas {
 }
 
 impl GlyphAtlas {
-    pub(crate) fn new(device: Arc<wgpu::Device>) -> Self {
+    pub(crate) fn new(device: Device) -> Result<Self> {
         // マスクアトラスは常に 1 ページ用意する（テキストは必ず使う）
         // カラーアトラスは絵文字が登場したときに初期作成する
-        let first_mask = Self::make_mask_atlas_page(&device);
-        Self {
+        let first_mask = make_texture(
+            &device,
+            ATLAS_SIZE,
+            ATLAS_SIZE,
+            TextureFormat::R8Unorm,
+            "Glyph Atlas Page (Mask R8Unorm)",
+        )?;
+        Ok(Self {
             device,
             mask_textures: vec![first_mask],
             color_textures: Vec::new(),
             mask_packers: vec![SkylinePacker::new(ATLAS_SIZE, ATLAS_SIZE)],
             color_packers: Vec::new(),
             regions: HashMap::new(),
-        }
-    }
-
-    // ── テクスチャ生成ヘルパー ────────────────────────────────────────────────
-
-    fn make_mask_atlas_page(device: &wgpu::Device) -> Arc<wgpu::Texture> {
-        Arc::new(device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Glyph Atlas Page (Mask R8Unorm)"),
-            size: wgpu::Extent3d {
-                width: ATLAS_SIZE,
-                height: ATLAS_SIZE,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        }))
-    }
-
-    fn make_color_atlas_page(device: &wgpu::Device) -> Arc<wgpu::Texture> {
-        Arc::new(device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Glyph Atlas Page (Color Rgba8Unorm)"),
-            size: wgpu::Extent3d {
-                width: ATLAS_SIZE,
-                height: ATLAS_SIZE,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        }))
-    }
-
-    fn make_mask_oversized(device: &wgpu::Device, w: u32, h: u32) -> Arc<wgpu::Texture> {
-        Arc::new(device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Glyph Oversized (Mask R8Unorm)"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        }))
-    }
-
-    fn make_color_oversized(device: &wgpu::Device, w: u32, h: u32) -> Arc<wgpu::Texture> {
-        Arc::new(device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Glyph Oversized (Color Rgba8Unorm)"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        }))
+        })
     }
 
     // ── グリフ登録 ────────────────────────────────────────────────────────────
@@ -220,11 +178,10 @@ impl GlyphAtlas {
         &mut self,
         font_system: &mut FontSystem,
         swash_cache: &mut SwashCache,
-        queue: &wgpu::Queue,
         cache_key: CacheKey,
-    ) {
+    ) -> Result<()> {
         if self.regions.contains_key(&cache_key) {
-            return;
+            return Ok(());
         }
 
         // SwashCache から画像データを取り出す（borrowed なので先に owned data を抽出）
@@ -251,7 +208,14 @@ impl GlyphAtlas {
                                 })
                                 .collect(),
                         };
-                        Some((w, h, image.placement.left, image.placement.top, is_color, pixel_data))
+                        Some((
+                            w,
+                            h,
+                            image.placement.left,
+                            image.placement.top,
+                            is_color,
+                            pixel_data,
+                        ))
                     }
                 }
             }
@@ -260,142 +224,77 @@ impl GlyphAtlas {
         let region = match extracted {
             None => None,
             Some((w, h, pl_left, pl_top, is_color, pixels)) => {
-                // bytes_per_row: マスクは 1 byte/px、カラーは 4 bytes/px
-                let bytes_per_row = if is_color { w * 4 } else { w };
+                let (format, kind) = if is_color {
+                    (TextureFormat::Rgba8Unorm, "Color Rgba8Unorm")
+                } else {
+                    (TextureFormat::R8Unorm, "Mask R8Unorm")
+                };
 
                 let (page, ax, ay, tex_w, tex_h) = if w > ATLAS_SIZE || h > ATLAS_SIZE {
                     // ── オーバーサイズグリフ: 専用テクスチャを割り当て ──────────────
-                    if is_color {
-                        let tex = Self::make_color_oversized(&self.device, w, h);
-                        queue.write_texture(
-                            wgpu::TexelCopyTextureInfo {
-                                texture: &tex,
-                                mip_level: 0,
-                                origin: wgpu::Origin3d::ZERO,
-                                aspect: wgpu::TextureAspect::All,
-                            },
-                            &pixels,
-                            wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(bytes_per_row),
-                                rows_per_image: None,
-                            },
-                            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                        );
-                        let page = self.color_textures.len();
-                        self.color_textures.push(tex);
-                        (page, 0u32, 0u32, w, h)
+                    let tex = make_texture(
+                        &self.device,
+                        w,
+                        h,
+                        format,
+                        &format!("Glyph Oversized ({kind})"),
+                    )?;
+                    self.device.upload_texture_data(&tex, &pixels)?;
+                    let textures = if is_color {
+                        &mut self.color_textures
                     } else {
-                        let tex = Self::make_mask_oversized(&self.device, w, h);
-                        queue.write_texture(
-                            wgpu::TexelCopyTextureInfo {
-                                texture: &tex,
-                                mip_level: 0,
-                                origin: wgpu::Origin3d::ZERO,
-                                aspect: wgpu::TextureAspect::All,
-                            },
-                            &pixels,
-                            wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(bytes_per_row),
-                                rows_per_image: None,
-                            },
-                            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                        );
-                        let page = self.mask_textures.len();
-                        self.mask_textures.push(tex);
-                        (page, 0u32, 0u32, w, h)
-                    }
+                        &mut self.mask_textures
+                    };
+                    let page = textures.len();
+                    textures.push(tex);
+                    (page, 0u32, 0u32, w, h)
                 } else {
                     // ── 通常グリフ: 既存ページへの割り当てを試み、満杯なら新ページ ──
-                    if is_color {
-                        // カラープール
-                        if self.color_textures.is_empty() {
-                            self.color_textures.push(Self::make_color_atlas_page(&self.device));
-                            self.color_packers.push(SkylinePacker::new(ATLAS_SIZE, ATLAS_SIZE));
-                        }
-
-                        let alloc = {
-                            let mut found = None;
-                            for (pi, packer) in self.color_packers.iter_mut().enumerate() {
-                                if let Some((x, y)) = packer.allocate(w, h) {
-                                    found = Some((pi, x, y));
-                                    break;
-                                }
-                            }
-                            found
-                        };
-
-                        let (pi, ax, ay) = match alloc {
-                            Some(a) => a,
-                            None => {
-                                let new_pi = self.color_textures.len();
-                                self.color_textures.push(Self::make_color_atlas_page(&self.device));
-                                self.color_packers.push(SkylinePacker::new(ATLAS_SIZE, ATLAS_SIZE));
-                                let (x, y) = self.color_packers.last_mut().unwrap().allocate(w, h)
-                                    .expect("ATLAS_SIZE 未満のグリフが新規カラーページに入らない");
-                                (new_pi, x, y)
-                            }
-                        };
-
-                        queue.write_texture(
-                            wgpu::TexelCopyTextureInfo {
-                                texture: &self.color_textures[pi],
-                                mip_level: 0,
-                                origin: wgpu::Origin3d { x: ax, y: ay, z: 0 },
-                                aspect: wgpu::TextureAspect::All,
-                            },
-                            &pixels,
-                            wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(bytes_per_row),
-                                rows_per_image: None,
-                            },
-                            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                        );
-                        (pi, ax, ay, ATLAS_SIZE, ATLAS_SIZE)
+                    let (textures, packers) = if is_color {
+                        (&mut self.color_textures, &mut self.color_packers)
                     } else {
-                        // マスクプール
-                        let alloc = {
-                            let mut found = None;
-                            for (pi, packer) in self.mask_packers.iter_mut().enumerate() {
-                                if let Some((x, y)) = packer.allocate(w, h) {
-                                    found = Some((pi, x, y));
-                                    break;
-                                }
-                            }
-                            found
-                        };
-
-                        let (pi, ax, ay) = match alloc {
-                            Some(a) => a,
-                            None => {
-                                let new_pi = self.mask_textures.len();
-                                self.mask_textures.push(Self::make_mask_atlas_page(&self.device));
-                                self.mask_packers.push(SkylinePacker::new(ATLAS_SIZE, ATLAS_SIZE));
-                                let (x, y) = self.mask_packers.last_mut().unwrap().allocate(w, h)
-                                    .expect("ATLAS_SIZE 未満のグリフが新規マスクページに入らない");
-                                (new_pi, x, y)
-                            }
-                        };
-
-                        queue.write_texture(
-                            wgpu::TexelCopyTextureInfo {
-                                texture: &self.mask_textures[pi],
-                                mip_level: 0,
-                                origin: wgpu::Origin3d { x: ax, y: ay, z: 0 },
-                                aspect: wgpu::TextureAspect::All,
-                            },
-                            &pixels,
-                            wgpu::TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(bytes_per_row),
-                                rows_per_image: None,
-                            },
-                            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                        );
-                        (pi, ax, ay, ATLAS_SIZE, ATLAS_SIZE)
+                        (&mut self.mask_textures, &mut self.mask_packers)
+                    };
+                    // カラーアトラスは絵文字が登場した時点で最初のページを作る
+                    if is_color && textures.is_empty() {
+                        textures.push(make_texture(
+                            &self.device,
+                            ATLAS_SIZE,
+                            ATLAS_SIZE,
+                            format,
+                            &format!("Glyph Atlas Page ({kind})"),
+                        )?);
+                        packers.push(SkylinePacker::new(ATLAS_SIZE, ATLAS_SIZE));
                     }
+
+                    let found = packers
+                        .iter_mut()
+                        .enumerate()
+                        .find_map(|(pi, packer)| packer.allocate(w, h).map(|(x, y)| (pi, x, y)));
+                    let (pi, ax, ay) = match found {
+                        Some(a) => a,
+                        None => {
+                            let new_pi = textures.len();
+                            textures.push(make_texture(
+                                &self.device,
+                                ATLAS_SIZE,
+                                ATLAS_SIZE,
+                                format,
+                                &format!("Glyph Atlas Page ({kind})"),
+                            )?);
+                            packers.push(SkylinePacker::new(ATLAS_SIZE, ATLAS_SIZE));
+                            let (x, y) = packers
+                                .last_mut()
+                                .unwrap()
+                                .allocate(w, h)
+                                .expect("ATLAS_SIZE 未満のグリフが新規ページに入らない");
+                            (new_pi, x, y)
+                        }
+                    };
+
+                    self.device
+                        .upload_texture_region(&textures[pi], (ax, ay), (w, h), &pixels)?;
+                    (pi, ax, ay, ATLAS_SIZE, ATLAS_SIZE)
                 };
 
                 Some(AtlasRegion {
@@ -414,9 +313,26 @@ impl GlyphAtlas {
         };
 
         self.regions.insert(cache_key, region);
+        Ok(())
     }
 
     pub(crate) fn get_region(&self, cache_key: CacheKey) -> Option<&AtlasRegion> {
         self.regions.get(&cache_key)?.as_ref()
     }
+}
+
+fn make_texture(
+    device: &Device,
+    width: u32,
+    height: u32,
+    format: TextureFormat,
+    label: &str,
+) -> Result<Texture> {
+    device.create_texture(
+        width,
+        height,
+        format,
+        TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
+        label,
+    )
 }

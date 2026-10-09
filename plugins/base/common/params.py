@@ -24,12 +24,12 @@ def make_generator_information(
 def pack_expand_params(
     off_x: int, off_y: int, new_w: int, new_h: int, border: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 ) -> bytes:
-    """expand.wgsl 用パラメータ。"""
+    """expand.slang 用パラメータ。"""
     return struct.pack("iiiiffff", off_x, off_y, new_w, new_h, *border)
 
 
 def pack_box_average_dir_params(radius: int, step_x: int, step_y: int, w: int, h: int) -> bytes:
-    """box_average_dir.wgsl 用パラメータ。"""
+    """box_average_dir.slang 用パラメータ。"""
     return struct.pack("iiiii", radius, step_x, step_y, w, h)
 
 
@@ -43,5 +43,5 @@ def split_radius(radius: int) -> tuple[int, int]:
 def pack_box_blur_dir_params(
     radius: int, step_x: int, step_y: int, w: int, h: int, offset: int = 0, border_mode: int = 1, divisor_mode: int = 0
 ) -> bytes:
-    """box_blur_dir.wgsl 用パラメータ。"""
+    """box_blur_dir.slang 用パラメータ。"""
     return struct.pack("iiiiiiii", radius, step_x, step_y, w, h, offset, border_mode, divisor_mode)

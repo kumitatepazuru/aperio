@@ -3,10 +3,15 @@ import struct
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import (
+    GeneratorBuilderReturn,
+    GeneratorShaderReturn,
+    VideoEffectGeneratorBase,
+    VideoGenerateParameters,
+)
 
 from ...common.params import clamp, make_generator_information, pack_box_blur_dir_params
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 def _axis_radii(radius: int, aspect: int) -> tuple[int, int]:
@@ -29,12 +34,11 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         self.description = "Erodes or blurs the alpha channel near the edges of the input frame."
 
         current_dir, common_dir = effect_dirs(__file__)
-        blur_module = lib_module(common_dir, "blur")
 
-        self.shader = shared_shader("boundary_blur", current_dir, "boundary_blur.wgsl")
-        self.box_blur_dir_shader = compose_common_shader("box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl")
-        self.box_blur_h_alpha_merge_shader = compose_common_shader(
-            "boundary_blur_box_blur_h_alpha_merge", [blur_module], current_dir, "box_blur_h_alpha_merge.wgsl"
+        self.shader = shared_slang_shader("boundary_blur", current_dir, "boundary_blur.slang")
+        self.box_blur_dir_shader = shared_slang_shader("box_blur_dir", common_dir, "box_blur_dir.slang")
+        self.box_blur_h_alpha_merge_shader = shared_slang_shader(
+            "boundary_blur_box_blur_h_alpha_merge", current_dir, "box_blur_h_alpha_merge.slang"
         )
 
     @event(type=GeneratorEvent.New)
@@ -65,7 +69,7 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | GeneratorBuilderReturn | None:
         args = params.args
         radius = max(0, args.get("radius", 30))
         aspect = clamp(args.get("aspect", 0), -100, 100)
@@ -78,8 +82,7 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
 
         if not alpha_boundary:
             packed = struct.pack("ii", radius, aspect)
-            builder = gpu_util.PyImageGenerateBuilder().add_wgsl(self.shader, packed, width, height)
-            return GeneratorBuilderReturn(builder, ItemResult(width, height))
+            return GeneratorShaderReturn(self.shader, packed, ItemResult(width, height))
 
         # 透明度境界モード(README 4): 元のアルファを2パスのボックスぼかし
         # (ゼロ埋め境界・常にフルカーネル幅で正規化)で実際にぼかし、元のアルファ
@@ -91,15 +94,15 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         box_blur_v_branch = gpu_util.PyImageGenerateBuilder()
         if ry > 0:
             v_params = pack_box_blur_dir_params(ry, 0, 1, width, height)
-            box_blur_v_branch = box_blur_v_branch.add_wgsl(self.box_blur_dir_shader, v_params, width, height)
+            box_blur_v_branch = box_blur_v_branch.add_shader(self.box_blur_dir_shader, v_params, width, height)
 
-        # box_blur_h + alpha_merge を1シェーダーに統合(box_blur_h_alpha_merge.wgsl)。
+        # box_blur_h + alpha_merge を1シェーダーに統合(box_blur_h_alpha_merge.slang)。
         # radius=0の水平パスは単一タップ=恒等になるため、rx=0でも特別扱い不要。
         h_params = struct.pack("iiiiii", rx, width, height, 0, 1, 0)
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel_wgsl([box_blur_v_branch, gpu_util.PyImageGenerateBuilder()])
-            .add_wgsl(self.box_blur_h_alpha_merge_shader, h_params, width, height)
+            .add_parallel([box_blur_v_branch, gpu_util.PyImageGenerateBuilder()])
+            .add_shader(self.box_blur_h_alpha_merge_shader, h_params, width, height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(width, height))

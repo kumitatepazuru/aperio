@@ -1,12 +1,11 @@
 import struct
 
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 class FlipEffect(VideoEffectGeneratorBase):
@@ -16,9 +15,8 @@ class FlipEffect(VideoEffectGeneratorBase):
         self.display_name = "反転"
         self.description = "Inverts spatial axes, luma, chroma, or alpha of the image."
 
-        current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        self.shader = compose_common_shader("base_effect_flip", [color_module], current_dir, "flip.wgsl")
+        current_dir, _ = effect_dirs(__file__)
+        self.shader = shared_slang_shader("base_effect_flip", current_dir, "flip.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -54,7 +52,7 @@ class FlipEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         fv = 1 if args.get("flip_v", False) else 0
         fh = 1 if args.get("flip_h", False) else 0
@@ -63,12 +61,8 @@ class FlipEffect(VideoEffectGeneratorBase):
         ia = 1 if args.get("invert_alpha", False) else 0
 
         if not (fv or fh or il or ic or ia):
-            return GeneratorBuilderReturn(gpu_util.PyImageGenerateBuilder(), ItemResult(params.width, params.height))
+            return None
 
         shader_params = struct.pack("iiiiiiii", fv, fh, il, ic, ia, 0, 0, 0)
 
-        return GeneratorWgslReturn(
-            self.shader,
-            shader_params,
-            ItemResult(params.width, params.height),
-        )
+        return GeneratorShaderReturn(self.shader, shader_params, ItemResult(params.width, params.height))

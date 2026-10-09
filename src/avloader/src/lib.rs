@@ -8,7 +8,7 @@ mod common;
 mod frame_cache;
 mod image_loader;
 mod video_loader;
-mod yuv_pipeline;
+pub mod yuv_pipeline;
 
 pub use audio_loader::AudioLoader;
 pub use common::ColorFormat;

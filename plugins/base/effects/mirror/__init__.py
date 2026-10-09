@@ -3,10 +3,10 @@ import struct
 import aperio_plugin
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 # axis: 0=垂直方向(上下、対象寸法=h)、1=水平方向(左右、対象寸法=w)
 # before: 鏡像を原画像より前(上/左)に置くか、後(下/右)に置くか
@@ -26,7 +26,7 @@ class MirrorEffect(VideoEffectGeneratorBase):
         self.description = "Grows the canvas and draws a fading mirrored copy of the object next to it."
 
         current_dir, _ = effect_dirs(__file__)
-        self.mirror_shader = shared_shader("mirror", current_dir, "mirror.wgsl")
+        self.mirror_shader = shared_slang_shader("mirror", current_dir, "mirror.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -55,7 +55,7 @@ class MirrorEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | None:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         axis, before = _DIR_INFO.get(args.get("direction", "down"), _DIR_INFO["down"])
         transparency = float(args.get("transparency", 0.0))
@@ -107,4 +107,4 @@ class MirrorEffect(VideoEffectGeneratorBase):
                 center_x=(center_axis if axis == 1 else 0),
                 center_y=(center_axis if axis == 0 else 0),
             )
-        return GeneratorWgslReturn(self.mirror_shader, shader_params, item_result)
+        return GeneratorShaderReturn(self.mirror_shader, shader_params, item_result)

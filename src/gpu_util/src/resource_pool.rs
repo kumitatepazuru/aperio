@@ -28,22 +28,22 @@ impl<K: Hash + Eq + Clone, V: Clone> ResourcePool<K, V> {
     /// used フラグが立っていないインスタンスがあれば再利用し、なければ `create` で新規作成します。
     /// 取得したリソースには used フラグが立てられ、`reset_used` が呼ばれるまで
     /// 他の呼び出しからは返されません。
-    pub fn acquire(&mut self, key: K, create: impl FnOnce() -> V) -> V {
+    pub fn acquire<E>(&mut self, key: K, create: impl FnOnce() -> Result<V, E>) -> Result<V, E> {
         let items = self.pool.entry(key).or_insert_with(Vec::new);
 
         // used フラグが立っていない最初のアイテムを探して返す
         if let Some(item) = items.iter_mut().find(|item| !item.used) {
             item.used = true;
-            return item.value.clone();
+            return Ok(item.value.clone());
         }
 
         // 未使用アイテムがなければ新規作成
-        let value = create();
+        let value = create()?;
         items.push(PoolItem {
             value: value.clone(),
             used: true,
         });
-        value
+        Ok(value)
     }
 
     /// used フラグをリセットします。

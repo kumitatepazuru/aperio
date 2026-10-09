@@ -4,6 +4,7 @@ use crate::frame_cache::{DecoderRef, FrameCache};
 use crate::yuv_pipeline::{PlaneDesc, YuvPipeline};
 use anyhow::{bail, Context, Result};
 use gpu_util::image_generator::ImageGenerator;
+use gpu_util::rhi::Texture;
 use std::sync::Arc;
 
 // ─── VideoLoader ─────────────────────────────────────────────────────────────
@@ -41,7 +42,7 @@ impl VideoLoader {
         let probed = common::probe_media(handle);
         let fps = unsafe { avloader_video_native_fps(handle) };
 
-        let yuv_pipeline = YuvPipeline::new(&image_generator.device, probed.layout, probed.yuv_params);
+        let yuv_pipeline = YuvPipeline::new(&image_generator.device, probed.layout, probed.yuv_params)?;
         let decoder = Arc::new(DecoderRef(handle));
         let frame_cache = FrameCache::new(Arc::clone(&decoder), probed.plane_descs.clone(), fps);
 
@@ -101,7 +102,7 @@ impl VideoLoader {
         &self,
         frame_number: u64,
         target_fps: f64,
-    ) -> Result<Arc<wgpu::Texture>> {
+    ) -> Result<Texture> {
         let cached = self
             .frame_cache
             .get(frame_number, target_fps)

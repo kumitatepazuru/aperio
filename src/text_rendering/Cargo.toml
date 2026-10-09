@@ -10,6 +10,8 @@ crate-type = ["rlib"]
 [dependencies]
 cosmic-text = "0.18.2"
 gpu_util = { path = "../gpu_util" }
-wgpu = { workspace = true }
 anyhow = { workspace = true }
 bytemuck = { workspace = true }
+
+[dev-dependencies]
+half = "2"

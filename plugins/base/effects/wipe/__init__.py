@@ -6,10 +6,10 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information, pack_box_blur_dir_params, split_radius
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 from ...common.timeline import in_out_ramp
 
-# 組み込み5パターン(README §4 の ex_data.type)。値がそのまま wipe_mask.wgsl の
+# 組み込み5パターン(README §4 の ex_data.type)。値がそのまま wipe_mask.slang の
 # PATTERN_* 定数になる。
 _PATTERNS = {
     "circle": 0,
@@ -32,17 +32,16 @@ class WipeEffect(VideoEffectGeneratorBase):
         self.description = "Reveals or hides the object with a geometric pattern that sweeps in/out near the start/end of its duration."
 
         current_dir, common_dir = effect_dirs(__file__)
-        blur_module = lib_module(common_dir, "blur")
 
-        self.mask_shader = shared_shader("wipe_mask", current_dir, "wipe_mask.wgsl")
+        self.mask_shader = shared_slang_shader("wipe_mask", current_dir, "wipe_mask.slang")
         # box_blur_dir: README §6 が「`ぼかし`エフェクト本体と同じ半径分割規則」と
         # 明記している共通の箱ぼかし。blur.py/sharp.py と同じ名前・フォーマット
         # フロアでコンパイルしてパイプラインキャッシュを共有する。
-        self.box_blur_dir_shader = compose_common_shader(
-            "box_blur_dir", [blur_module], common_dir, "box_blur_dir.wgsl",
+        self.box_blur_dir_shader = shared_slang_shader(
+            "box_blur_dir", common_dir, "box_blur_dir.slang",
             min_output_format=gpu_util.WrappedImagePixelFormat.Rgba32Float,
         )
-        self.composite_shader = shared_shader("wipe_composite", current_dir, "wipe_composite.wgsl")
+        self.composite_shader = shared_slang_shader("wipe_composite", current_dir, "wipe_composite.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -127,7 +126,7 @@ class WipeEffect(VideoEffectGeneratorBase):
         # --- パターン生成(README §4) ---
         # 型の大きさは入力(オブジェクト)と同じなので、シェーダーは寸法を
         # inputTex[0] から取る。画素値そのものは読まない。
-        mask_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
+        mask_branch = gpu_util.PyImageGenerateBuilder().add_shader(
             self.mask_shader, struct.pack("iif", pattern, int(invert), g), w, h
         )
 
@@ -139,7 +138,7 @@ class WipeEffect(VideoEffectGeneratorBase):
             if radius <= 0:
                 continue
             for step_x, step_y in ((0, 1), (1, 0)):
-                mask_branch = mask_branch.add_wgsl(
+                mask_branch = mask_branch.add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(radius, step_x, step_y, w, h, divisor_mode=1),
                     w,
@@ -149,7 +148,7 @@ class WipeEffect(VideoEffectGeneratorBase):
         # --- 最終合成(README §7) ---
         # 何もしないブランチが上流の状態(元のオブジェクト)をそのまま素通しする。
         original_branch = gpu_util.PyImageGenerateBuilder()
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([original_branch, mask_branch]).add_wgsl(
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, mask_branch]).add_shader(
             self.composite_shader, None, w, h
         )
 

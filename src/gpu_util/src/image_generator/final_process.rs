@@ -2,9 +2,10 @@
 
 use std::time::Instant;
 
+use crate::image_generator::layout::{self, AperioDispatch, DispatchOutput};
 use crate::image_generator::{ImageGenerator, ProcessingState, StepOutput};
+use crate::rhi::BufferUsage;
 use anyhow::{bail, Context, Result};
-use futures::channel::oneshot;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::{ParallelSlice, ParallelSliceMut},
@@ -22,8 +23,6 @@ pub async fn handle_final_process(
     generator: &ImageGenerator,
     final_state: ProcessingState,
 ) -> Result<Vec<u8>> {
-    // このコードは、元の image_generator.rs の generate メソッドの
-    // ループ後の最終処理部分から移動したものです。
     let final_state = if final_state.len() != 1 {
         bail!("Final processing state must contain exactly one item.");
     } else {
@@ -39,88 +38,35 @@ pub async fn handle_final_process(
             width,
             height,
         } => {
-            // --- 最終的なGPUテクスチャをu8配列に変換する ---
-
-            // 1. シェーダーが書き込むためのu32ストレージバッファを作成（キャッシュ使用）
-            let u32_buffer_size = (width * height * std::mem::size_of::<u32>() as u32) as u64;
-            let final_u32_buffer = generator.get_or_create_buffer(
+            // テクスチャを u32 ストレージバッファへ変換して読み戻す。
+            let u32_buffer_size =
+                (width as u64) * (height as u64) * std::mem::size_of::<u32>() as u64;
+            let u32_buffer = generator.get_or_create_buffer(
                 u32_buffer_size,
-                wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                Some("Final U32 Buffer"),
-            );
+                BufferUsage::STORAGE,
+                "Final U32 Buffer",
+            )?;
+            let input_view = generator.device.create_texture_view(&texture)?;
 
-            // 2. バインドグループを作成
-            // ImageGenerator::newで作成したレイアウトに適合させる
-            let input_texture_view = texture.create_view(&Default::default());
-            let bind_group = generator
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Post Process Bind Group"),
-                    layout: &generator.post_process_pipeline.bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&input_texture_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: final_u32_buffer.as_entire_binding(),
-                        },
-                    ],
-                });
+            layout::dispatch(
+                &generator.device,
+                AperioDispatch {
+                    pipeline: &generator.post_process_pipeline,
+                    inputs: &[input_view],
+                    output: DispatchOutput::Buffer(&u32_buffer),
+                    sampler: None,
+                    params: None,
+                    workgroups: (width.div_ceil(16), height.div_ceil(16), 1),
+                },
+            )?;
 
-            let mut encoder =
-                generator
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Final Process Encoder"),
-                    });
-
-            // 3. コンピュートパスを実行して、テクスチャ->u32バッファ変換を行う
-            {
-                let mut cpass = encoder.begin_compute_pass(&Default::default());
-                cpass.set_pipeline(&generator.post_process_pipeline.pipeline);
-                cpass.set_bind_group(0, &bind_group, &[]);
-                // ディスパッチサイズは最終的な画像の解像度に基づく
-                cpass.dispatch_workgroups((width + 15) / 16, (height + 15) / 16, 1);
-            }
-
-            // 4. 結果をCPUに読み戻す（キャッシュ使用）
-            let readback_buffer = generator.get_or_create_buffer(
-                u32_buffer_size,
-                wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                Some("Final Readback Buffer"),
-            );
-
-            encoder.copy_buffer_to_buffer(
-                &final_u32_buffer,
-                0,
-                &readback_buffer,
-                0,
-                u32_buffer_size,
-            );
-
-            // 5. コマンドをサブミットし、マッピングを待つ
-            generator.queue.submit(Some(encoder.finish()));
-
-            let buffer_slice = readback_buffer.slice(..);
-            let (tx, rx) = oneshot::channel();
-            buffer_slice.map_async(wgpu::MapMode::Read, move |result| tx.send(result).unwrap());
-
-            generator.device.poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: None,
-            })?;
-
-            rx.await
-                .context("Failed to receive buffer mapping result")??;
-
-            let data = buffer_slice.get_mapped_range()?;
-            let result = data.to_vec();
-            drop(data); // get_mapped_rangeの借用を解除
-            readback_buffer.unmap();
-
-            Ok(result)
+            let ptr = u32_buffer
+                .mapped_ptr()
+                .context("final u32 buffer should be host-mapped")?;
+            Ok(unsafe {
+                std::slice::from_raw_parts(ptr.as_ptr().cast::<u8>(), u32_buffer_size as usize)
+                    .to_vec()
+            })
         }
         StepOutput::Cpu {
             data,

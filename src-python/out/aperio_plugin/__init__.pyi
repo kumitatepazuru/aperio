@@ -21,8 +21,8 @@ class AperioManager(PluginManager, EventManager):
     """
     generator: Incomplete
     text_renderer: Incomplete
-    compose_wgsl: Incomplete
-    fill_black_wgsl: Incomplete
+    compose_slang: Incomplete
+    fill_black_slang: Incomplete
     def __init__(self, data_dir: str, managers: PyManagers, plugin_dir_name: str = 'plugins') -> None: ...
     def get_fonts_list(self) -> dict[str, list[int]]:
         """

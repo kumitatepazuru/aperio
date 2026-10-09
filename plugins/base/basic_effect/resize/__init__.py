@@ -2,13 +2,12 @@ import math
 import struct
 
 import aperio_plugin
-from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, GeneratorWgslReturn, VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import make_generator_information
-from ...common.shader_loader import effect_dirs, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 def ftol(value: float) -> int:
@@ -30,7 +29,7 @@ class ResizeEffect(VideoEffectGeneratorBase):
         self.description = "Resizes the image by resampling pixels."
 
         current_dir, _ = effect_dirs(__file__)
-        self.resize_shader = shared_shader("base_effect_resize", current_dir, "resize.wgsl")
+        self.resize_shader = shared_slang_shader("base_effect_resize", current_dir, "resize.slang")
 
     @event(type=GeneratorEvent.New)
     @event(type=GeneratorEvent.RequestStructure)
@@ -72,7 +71,7 @@ class ResizeEffect(VideoEffectGeneratorBase):
             ],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorWgslReturn | GeneratorBuilderReturn:
+    def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         args = params.args
         pixel_size = bool(args.get("pixel_size", False))
         no_interpolation = bool(args.get("no_interpolation", False))
@@ -111,12 +110,8 @@ class ResizeEffect(VideoEffectGeneratorBase):
         new_height = max(1, new_height)
 
         if new_width == params.width and new_height == params.height:
-            return GeneratorBuilderReturn(gpu_util.PyImageGenerateBuilder(), ItemResult(params.width, params.height))
+            return None
 
         shader_params = struct.pack("iiii", new_width, new_height, 1 if no_interpolation else 0, 0)
 
-        return GeneratorWgslReturn(
-            self.resize_shader,
-            shader_params,
-            ItemResult(new_width, new_height),
-        )
+        return GeneratorShaderReturn(self.resize_shader, shader_params, ItemResult(new_width, new_height))

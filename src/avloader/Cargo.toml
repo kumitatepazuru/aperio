@@ -10,7 +10,6 @@ crate-type = ["rlib"]
 [dependencies]
 gpu_util = { path = "../gpu_util" }
 anyhow = { workspace = true }
-wgpu = { workspace = true }
 bytemuck = { workspace = true }
 half = "2"
 

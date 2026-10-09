@@ -1,6 +1,7 @@
 use crate::ffi::*;
 use crate::yuv_pipeline::{PlaneDesc, YuvConvParams, YuvLayout};
 use anyhow::{bail, Result};
+use gpu_util::rhi::TextureFormat;
 
 // ─── ColorFormat ─────────────────────────────────────────────────────────────
 
@@ -109,10 +110,10 @@ pub(crate) fn probe_media(handle: AvLoaderHandle) -> ProbedMedia {
                 tex_height: th.max(1) as u32,
                 bytes_per_texel: bpt,
                 format: match (bpt, is_uv) {
-                    (2, true) => wgpu::TextureFormat::Rg8Unorm,
-                    (2, false) => wgpu::TextureFormat::R16Unorm,
-                    (4, true) => wgpu::TextureFormat::Rg16Unorm,
-                    _ => wgpu::TextureFormat::R8Unorm,
+                    (2, true) => TextureFormat::Rg8Unorm,
+                    (2, false) => TextureFormat::R16Unorm,
+                    (4, true) => TextureFormat::Rg16Unorm,
+                    _ => TextureFormat::R8Unorm,
                 },
             }
         })

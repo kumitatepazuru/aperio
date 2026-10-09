@@ -9,13 +9,15 @@ use tokio::runtime::Runtime;
 use gpu_util::compiled_func::{
     self, CpuFunction, CpuInputImage, CpuOutput, GpuInputTexture, GpuTextureOutput, TextureFunction,
 };
+use gpu_util::compiled_hlsl::compile_hlsl_compute;
+use gpu_util::compiled_shader::CompiledShader;
 use gpu_util::image_generate_builder::{IdTree, ImageGenerateBuilder};
 use gpu_util::image_generator;
-use gpu_util::{compiled_wgsl, image_generate_builder, SharedTextureFormat};
-
-use crate::python::modules::compose_wgsl::{
-    PyComposableModuleDescriptor, PyNagaModuleDescriptor,
-};
+use gpu_util::image_generator::layout::InputArity;
+use gpu_util::rhi::{self, AddressMode, FilterMode};
+use gpu_util::{image_generate_builder, SharedTextureFormat};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[cfg(target_os = "linux")]
 use gpu_util::texture_to_native::linux::SharedTextureHandle;
@@ -55,12 +57,15 @@ impl WrappedImagePixelFormat {
 // Pythonで動かすためのライブラリのラッパーを作る
 #[pyclass]
 pub struct PySamplerOptions {
-    pub inner: compiled_wgsl::SamplerOptions,
+    pub inner: rhi::SamplerOptions,
 }
 
+/// コンパイル済みシェーダー(SPIR-V)のPythonラッパー。
+/// `from_slang`(Slang)または`from_hlsl`(HLSL、DXC経由)で生成し、
+/// どちらから作ったものでも`add_shader`で同じように実行できる。
 #[pyclass]
-pub struct PyCompiledWgsl {
-    pub inner: compiled_wgsl::CompiledWgsl,
+pub struct PyCompiledShader {
+    pub inner: Arc<CompiledShader>,
 }
 
 #[pyclass]
@@ -69,11 +74,11 @@ pub struct PyCompiledFunc {
     py_callback: Py<PyAny>,
 }
 
-/// wgpu::Texture のPythonラッパー。
+/// `rhi::Texture` のPythonラッパー。
 /// Pythonから直接生成することはできず、TextureFunc の引数・戻り値として使用する。
 #[pyclass]
 pub struct PyTexture {
-    pub inner: std::sync::Arc<wgpu::Texture>,
+    pub inner: rhi::Texture,
     pub width: u32,
     pub height: u32,
 }
@@ -99,6 +104,16 @@ pub struct PyImageGenerateBuilder {
 pub struct PyImageGenerator {
     pub inner: image_generator::ImageGenerator,
     rt: Runtime,
+}
+
+fn parse_input_arity(input_texture_layout: &str) -> PyResult<InputArity> {
+    match input_texture_layout {
+        "fixed" => Ok(InputArity::Fixed),
+        "variable" => Ok(InputArity::Variable),
+        _ => Err(PyValueError::new_err(
+            "Invalid input_texture_layout. Must be one of: fixed, variable",
+        )),
+    }
 }
 
 fn make_cpu_func(
@@ -182,10 +197,10 @@ impl PySamplerOptions {
     #[new]
     pub fn new(address_mode: &str, filter: &str) -> PyResult<Self> {
         let address_mode = match address_mode {
-            "clamp_to_edge" => wgpu::AddressMode::ClampToEdge,
-            "repeat" => wgpu::AddressMode::Repeat,
-            "mirror_repeat" => wgpu::AddressMode::MirrorRepeat,
-            "clamp_to_border" => wgpu::AddressMode::ClampToBorder,
+            "clamp_to_edge" => AddressMode::ClampToEdge,
+            "repeat" => AddressMode::Repeat,
+            "mirror_repeat" => AddressMode::MirrorRepeat,
+            "clamp_to_border" => AddressMode::ClampToBorder,
             _ => {
                 return Err(PyValueError::new_err(
                     "Invalid address_mode. Must be one of: clamp_to_edge, repeat, mirror_repeat, clamp_to_border",
@@ -194,8 +209,8 @@ impl PySamplerOptions {
         };
 
         let filter = match filter {
-            "nearest" => wgpu::FilterMode::Nearest,
-            "linear" => wgpu::FilterMode::Linear,
+            "nearest" => FilterMode::Nearest,
+            "linear" => FilterMode::Linear,
             _ => {
                 return Err(PyValueError::new_err(
                     "Invalid filter. Must be one of: nearest, linear",
@@ -204,7 +219,7 @@ impl PySamplerOptions {
         };
 
         Ok(Self {
-            inner: compiled_wgsl::SamplerOptions {
+            inner: rhi::SamplerOptions {
                 address_mode,
                 filter,
             },
@@ -213,67 +228,103 @@ impl PySamplerOptions {
 }
 
 #[pymethods]
-impl PyCompiledWgsl {
-    #[new]
-    #[pyo3(signature = (name, wgsl_code, generator, sampler_options=None, min_output_format=None))]
-    pub fn new(
+impl PyCompiledShader {
+    /// `source`をSlangでSPIR-Vへコンパイルする。エントリポイントは`main`固定。
+    ///
+    /// `name`はパイプラインキャッシュのキーにもなるため、同じソースを異なる`defines`で
+    /// コンパイルする場合は必ず別の`name`を渡すこと。
+    ///
+    /// 出力フォーマットは`max(generatorのimage_format, min_output_format)`(精度の高い方)。
+    /// `min_output_format`は「これより下げてはいけない」というフロアで、省略した場合は
+    /// フロア無し(常にgeneratorの設定に従う)。`input_texture_layout`は入力テクスチャ配列
+    /// (set 0)が固定長("fixed")か可変長("variable")か。
+    #[staticmethod]
+    #[pyo3(signature = (name, source, generator, search_paths=None, defines=None, min_output_format=None, input_texture_layout="fixed", sampler_options=None))]
+    pub fn from_slang(
         name: &str,
-        wgsl_code: &str,
+        source: &str,
         generator: &PyImageGenerator,
-        sampler_options: Option<&PySamplerOptions>,
+        search_paths: Option<Vec<String>>,
+        defines: Option<HashMap<String, String>>,
         min_output_format: Option<WrappedImagePixelFormat>,
-    ) -> Result<Self, PyErr> {
+        input_texture_layout: &str,
+        sampler_options: Option<&PySamplerOptions>,
+    ) -> PyResult<Self> {
+        let input_arity = parse_input_arity(input_texture_layout)?;
         let floor = min_output_format
             .map(|f| f.to_native())
             .unwrap_or(gpu_util::ImagePixelFormat::Rgba8Unorm);
-        let output_format = generator.inner.image_format().max(floor).to_wgpu();
+        let output_format = generator.inner.image_format().max(floor);
 
-        let inner = compiled_wgsl::CompiledWgsl::new(
+        let search_paths = search_paths.unwrap_or_default();
+        let search_paths: Vec<&str> = search_paths.iter().map(String::as_str).collect();
+        let defines = defines.unwrap_or_default();
+        let defines: Vec<(&str, &str)> = defines
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let inner = CompiledShader::from_slang(
             name,
-            wgsl_code,
+            source,
+            "main",
             &generator.inner,
             output_format,
+            input_arity,
+            &search_paths,
+            &defines,
             sampler_options.map(|s| &s.inner),
         )?;
-
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
-    /// composable module 群を naga_oil で合成し、その naga IR からシェーダーを作る。
-    ///
-    /// `name` はパイプラインキャッシュのキーにもなるため、同じシェーダーを異なる
-    /// `shader_defs` で合成する場合は必ず別の `name` を渡すこと。
-    ///
-    /// 実際に使われるフォーマットは `max(generatorのimage_format, min_output_format)`
-    /// (精度の高い方)。`min_output_format` は「これより下げてはいけない」という
-    /// フロアであり、強制フォーマットではないのでgeneratorの設定がそれより高精度なら
-    /// そちらがそのまま使われる。省略した場合はフロア無し(常にgeneratorの設定に従う)。
+    /// HLSLのコンピュートシェーダー`source`を、エントリポイント`entry_point`(既定は`main`)で
+    /// DXC経由でSPIR-Vへコンパイルする。引数の意味は`from_slang`と同じ
+    /// (`include_dirs`は`#include`の検索パス、`search_paths`に相当)。
+    /// リソースは`[[vk::binding(binding, set)]]`で入力=set 0、出力・サンプラー・params=set 1に束縛すること。
     #[staticmethod]
-    #[pyo3(signature = (name, composable_modules, naga_module, generator, sampler_options=None, min_output_format=None))]
-    pub fn compose_new(
+    #[pyo3(signature = (name, source, generator, entry_point="main", include_dirs=None, defines=None, min_output_format=None, input_texture_layout="fixed", sampler_options=None))]
+    pub fn from_hlsl(
         name: &str,
-        composable_modules: Vec<PyRef<'_, PyComposableModuleDescriptor>>,
-        naga_module: &PyNagaModuleDescriptor,
+        source: &str,
         generator: &PyImageGenerator,
-        sampler_options: Option<&PySamplerOptions>,
+        entry_point: &str,
+        include_dirs: Option<Vec<String>>,
+        defines: Option<HashMap<String, String>>,
         min_output_format: Option<WrappedImagePixelFormat>,
-    ) -> Result<Self, PyErr> {
-        let composable_modules: Vec<_> = composable_modules.iter().map(|m| &m.inner).collect();
+        input_texture_layout: &str,
+        sampler_options: Option<&PySamplerOptions>,
+    ) -> PyResult<Self> {
+        let input_arity = parse_input_arity(input_texture_layout)?;
         let floor = min_output_format
             .map(|f| f.to_native())
             .unwrap_or(gpu_util::ImagePixelFormat::Rgba8Unorm);
-        let output_format = generator.inner.image_format().max(floor).to_wgpu();
+        let output_format = generator.inner.image_format().max(floor);
 
-        let inner = compiled_wgsl::CompiledWgsl::compose_new(
+        let include_dirs = include_dirs.unwrap_or_default();
+        let include_dirs: Vec<&str> = include_dirs.iter().map(String::as_str).collect();
+        let defines = defines.unwrap_or_default();
+        let defines: Vec<(&str, &str)> = defines
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let inner = compile_hlsl_compute(
             name,
-            &composable_modules,
-            &naga_module.inner,
+            source,
+            entry_point,
             &generator.inner,
             output_format,
+            input_arity,
+            &include_dirs,
+            &defines,
             sampler_options.map(|s| &s.inner),
         )?;
-
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 }
 
@@ -326,8 +377,10 @@ fn id_tree_to_py(py: Python<'_>, tree: &IdTree) -> PyResult<Py<PyAny>> {
         IdTree::Parallel { id, branches } => {
             // branchesは`Vec<Vec<IdTree>>`(各ブランチの全ステップ列)なので、
             // 1段(ブランチのリスト)→さらに1段(各ブランチ自身のステップリスト)変換する。
-            let branch_lists: PyResult<Vec<Py<PyAny>>> =
-                branches.iter().map(|branch| id_trees_to_py(py, branch)).collect();
+            let branch_lists: PyResult<Vec<Py<PyAny>>> = branches
+                .iter()
+                .map(|branch| id_trees_to_py(py, branch))
+                .collect();
             let list = PyList::new(py, branch_lists?)?;
             let dict = PyDict::new(py);
             dict.set_item(id, list)?;
@@ -350,23 +403,6 @@ impl PyImageGenerateBuilder {
         Self { inner }
     }
 
-    pub fn add_wgsl<'py>(
-        &self,
-        wgsl: &PyCompiledWgsl,
-        params: Option<&Bound<'py, PyBytes>>,
-        output_width: u32,
-        output_height: u32,
-    ) -> Self {
-        let params = params.map(|p| p.as_bytes().to_vec());
-
-        let new_inner =
-            self.inner
-                .clone()
-                .add_wgsl(wgsl.inner.clone(), params, output_width, output_height);
-
-        Self { inner: new_inner }
-    }
-
     /// このビルダーが持つ全ステップの自動採番idを、追加順のリストとして返す
     /// (空のビルダーなら空リスト)。leafは文字列、`Parallel`は`{parallelのid:
     /// [各ブランチの全ステップidリスト...]}`という1要素の辞書になる(再帰的にネストしうる)。
@@ -374,17 +410,41 @@ impl PyImageGenerateBuilder {
     /// その唯一の値(ブランチのリスト)の`[-1]`(=最後のブランチ、これも1つのリスト)の
     /// `[-1]`を、というように再帰的にたどればよい。
     pub fn get_id_tree(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
-        self.inner.id_tree().iter().map(|t| id_tree_to_py(py, t)).collect()
+        self.inner
+            .id_tree()
+            .iter()
+            .map(|t| id_tree_to_py(py, t))
+            .collect()
     }
 
     /// 実際には計算を行わず、同じフレーム内で`linked_id`(`get_id_tree`で取得したもの)が指す
     /// 既存ステップの出力をそのまま使い回すステップを追加する。
     pub fn add_linked(&self, linked_id: String, output_width: u32, output_height: u32) -> Self {
-        let new_inner = self.inner.clone().add_linked(linked_id, output_width, output_height);
+        let new_inner = self
+            .inner
+            .clone()
+            .add_linked(linked_id, output_width, output_height);
         Self { inner: new_inner }
     }
 
-    pub fn add_parallel_wgsl<'py>(
+    pub fn add_shader<'py>(
+        &self,
+        shader: &PyCompiledShader,
+        params: Option<&Bound<'py, PyBytes>>,
+        output_width: u32,
+        output_height: u32,
+    ) -> Self {
+        let params = params.map(|p| p.as_bytes().to_vec());
+        let new_inner = self.inner.clone().add_shader(
+            Arc::clone(&shader.inner),
+            params,
+            output_width,
+            output_height,
+        );
+        Self { inner: new_inner }
+    }
+
+    pub fn add_parallel<'py>(
         &self,
         py: Python<'py>,
         pipelines: Vec<Py<PyImageGenerateBuilder>>,
@@ -397,7 +457,7 @@ impl PyImageGenerateBuilder {
             })
             .collect();
         let pipelines = pipelines?;
-        let new_inner = self.inner.clone().add_parallel_wgsl(pipelines);
+        let new_inner = self.inner.clone().add_parallel(pipelines);
 
         Ok(Self { inner: new_inner })
     }
@@ -441,8 +501,7 @@ impl PyImageGenerator {
     #[new]
     pub fn new(format: WrappedImagePixelFormat) -> Result<Self> {
         let rt = Runtime::new()?;
-        let inner =
-            rt.block_on(async { image_generator::ImageGenerator::new(format.to_native()).await })?;
+        let inner = image_generator::ImageGenerator::new(format.to_native())?;
         Ok(Self { inner, rt })
     }
 
@@ -496,9 +555,9 @@ pub mod gpu_util_register {
     #[pymodule_export]
     use super::PyCompiledFunc;
     #[pymodule_export]
-    use super::PyCompiledTextureFunc;
+    use super::PyCompiledShader;
     #[pymodule_export]
-    use super::PyCompiledWgsl;
+    use super::PyCompiledTextureFunc;
     #[pymodule_export]
     use super::PyImageGenerateBuilder;
     #[pymodule_export]
@@ -513,12 +572,4 @@ pub mod gpu_util_register {
     use super::WrappedImagePixelFormat;
     #[pymodule_export]
     use super::WrappedSharedTextureFormat;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::create_composable_module;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::create_naga_module;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::PyComposableModuleDescriptor;
-    #[pymodule_export]
-    use crate::python::modules::compose_wgsl::PyNagaModuleDescriptor;
 }

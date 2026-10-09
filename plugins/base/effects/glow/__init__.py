@@ -7,7 +7,7 @@ from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
 from ...common.params import clamp, make_generator_information, pack_box_average_dir_params, pack_expand_params
-from ...common.shader_loader import compose_common_shader, effect_dirs, lib_module, shared_shader
+from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 # `通常`形状のカスケード(exedit-inspect glow README §5.1)。半径は`拡散`をこれらの
 # 除数で割ったもの、strengthは`強さ`にこの倍率を掛けたもの(強さ*6から始まり毎パス半分)。
@@ -34,39 +34,39 @@ class GlowEffect(VideoEffectGeneratorBase):
         self.description = "Extracts bright areas and spreads them as directional glow streaks or a soft cascade blur."
 
         current_dir, common_dir = effect_dirs(__file__)
-        color_module = lib_module(common_dir, "color")
-        blur_module = lib_module(common_dir, "blur")
 
         rgba32float = gpu_util.WrappedImagePixelFormat.Rgba32Float
         rgba16float = gpu_util.WrappedImagePixelFormat.Rgba16Float
 
         # extract: 単発(直後のexpandまでで自身は連鎖しない)。値はBT.601係数の逆数
         # (最大約8.8倍)で頭打ちのため16で足りる。
-        self.extract_shader = compose_common_shader(
-            "glow_extract", [color_module], current_dir, "extract.wgsl", min_output_format=rgba16float
+        self.extract_shader = shared_slang_shader(
+            "glow_extract", current_dir, "extract.slang", min_output_format=rgba16float
         )
         # box_average_dir: ループ内(i>0)でライブのアキュムレータ自体をブラーする
         # 深い連鎖のため32必須。
-        self.box_average_dir_shader = compose_common_shader(
-            "glow_box_average_dir", [blur_module], common_dir, "box_average_dir.wgsl", min_output_format=rgba32float
+        self.box_average_dir_shader = shared_slang_shader(
+            "glow_box_average_dir", common_dir, "box_average_dir.slang", min_output_format=rgba32float
         )
         # line_accumulate: shapeにより最大12回自身の出力を再読込する深い連鎖のため32必須。
-        self.line_accumulate_shader = compose_common_shader(
-            "glow_line_accumulate", [color_module, blur_module], current_dir, "line_accumulate.wgsl",
+        self.line_accumulate_shader = shared_slang_shader(
+            "glow_line_accumulate", current_dir, "line_accumulate.slang",
             min_output_format=rgba32float,
         )
         # composite: エフェクト最終段の単発。accumはline_accumulate側で輝度2.0に
         # 頭打ち済みなので超過も数倍止まりで16で足りる。
-        self.composite_shader = compose_common_shader(
-            "glow_composite", [color_module], current_dir, "composite.wgsl", min_output_format=rgba16float
+        self.composite_shader = shared_slang_shader(
+            "glow_composite", current_dir, "composite.slang", min_output_format=rgba16float
         )
         # select: shapeにより最大12回連続でアキュムレータを持ち越す深い連鎖のため32必須。
-        self.select_shader = shared_shader(
-            "glow_select", common_dir, "select.wgsl", min_output_format=rgba32float
+        self.select_shader = shared_slang_shader(
+            "glow_select", common_dir, "select.slang", min_output_format=rgba32float,
+            input_texture_layout="variable",
+            sampler_options=gpu_util.PySamplerOptions("clamp_to_edge", "nearest"),
         )
         # expand: extract直後の1回だけ(自身は連鎖しない)。オフセット無し・非負のみで16で足りる。
-        self.expand_shader = shared_shader(
-            "expand", common_dir, "expand.wgsl", min_output_format=rgba16float
+        self.expand_shader = shared_slang_shader(
+            "expand", common_dir, "expand.slang", min_output_format=rgba16float
         )
 
     @event(type=GeneratorEvent.New)
@@ -172,7 +172,7 @@ class GlowEffect(VideoEffectGeneratorBase):
         nw, nh = w + 2 * diffusion, h + 2 * diffusion
 
         def select_branch(index: int) -> gpu_util.PyImageGenerateBuilder:
-            return gpu_util.PyImageGenerateBuilder().add_wgsl(self.select_shader, struct.pack("i", index), nw, nh)
+            return gpu_util.PyImageGenerateBuilder().add_shader(self.select_shader, struct.pack("i", index), nw, nh)
 
         def box_average_params(radius: int, step_x: int, step_y: int) -> bytes:
             return pack_box_average_dir_params(radius, step_x, step_y, nw, nh)
@@ -184,9 +184,9 @@ class GlowEffect(VideoEffectGeneratorBase):
         extract_params = struct.pack(
             "fifff", threshold_frac, 1 if use_source_color else 0, color[0], color[1], color[2]
         )
-        ext_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.extract_shader, extract_params, w, h)
+        ext_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.extract_shader, extract_params, w, h)
         expand_params = pack_expand_params(diffusion, diffusion, nw, nh)
-        glow_chain = ext_branch.add_wgsl(self.expand_shader, expand_params, nw, nh)
+        glow_chain = ext_branch.add_shader(self.expand_shader, expand_params, nw, nh)
 
         # --- 形状ごとの蓄積(README §5) ---
         if shape == "normal":
@@ -195,42 +195,49 @@ class GlowEffect(VideoEffectGeneratorBase):
             for i, (divisor, mult) in enumerate(zip(_NORMAL_DIVISORS, _NORMAL_MULTS)):
                 r = diffusion // divisor
                 gain = strength_scale * mult
-                v_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
+                v_branch = gpu_util.PyImageGenerateBuilder().add_shader(
                     self.box_average_dir_shader, box_average_params(r, 0, 1), nw, nh
                 )
-                glow_chain = glow_chain.add_parallel_wgsl([v_branch, select_branch(0)])
-                glow_chain = glow_chain.add_wgsl(
+                glow_chain = glow_chain.add_parallel([v_branch, select_branch(0)])
+                glow_chain = glow_chain.add_shader(
                     self.line_accumulate_shader, line_accumulate_params(r, 1, 0, gain, i == 0), nw, nh
                 )
         else:
             directions = _SHAPE_DIRECTIONS.get(shape, _SHAPE_DIRECTIONS["cross8"])
             is_first = True
+            # line_accumulateは[和を取る元, これまでの蓄積]の2入力の固定長レイアウトで、
+            # 全パスで入力本数を揃える必要がある。初回はstateが拡張済み抽出結果1枚だけ
+            # なので、空ブランチ2つのparallelで同じテクスチャを複製して2枚にしておく
+            # (ディスパッチやテクスチャ確保は発生しない。is_first=1のとき2枚目は読まれない)。
+            glow_chain = glow_chain.add_parallel(
+                [gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()]
+            )
             for dx, dy in directions:
                 # 半径は r, r/2, r/4、strength倍率は 1, 2, 4(README §5.2: 3スケールの
                 # 合計利得がほぼ等しくなる組み合わせ)。
                 for radius_val, mult in ((diffusion, 1.0), (diffusion // 2, 2.0), (diffusion // 4, 4.0)):
                     gain = strength_scale * mult
-                    accumulate_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(
+                    accumulate_branch = gpu_util.PyImageGenerateBuilder().add_shader(
                         self.line_accumulate_shader, line_accumulate_params(radius_val, dx, dy, gain, is_first), nw, nh
                     )
-                    glow_chain = glow_chain.add_parallel_wgsl([select_branch(0), accumulate_branch])
+                    glow_chain = glow_chain.add_parallel([select_branch(0), accumulate_branch])
                     is_first = False
             # state = [source_const, accum] -> accum(index=1)だけを残す
-            glow_chain = glow_chain.add_wgsl(self.select_shader, struct.pack("i", 1), nw, nh)
+            glow_chain = glow_chain.add_shader(self.select_shader, struct.pack("i", 1), nw, nh)
 
         # --- 仕上げ`ぼかし`(README §6: カーネル幅で割る素のボックス平均を2ラウンド) ---
         if blur_radius > 0:
             for _ in range(2):
-                glow_chain = glow_chain.add_wgsl(
+                glow_chain = glow_chain.add_shader(
                     self.box_average_dir_shader, box_average_params(blur_radius, 0, 1), nw, nh
                 )
-                glow_chain = glow_chain.add_wgsl(
+                glow_chain = glow_chain.add_shader(
                     self.box_average_dir_shader, box_average_params(blur_radius, 1, 0), nw, nh
                 )
 
         # --- 最終合成(README §8) ---
-        base_branch = gpu_util.PyImageGenerateBuilder().add_wgsl(self.expand_shader, expand_params, nw, nh)
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel_wgsl([base_branch, glow_chain]).add_wgsl(
+        base_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.expand_shader, expand_params, nw, nh)
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([base_branch, glow_chain]).add_shader(
             self.composite_shader, struct.pack("i", 1 if light_only else 0), nw, nh
         )
 
