@@ -24,6 +24,7 @@ struct LayerParams {
 struct InputTextures {
     Texture2D<float4> tex[];
 };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
 
 // グループ1: 出力・サンプラー・メタデータ
@@ -33,6 +34,7 @@ struct EffectResources {
     SamplerState linear_sampler;
     StructuredBuffer<LayerParams> layer_params_array;
 };
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources> res;
 
 // --- コンピュートシェーダー本体 ---

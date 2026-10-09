@@ -10,7 +10,7 @@ from .plugin_base.generator_base import (
     GeneratorBuilderReturn,
     GeneratorFuncReturn,
     GeneratorTextureReturn,
-    GeneratorWgslReturn,
+    GeneratorShaderReturn,
 )
 
 if TYPE_CHECKING:
@@ -57,13 +57,13 @@ def invert_3x3(m: list[list[float]]) -> list[list[float]] | None:
 
 def apply_generate_result(
     builder: gpu_util.PyImageGenerateBuilder,
-    generate_result: "GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn",
+    generate_result: "GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn",
 ) -> gpu_util.PyImageGenerateBuilder:
-    """GeneratorWgslReturn/FuncReturn/TextureReturn/BuilderReturn のいずれかを builder に適用する。
+    """GeneratorShaderReturn/FuncReturn/TextureReturn/BuilderReturn のいずれかを builder に適用する。
     _process_video_item のオブジェクト生成・エフェクトチェーンの両方から使う共通ヘルパー。"""
     item_result = generate_result.item_result
-    if isinstance(generate_result, GeneratorWgslReturn):
-        return builder.add_wgsl(generate_result.compiled, generate_result.params, item_result.width, item_result.height)
+    if isinstance(generate_result, GeneratorShaderReturn):
+        return builder.add_shader(generate_result.compiled, generate_result.params, item_result.width, item_result.height)
     elif isinstance(generate_result, GeneratorFuncReturn):
         return builder.add_func(generate_result.compiled, generate_result.params, item_result.width, item_result.height)
     elif isinstance(generate_result, GeneratorTextureReturn):
@@ -116,7 +116,7 @@ def append_frame_entry(
 
     レイヤーを「ローカル z=0 平面上にある、基点(ピボット)中心のテクスチャ矩形」とみなし、
     拡大率 -> 3D回転 -> 平行移動(X/Y/Z) -> 透視投影 の順で画面へ送る。平面なので
-    この一連の変換は3x3ホモグラフィ1枚で表せる。compose.wgsl には逆行列を渡す。
+    この一連の変換は3x3ホモグラフィ1枚で表せる。compose.slang には逆行列を渡す。
     """
     pos = result.pos or (0.0, 0.0, 0.0)
     # 整数に丸めず実数のまま持つ (実機の Q12 = 1/4096px 相当のサブピクセル座標)
@@ -167,7 +167,7 @@ def append_frame_entry(
         inv = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         alpha = 0.0
 
-    # WGSLのmat3x3は列優先で、各列は16バイトにパディングされる。
+    # Slangのcompose.slangも列ごとにfloat4で受けるため、列優先で、各列は16バイトにパディングされる。
     # struct LayerParams: inv_transform (mat3x3), center_x, center_y, alpha, _pad -> 64バイト
     params_bytes = struct.pack(
         "<16f",

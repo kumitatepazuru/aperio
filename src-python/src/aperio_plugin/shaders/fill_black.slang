@@ -1,9 +1,10 @@
-// 入力テクスチャが無いシェーダー: group0(入力用ParameterBlock)を宣言しないため、
-// Slangはこの唯一のParameterBlockを自動的にset0へ割り当てる。
+// 入力テクスチャが無いシェーダー: group0(入力用ParameterBlock)は宣言せず、
+// resだけを規約通りset 1に固定する(set 0は空)。
 struct EffectResources {
     [vk::image_format(APERIO_IMAGE_FORMAT)]
     RWTexture2D<float4> outputTex;
 };
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources> res;
 
 [shader("compute")]

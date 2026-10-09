@@ -87,14 +87,20 @@ class AperioManager(PluginManager, EventManager):
         self.text_renderer = text_renderer
 
         shader_dir = os.path.join(os.path.dirname(__file__), "shaders")
-        with open(os.path.join(shader_dir, "compose.wgsl"), "r") as f:
+        with open(os.path.join(shader_dir, "compose.slang"), "r", encoding="utf-8") as f:
             sampler = gpu_util.PySamplerOptions("clamp_to_edge", "linear")
-            self.compose_wgsl = gpu_util.PyCompiledWgsl(
-                "compose_layer", f.read(), self.generator, sampler
+            # レイヤー数はフレームごとに変わるので、入力テクスチャは可変長配列
+            self.compose_slang = gpu_util.PyCompiledShader.from_slang(
+                "compose_layer",
+                f.read(),
+                self.generator,
+                search_paths=[shader_dir],
+                input_texture_layout="variable",
+                sampler_options=sampler,
             )
-        with open(os.path.join(shader_dir, "fill_black.wgsl"), "r") as f:
-            self.fill_black_wgsl = gpu_util.PyCompiledWgsl(
-                "fill_black", f.read(), self.generator, None
+        with open(os.path.join(shader_dir, "fill_black.slang"), "r", encoding="utf-8") as f:
+            self.fill_black_slang = gpu_util.PyCompiledShader.from_slang(
+                "fill_black", f.read(), self.generator, search_paths=[shader_dir]
             )
 
         # PluginManager.__init__ → プラグインスキャン・インスタンス化
@@ -170,14 +176,16 @@ class AperioManager(PluginManager, EventManager):
             layer_frame = obj_plugin.generate(params)
             if layer_frame is None:
                 return None
-            collect_additional_item(layer_frame.item_result, behind_items, ahead_items)
-            item_result = layer_frame.item_result
+            item_result = layer_frame if isinstance(layer_frame, ItemResult) else layer_frame.item_result
+            collect_additional_item(item_result, behind_items, ahead_items)
 
             layer_builder = gpu_util.PyImageGenerateBuilder()
             if pending_link is not None:
                 layer_builder = layer_builder.add_linked(*pending_link)
                 pending_link = None
-            layer_builder = apply_generate_result(layer_builder, layer_frame)
+
+            if not isinstance(layer_frame, ItemResult):
+                layer_builder = apply_generate_result(layer_builder, layer_frame)
 
             pipeline_id_tree = layer_builder.get_id_tree()
             if pipeline_id_tree:  # get_id_treeは常にlist、空ならNoneではなく空listが返る
@@ -211,13 +219,16 @@ class AperioManager(PluginManager, EventManager):
                 if tmp_layer_frame is None:
                     continue
                 layer_frame = tmp_layer_frame
-                collect_additional_item(layer_frame.item_result, behind_items, ahead_items)
-                item_result.combine(layer_frame.item_result)
+
+                effect_item_result = layer_frame if isinstance(layer_frame, ItemResult) else layer_frame.item_result
+                collect_additional_item(effect_item_result, behind_items, ahead_items)
+                item_result.combine(effect_item_result)
 
                 if pending_link is not None:
                     layer_builder = layer_builder.add_linked(*pending_link)
                     pending_link = None
-                layer_builder = apply_generate_result(layer_builder, layer_frame)
+                if not isinstance(layer_frame, ItemResult):
+                    layer_builder = apply_generate_result(layer_builder, layer_frame)
 
                 pipeline_id_tree = layer_builder.get_id_tree()
                 if pipeline_id_tree:
@@ -296,16 +307,16 @@ class AperioManager(PluginManager, EventManager):
                     append_frame_entry(*ahead_entry, layer_builders, generator_params, height)
 
             if len(layer_builders) == 0:
-                layer_builder = gpu_util.PyImageGenerateBuilder().add_wgsl(
-                    self.fill_black_wgsl, None, width, height
+                layer_builder = gpu_util.PyImageGenerateBuilder().add_shader(
+                    self.fill_black_slang, None, width, height
                 )
                 return layer_builder, {}
 
             builder = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_parallel(layer_builders)
-                .add_wgsl(
-                    self.compose_wgsl, b"".join(generator_params), width, height
+                .add_shader(
+                    self.compose_slang, b"".join(generator_params), width, height
                 ) # TODO: render Passを使っての高速化と簡潔化を試みる
             )
 
