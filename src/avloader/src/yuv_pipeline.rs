@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
+use gpu_util::compiled_shader::compile_slang_to_spirv;
 use gpu_util::image_generator::ImageGenerator;
-use std::sync::Arc;
-use wgpu::{include_wgsl, util::DeviceExt, TextureUsages};
+use gpu_util::rhi::*;
 
 // ─── YUV pixel format categories ─────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ pub enum YuvLayout {
     SemiPlanarVU,
 }
 
-/// Plane descriptor used to allocate + upload data to wgpu textures.
+/// Plane descriptor used to allocate + upload data to GPU textures.
 #[derive(Debug, Clone)]
 pub struct PlaneDesc {
     /// Texture width in texels
@@ -27,7 +27,7 @@ pub struct PlaneDesc {
     pub tex_height: u32,
     /// Bytes per texel (1 → R8Unorm, 2 → R16Unorm or Rg8Unorm, 4 → Rg16Unorm)
     pub bytes_per_texel: u32,
-    pub format: wgpu::TextureFormat,
+    pub format: TextureFormat,
 }
 
 impl PlaneDesc {
@@ -50,9 +50,9 @@ impl PlaneDesc {
 #[derive(Debug, Clone, Copy)]
 pub struct YuvConvParams {
     pub y_offset: f32,
-    pub y_scale:  f32,
+    pub y_scale: f32,
     pub c_offset: f32,
-    pub c_scale:  f32,
+    pub c_scale: f32,
 }
 
 impl YuvConvParams {
@@ -63,9 +63,9 @@ impl YuvConvParams {
     pub fn limited_8bit() -> Self {
         Self {
             y_offset: 16.0 / 255.0,
-            y_scale:  255.0 / 219.0,
+            y_scale: 255.0 / 219.0,
             c_offset: 128.0 / 255.0,
-            c_scale:  255.0 / 224.0,
+            c_scale: 255.0 / 224.0,
         }
     }
 
@@ -81,10 +81,10 @@ impl YuvConvParams {
     /// Chroma excursion is ±448 around 512, full width = 896.
     pub fn limited_10bit_in_16() -> Self {
         Self {
-            y_offset: (64u32  << 6) as f32 / 65535.0,  // 4096 / 65535
-            y_scale:  65535.0 / (876u32 << 6) as f32,  // 65535 / 56064
-            c_offset: (512u32 << 6) as f32 / 65535.0,  // 32768 / 65535
-            c_scale:  65535.0 / (896u32 << 6) as f32,  // 65535 / 57344
+            y_offset: (64u32 << 6) as f32 / 65535.0,  // 4096 / 65535
+            y_scale: 65535.0 / (876u32 << 6) as f32,  // 65535 / 56064
+            c_offset: (512u32 << 6) as f32 / 65535.0, // 32768 / 65535
+            c_scale: 65535.0 / (896u32 << 6) as f32,  // 65535 / 57344
         }
     }
 
@@ -94,9 +94,9 @@ impl YuvConvParams {
     pub fn full_range_8bit() -> Self {
         Self {
             y_offset: 0.0,
-            y_scale:  1.0,
+            y_scale: 1.0,
             c_offset: 128.0 / 255.0,
-            c_scale:  1.0,
+            c_scale: 1.0,
         }
     }
 
@@ -107,9 +107,9 @@ impl YuvConvParams {
     pub fn full_range_10bit_in_16() -> Self {
         Self {
             y_offset: 0.0,
-            y_scale:  65535.0 / (1023u32 << 6) as f32,  // 65535 / 65472
-            c_offset: (512u32 << 6) as f32 / 65535.0,   // 32768 / 65535
-            c_scale:  65535.0 / (1023u32 << 6) as f32,  // 65535 / 65472
+            y_scale: 65535.0 / (1023u32 << 6) as f32, // 65535 / 65472
+            c_offset: (512u32 << 6) as f32 / 65535.0, // 32768 / 65535
+            c_scale: 65535.0 / (1023u32 << 6) as f32, // 65535 / 65472
         }
     }
 
@@ -125,148 +125,101 @@ impl YuvConvParams {
 
 // ─── YuvPipeline ─────────────────────────────────────────────────────────────
 
+const YUV_SLANG: &str = include_str!("shaders/yuv_to_rgba.slang");
+
 pub struct YuvPipeline {
     layout: YuvLayout,
-    pipeline: wgpu::RenderPipeline,
-    bgl: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
-    params_buf: wgpu::Buffer,
+    pipeline: GraphicsPipeline,
+    sampler: Sampler,
+    params_buf: Buffer,
 }
 
 impl YuvPipeline {
-    pub fn new(device: &wgpu::Device, layout: YuvLayout, params: YuvConvParams) -> Self {
+    pub fn new(device: &Device, layout: YuvLayout, params: YuvConvParams) -> Result<Self> {
         // ── sampler ────────────────────────────────────────────────────────
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("YuvPipeline sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(&SamplerOptions {
+            address_mode: AddressMode::ClampToEdge,
+            filter: FilterMode::Linear,
+        })?;
 
         // ── conversion params uniform buffer ────────────────────────────────
-        let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("YuvPipeline params"),
-            contents: &params.as_bytes(),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let params_buf =
+            device.create_buffer(16, BufferUsage::UNIFORM, true, "YuvPipeline params")?;
+        let bytes = params.as_bytes();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                params_buf
+                    .mapped_ptr()
+                    .context("YuvPipeline params buffer is not host-mapped")?
+                    .as_ptr()
+                    .cast::<u8>(),
+                bytes.len(),
+            );
+        }
 
-        // ── bind group layout ───────────────────────────────────────────────
-        let plane_binding = |binding: u32| wgpu::BindGroupLayoutEntry {
+        // ── descriptor layout (set 0 のみ。binding は yuv_to_rgba.slang と対応) ──
+        let (plane_count, define) = match layout {
+            YuvLayout::Planar => (3, "LAYOUT_PLANAR"),
+            YuvLayout::PlanarAlpha => (4, "LAYOUT_PLANAR_ALPHA"),
+            YuvLayout::SemiPlanar => (2, "LAYOUT_SEMIPLANAR"),
+            YuvLayout::SemiPlanarVU => (2, "LAYOUT_SEMIPLANAR_VU"),
+        };
+        let binding = |binding: u32, kind: BindingKind| BindingDesc {
             binding,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Texture {
-                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                view_dimension: wgpu::TextureViewDimension::D2,
-                multisampled: false,
-            },
-            count: None,
+            kind,
+            count: 1,
+            variable_count: false,
+            stages: ShaderStages::FRAGMENT,
         };
-        let sampler_binding = |binding: u32| wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-            count: None,
+        let mut bindings: Vec<BindingDesc> = (0..plane_count)
+            .map(|i| binding(i, BindingKind::SampledImage))
+            .collect();
+        bindings.push(binding(plane_count, BindingKind::Sampler));
+        bindings.push(binding(plane_count + 1, BindingKind::UniformBuffer));
+        let pipeline_layout = PipelineLayoutDesc {
+            sets: vec![SetLayoutDesc { bindings }],
         };
-        let params_binding = |binding: u32| wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        };
-
-        let bgl_entries: Vec<wgpu::BindGroupLayoutEntry> = match layout {
-            YuvLayout::Planar => vec![
-                plane_binding(0),   // Y
-                plane_binding(1),   // Cb
-                plane_binding(2),   // Cr
-                sampler_binding(3),
-                params_binding(4),
-            ],
-            YuvLayout::PlanarAlpha => vec![
-                plane_binding(0),   // Y
-                plane_binding(1),   // Cb
-                plane_binding(2),   // Cr
-                plane_binding(3),   // A
-                sampler_binding(4),
-                params_binding(5),
-            ],
-            YuvLayout::SemiPlanar | YuvLayout::SemiPlanarVU => vec![
-                plane_binding(0),   // Y
-                plane_binding(1),   // UV or VU (Rg8Unorm / Rg16Unorm)
-                sampler_binding(2),
-                params_binding(3),
-            ],
-        };
-
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("YuvPipeline BGL"),
-            entries: &bgl_entries,
-        });
 
         // ── shader ──────────────────────────────────────────────────────────
-        let shader = match layout {
-            YuvLayout::Planar => {
-                device.create_shader_module(include_wgsl!("shaders/yuv_planar_to_rgba.wgsl"))
-            }
-            YuvLayout::PlanarAlpha => {
-                device.create_shader_module(include_wgsl!("shaders/yuv_planar_alpha_to_rgba.wgsl"))
-            }
-            YuvLayout::SemiPlanar => {
-                device.create_shader_module(include_wgsl!("shaders/yuv_semiplanar_to_rgba.wgsl"))
-            }
-            YuvLayout::SemiPlanarVU => {
-                device.create_shader_module(include_wgsl!("shaders/yuv_semiplanar_vu_to_rgba.wgsl"))
-            }
+        let compile = |entry: &str| {
+            compile_slang_to_spirv(
+                "yuv_to_rgba",
+                "yuv_to_rgba.slang",
+                YUV_SLANG,
+                entry,
+                &[],
+                &[(define, "1")],
+            )
+            .with_context(|| format!("Failed to compile yuv_to_rgba.slang ({define}, {entry})"))
         };
+        let vertex_spirv = compile("vs_main")?;
+        let fragment_spirv = compile("fs_main")?;
 
-        // ── render pipeline ─────────────────────────────────────────────────
-        let pl_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("YuvPipeline layout"),
-            bind_group_layouts: &[Some(&bgl)],
-            immediate_size: 0,
-        });
+        // Slangは単一エントリポイントのSPIR-Vを常に"main"という名前で出力する。
+        let pipeline = device
+            .create_graphics_pipeline(&GraphicsPipelineDesc {
+                vertex_spirv: &vertex_spirv,
+                vertex_entry: "main",
+                fragment_spirv: &fragment_spirv,
+                fragment_entry: "main",
+                layout: pipeline_layout,
+                vertex_buffers: vec![],
+                color_format: TextureFormat::Rgba16Float,
+                blend: None,
+            })
+            .context("Failed to create the YUV conversion pipeline")?;
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("YuvPipeline"),
-            layout: Some(&pl_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba16Float,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        Self {
+        Ok(Self {
             layout,
             pipeline,
-            bgl,
             sampler,
             params_buf,
-        }
+        })
     }
 
     /// Upload plane data and run the YUV→RGBA16Float render pass.
-    /// Returns an `Arc<wgpu::Texture>` (Rgba16Float, TEXTURE_BINDING | RENDER_ATTACHMENT | COPY_SRC).
+    /// Returns a pooled Rgba16Float texture (SAMPLED | COLOR_TARGET | TRANSFER_SRC).
     pub fn convert(
         &self,
         ig: &ImageGenerator,
@@ -274,167 +227,77 @@ impl YuvPipeline {
         plane_data: &[&[u8]],
         out_width: u32,
         out_height: u32,
-    ) -> Result<Arc<wgpu::Texture>> {
+    ) -> Result<Texture> {
         let device = &ig.device;
-        let queue = &ig.queue;
 
         // ── upload each YUV plane to a pooled texture ─────────────────────
-        let plane_textures: Vec<Arc<wgpu::Texture>> = plane_descs
-            .iter()
-            .zip(plane_data.iter())
-            .map(|(desc, data)| {
-                let tex = ig.get_or_create_texture(
-                    desc.tex_width,
-                    desc.tex_height,
-                    desc.format,
-                    TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-                    Some("YUV plane"),
-                );
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &tex,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    data,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(desc.bytes_per_row()),
-                        rows_per_image: Some(desc.tex_height),
-                    },
-                    wgpu::Extent3d {
-                        width: desc.tex_width,
-                        height: desc.tex_height,
-                        depth_or_array_layers: 1,
-                    },
-                );
-                tex
-            })
-            .collect();
+        let mut plane_views = Vec::with_capacity(plane_descs.len());
+        let mut plane_textures = Vec::with_capacity(plane_descs.len());
+        for (desc, data) in plane_descs.iter().zip(plane_data.iter()) {
+            let tex = ig.get_or_create_texture(
+                desc.tex_width,
+                desc.tex_height,
+                desc.format,
+                TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
+                "YUV plane",
+            )?;
+            device.upload_texture_data(&tex, data)?;
+            plane_views.push(device.create_texture_view(&tex)?);
+            plane_textures.push(tex);
+        }
 
         // ── output texture – pooled, caller must not hold across frames ────
         let output = ig.get_or_create_texture(
             out_width,
             out_height,
-            wgpu::TextureFormat::Rgba16Float,
-            TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
-            Some("YUV output RGBA"),
-        );
+            TextureFormat::Rgba16Float,
+            TextureUsage::COLOR_TARGET | TextureUsage::SAMPLED | TextureUsage::TRANSFER_SRC,
+            "YUV output RGBA",
+        )?;
+        let out_view = device.create_texture_view(&output)?;
 
-        // ── bind group ──────────────────────────────────────────────────────
-        let views: Vec<wgpu::TextureView> = plane_textures
+        // ── resource set (binding 番号は new() のレイアウトと同じ並び) ───────
+        let mut resources: Vec<ResourceBinding> = plane_views
             .iter()
-            .map(|t| t.create_view(&Default::default()))
+            .enumerate()
+            .map(|(i, view)| ResourceBinding {
+                binding: i as u32,
+                resource: Resource::Texture(view),
+            })
             .collect();
-
-        let bg_entries: Vec<wgpu::BindGroupEntry> = match self.layout {
-            YuvLayout::Planar => vec![
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&views[0]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&views[1]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&views[2]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: self.params_buf.as_entire_binding(),
-                },
-            ],
-            YuvLayout::PlanarAlpha => vec![
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&views[0]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&views[1]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&views[2]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&views[3]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: self.params_buf.as_entire_binding(),
-                },
-            ],
-            YuvLayout::SemiPlanar | YuvLayout::SemiPlanarVU => vec![
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&views[0]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&views[1]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: self.params_buf.as_entire_binding(),
-                },
-            ],
+        let plane_count = match self.layout {
+            YuvLayout::Planar => 3,
+            YuvLayout::PlanarAlpha => 4,
+            YuvLayout::SemiPlanar | YuvLayout::SemiPlanarVU => 2,
         };
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("YuvPipeline bind group"),
-            layout: &self.bgl,
-            entries: &bg_entries,
-        });
-
-        // ── render pass ─────────────────────────────────────────────────────
-        let out_view = output.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("YuvPipeline encoder"),
-        });
-
-        {
-            let mut rpass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("YUV→RGBA pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &out_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            rpass.set_pipeline(&self.pipeline);
-            rpass.set_bind_group(0, &bind_group, &[]);
-            rpass.draw(0..3, 0..1); // full-screen triangle
+        if plane_views.len() != plane_count {
+            bail!(
+                "{:?} needs {} planes, got {}",
+                self.layout,
+                plane_count,
+                plane_views.len()
+            );
         }
+        resources.push(ResourceBinding {
+            binding: plane_count as u32,
+            resource: Resource::Sampler(&self.sampler),
+        });
+        resources.push(ResourceBinding {
+            binding: plane_count as u32 + 1,
+            resource: Resource::Buffer(&self.params_buf),
+        });
 
-        queue.submit([enc.finish()]);
+        device.render_pass(
+            &out_view,
+            Some([0.0, 0.0, 0.0, 1.0]),
+            &[Draw {
+                pipeline: &self.pipeline,
+                sets: &[&resources],
+                vertex_buffers: &[],
+                vertex_count: 3, // full-screen triangle
+                instance_count: 1,
+            }],
+        )?;
 
         Ok(output)
     }

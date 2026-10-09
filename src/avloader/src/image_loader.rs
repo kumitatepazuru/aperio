@@ -4,6 +4,7 @@ use crate::frame_cache::{self, DecoderRef};
 use crate::yuv_pipeline::YuvPipeline;
 use anyhow::{bail, Context, Result};
 use gpu_util::image_generator::ImageGenerator;
+use gpu_util::rhi::Texture;
 use std::sync::{Arc, Mutex};
 
 // ─── ImageLoader ─────────────────────────────────────────────────────────────
@@ -18,11 +19,11 @@ pub struct ImageLoader {
     height: u32,
     color_format: ColorFormat,
     safe_fps: f64, // used internally by the lazy get_frame() decode call
-    texture_frame: Arc<wgpu::Texture>,
+    texture_frame: Texture,
     rgb_cache: Mutex<Option<Arc<Vec<u8>>>>,
 }
 
-// No unsafe impl Send/Sync needed: every field (DecoderRef, Arc<wgpu::Texture>,
+// No unsafe impl Send/Sync needed: every field (DecoderRef, Texture,
 // Mutex<..>, primitives) is already Send + Sync, so it's auto-derived. DecoderRef
 // itself carries the SAFETY rationale (C++ decoder calls are serialised by an
 // internal std::mutex) in frame_cache.rs.
@@ -49,7 +50,7 @@ impl ImageLoader {
         let cached = frame_cache::decode_one(&decoder, 1, &probed.plane_descs, safe_fps)
             .ok_or_else(|| anyhow::anyhow!("avloader_video_decode_frame failed for \"{}\"", path))?;
 
-        let yuv_pipeline = YuvPipeline::new(&image_generator.device, probed.layout, probed.yuv_params);
+        let yuv_pipeline = YuvPipeline::new(&image_generator.device, probed.layout, probed.yuv_params)?;
         let plane_slices: Vec<&[u8]> = cached.planes.iter().map(|v| v.as_slice()).collect();
         let texture_frame = yuv_pipeline.convert(
             &image_generator,
@@ -81,9 +82,9 @@ impl ImageLoader {
     }
 
     /// Returns the GPU Rgba16Float texture built once at construction time.
-    /// Cheap `Arc` clone — no re-decode or re-conversion.
-    pub fn get_texture_frame(&self) -> Arc<wgpu::Texture> {
-        Arc::clone(&self.texture_frame)
+    /// Cheap handle clone — no re-decode or re-conversion.
+    pub fn get_texture_frame(&self) -> Texture {
+        self.texture_frame.clone()
     }
 
     /// Returns tightly packed little-endian `half::f16` RGB/RGBA bytes, decoded
