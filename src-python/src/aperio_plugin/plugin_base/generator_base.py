@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from aperio.item_structures import AdditionalItem, ItemResult, ItemStructure
-from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledWgsl, PyImageGenerateBuilder
+from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledShader, PyImageGenerateBuilder
 import numpy as np
 import numpy.typing as npt
 
@@ -8,8 +8,8 @@ from . import SubPluginBase
 
 
 @dataclass
-class GeneratorWgslReturn:
-    compiled: PyCompiledWgsl
+class GeneratorShaderReturn:
+    compiled: PyCompiledShader
     params: bytes
     item_result: ItemResult
 
@@ -92,7 +92,7 @@ class VideoGeneratorBase(SubPluginBase):
 
     def generate(
         self, params: VideoGenerateParameters
-    ) -> GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
+    ) -> GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | ItemResult | None:
         """
         フレームを生成するメソッド。サブクラスで必ずオーバーライドする必要がある。
 
@@ -100,7 +100,7 @@ class VideoGeneratorBase(SubPluginBase):
             params (VideoGenerateParameters): フレーム生成に必要なパラメーター
 
         Returns:
-            GeneratorWgslReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | None:
+            GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | ItemResult | None:
             生成されたフレームデータ。Noneを返すとその処理はスキップされる。
         """
         raise NotImplementedError("Subclasses must implement this method")

@@ -96,7 +96,7 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
         strength = strength_ui / 100.0
 
         cur_w, cur_h = params.width, params.height
-        current = gpu_util.PyImageGenerateBuilder().add_slang(self.ycbcr_encode_shader, None, cur_w, cur_h)
+        current = gpu_util.PyImageGenerateBuilder().add_shader(self.ycbcr_encode_shader, None, cur_w, cur_h)
 
         for radius in (r1, r2):
             if radius <= 0:
@@ -110,31 +110,31 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
 
             blur_branch = (
                 gpu_util.PyImageGenerateBuilder()
-                .add_slang(
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode),
                     cur_w,
                     new_h,
                 )
-                .add_slang(
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(radius, 1, 0, new_w, new_h, offset, border_mode, divisor_mode),
                     new_w,
                     new_h,
                 )
             )
-            src_branch = gpu_util.PyImageGenerateBuilder().add_slang(
+            src_branch = gpu_util.PyImageGenerateBuilder().add_shader(
                 self.expand_shader,
                 pack_expand_params(offset, offset, new_w, new_h),
                 new_w,
                 new_h,
             )
 
-            current = current.add_parallel([blur_branch, src_branch]).add_slang(
+            current = current.add_parallel([blur_branch, src_branch]).add_shader(
                 self.composite_shader, struct.pack("f", strength), new_w, new_h
             )
             cur_w, cur_h = new_w, new_h
 
-        current = current.add_slang(self.ycbcr_decode_shader, None, cur_w, cur_h)
+        current = current.add_shader(self.ycbcr_decode_shader, None, cur_w, cur_h)
 
         return GeneratorBuilderReturn(current, ItemResult(cur_w, cur_h))

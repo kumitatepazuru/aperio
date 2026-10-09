@@ -66,8 +66,8 @@ class MozaicEffect(VideoEffectGeneratorBase):
 
         builder = (
             gpu_util.PyImageGenerateBuilder()
-            .add_slang(self.mozaic_h_shader, h_params, width, height)
-            .add_slang(self.mozaic_v_shader, v_params, width, height)
+            .add_shader(self.mozaic_h_shader, h_params, width, height)
+            .add_shader(self.mozaic_v_shader, v_params, width, height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(width, height))

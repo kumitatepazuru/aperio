@@ -111,14 +111,14 @@ class BorderEffect(VideoEffectGeneratorBase):
         entry = self.pattern_cache.get(pattern_path) if pattern_path else None
 
         # --- オブジェクトをキャンバス中央(サイズ, サイズ)へ配置(README §3.2/§3.3) ---
-        object_full = gpu_util.PyImageGenerateBuilder().add_slang(
+        object_full = gpu_util.PyImageGenerateBuilder().add_shader(
             self.expand_shader, pack_expand_params(size, size, box_w, box_h), box_w, box_h
         )
 
         # --- 被覆マップ(垂直→水平の2パス「割らないボックス和」、README §4) ---
         mask_chain = object_full
         for step_x, step_y in ((0, 1), (1, 0)):
-            mask_chain = mask_chain.add_slang(
+            mask_chain = mask_chain.add_shader(
                 self.occupancy_dir_shader,
                 _pack_occupancy_dir_params(size, step_x, step_y, box_w, box_h, gain),
                 box_w,
@@ -130,15 +130,15 @@ class BorderEffect(VideoEffectGeneratorBase):
             tiled_branch = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_texture_func(pattern_func, None, loader.width, loader.height)
-                .add_slang(self.tile_shader, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
+                .add_shader(self.tile_shader, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
             )
             edge_layer = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_parallel([mask_chain, tiled_branch])
-                .add_slang(self.encode_pattern_shader, struct.pack("f", 1.0), box_w, box_h)
+                .add_shader(self.encode_pattern_shader, struct.pack("f", 1.0), box_w, box_h)
             )
         else:
-            edge_layer = mask_chain.add_slang(
+            edge_layer = mask_chain.add_shader(
                 self.encode_color_shader, struct.pack("ffff", 1.0, color[0], color[1], color[2]), box_w, box_h
             )
 
@@ -146,7 +146,7 @@ class BorderEffect(VideoEffectGeneratorBase):
         final_builder = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel([object_full, edge_layer])
-            .add_slang(self.composite_shader, None, box_w, box_h)
+            .add_shader(self.composite_shader, None, box_w, box_h)
         )
 
         return GeneratorBuilderReturn(final_builder, ItemResult(box_w, box_h))

@@ -87,10 +87,10 @@ class EdgeExtractionEffect(VideoEffectGeneratorBase):
 
         # README §2: 早期returnが1つも無い。`強さ`=0でも全画素を走査して完全な透明画像を書く
         # (`ぼかし`/`閃光`/`拡散光`/`グロー`と違う点)。キャンバス拡張も`サイズ固定`も無い。
-        mask = gpu_util.PyImageGenerateBuilder().add_slang(
+        mask = gpu_util.PyImageGenerateBuilder().add_shader(
             self.magnitude_shader, struct.pack("iff", mode, strength, threshold), w, h
         )
-        builder = mask.add_slang(
+        builder = mask.add_shader(
             self.encode_color_shader, struct.pack("ffff", 1.0, color[0], color[1], color[2]), w, h
         )
 

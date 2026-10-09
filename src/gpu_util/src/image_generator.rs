@@ -4,7 +4,7 @@ pub mod final_process;
 pub mod layout;
 pub(crate) mod linked_memo;
 pub mod parallel_process;
-pub mod slang_process;
+pub mod shader_process;
 pub mod texture_func_process;
 
 pub(crate) use linked_memo::LinkedMemo;
@@ -15,14 +15,14 @@ use crate::texture_to_native::linux::{attach_texture_to_shared_texture, SharedTe
 use crate::texture_to_native::windows::{attach_texture_to_shared_texture, SharedTextureHandle};
 
 use crate::{
-    compiled_slang::compile_slang_to_spirv,
+    compiled_shader::compile_slang_to_spirv,
     image_generate_builder::{ImageGenerateBuilder, PipelineStep},
     image_generator::{
         cpu_func_process::handle_cpu_func_step,
         final_process::handle_final_process,
         layout::{InputArity, OutputKind, ShaderShape},
         parallel_process::handle_parallel_step,
-        slang_process::handle_slang_step,
+        shader_process::handle_shader_step,
         texture_func_process::handle_texture_func_step,
     },
     image_pixel_format::ImagePixelFormat,
@@ -212,12 +212,12 @@ impl ImageGenerator {
         for (i, step) in steps.iter().enumerate() {
             state = match step {
                 PipelineStep::Slang {
-                    slang,
+                    shader: slang,
                     params,
                     output_width,
                     output_height,
                     ..
-                } => handle_slang_step(
+                } => handle_shader_step(
                     self,
                     &state,
                     slang,
@@ -323,32 +323,32 @@ impl ImageGenerator {
         bail!("Final output is not a GPU texture.")
     }
 
-    /// CompiledSlangから(キャッシュがあればそれを使って)実行可能なパイプラインを得る。
+    /// CompiledShaderから(キャッシュがあればそれを使って)実行可能なパイプラインを得る。
     ///
     /// ここでは形状の食い違いチェックとキャッシュの出し入れだけを行う。
     pub(crate) fn get_or_create_pipeline(
         &self,
-        slang: &crate::compiled_slang::CompiledSlang,
+        shader: &crate::compiled_shader::CompiledShader,
         input_count: u32,
         has_params: bool,
     ) -> Result<rhi::ComputePipeline> {
         let shape = ShaderShape {
-            input_arity: slang.input_arity,
+            input_arity: shader.input_arity,
             input_count,
-            has_sampler: slang.sampler.is_some(),
+            has_sampler: shader.sampler.is_some(),
             has_params,
             output: OutputKind::Texture,
         };
         let layout = shape.layout();
 
         let mut cache = self.pipeline_cache.lock().unwrap();
-        if let Some(cached) = cache.get(&slang.name) {
+        if let Some(cached) = cache.get(&shader.name) {
             if *cached.layout() != layout {
                 bail!(
                     "Slang shader '{}' was first used with a different resource shape \
                      than this call ({} input texture(s), has_params={}). A compiled \
                      shader's resource shape must stay consistent across all uses.",
-                    slang.name,
+                    shader.name,
                     input_count,
                     has_params
                 );
@@ -358,9 +358,9 @@ impl ImageGenerator {
 
         let pipeline =
             self.device
-                .create_compute_pipeline(&slang.spirv, &slang.entry_point, &layout)?;
+                .create_compute_pipeline(&shader.spirv, &shader.entry_point, &layout)?;
 
-        cache.insert(slang.name.clone(), pipeline.clone());
+        cache.insert(shader.name.clone(), pipeline.clone());
         Ok(pipeline)
     }
 }

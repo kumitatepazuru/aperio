@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
 
-use crate::compiled_slang::compile_slang_to_spirv;
+use crate::compiled_shader::compile_slang_to_spirv;
 use crate::image_generator::ImageGenerator;
 use crate::rhi::{
     AddressMode, BindingDesc, BindingKind, Draw, FilterMode, GraphicsPipeline,

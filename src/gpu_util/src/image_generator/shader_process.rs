@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::{
-    compiled_slang::CompiledSlang,
+    compiled_shader::CompiledShader,
     image_generator::{
         layout::{self, AperioDispatch, DispatchOutput},
         ImageGenerator, ProcessingState, StepOutput,
@@ -33,10 +33,10 @@ fn upload_cpu_data_as_texture(
     Ok(texture)
 }
 
-pub fn handle_slang_step(
+pub fn handle_shader_step(
     generator: &ImageGenerator,
     state: &ProcessingState,
-    slang: &CompiledSlang,
+    shader: &CompiledShader,
     params: &Option<Vec<u8>>,
     step_index: usize,
     output_width: u32,
@@ -59,7 +59,7 @@ pub fn handle_slang_step(
                     data,
                     *width,
                     *height,
-                    &format!("Slang Step {step_index} Input {i} Upload"),
+                    &format!("Shader Step {step_index} Input {i} Upload"),
                 )?;
                 input_textures.push(texture);
             }
@@ -70,17 +70,17 @@ pub fn handle_slang_step(
     let output_texture = generator.get_or_create_texture(
         output_width,
         output_height,
-        slang.output_format,
+        shader.output_format,
         TextureUsage::STORAGE
             | TextureUsage::SAMPLED
             | TextureUsage::TRANSFER_SRC
             | TextureUsage::TRANSFER_DST,
-        &format!("Slang Step {step_index} Output"),
+        &format!("Shader Step {step_index} Output"),
     )?;
 
     // --- パイプラインの取得(キャッシュ) ---
     let pipeline =
-        generator.get_or_create_pipeline(slang, input_textures.len() as u32, params.is_some())?;
+        generator.get_or_create_pipeline(shader, input_textures.len() as u32, params.is_some())?;
 
     // --- テクスチャビューの生成 ---
     let output_view = device.create_texture_view(&output_texture)?;
@@ -94,7 +94,7 @@ pub fn handle_slang_step(
         let buf = generator.get_or_create_buffer(
             p.len().max(1) as u64,
             BufferUsage::STORAGE,
-            &format!("Slang Step {step_index} Params"),
+            &format!("Shader Step {step_index} Params"),
         )?;
         unsafe {
             let ptr = buf
@@ -113,7 +113,7 @@ pub fn handle_slang_step(
             pipeline: &pipeline,
             inputs: &input_views,
             output: DispatchOutput::Texture(&output_view),
-            sampler: slang.sampler.as_ref(),
+            sampler: shader.sampler.as_ref(),
             params: params_buffer.as_ref(),
             workgroups: (output_width.div_ceil(16), output_height.div_ceil(16), 1),
         },

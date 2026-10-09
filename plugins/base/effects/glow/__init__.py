@@ -172,7 +172,7 @@ class GlowEffect(VideoEffectGeneratorBase):
         nw, nh = w + 2 * diffusion, h + 2 * diffusion
 
         def select_branch(index: int) -> gpu_util.PyImageGenerateBuilder:
-            return gpu_util.PyImageGenerateBuilder().add_slang(self.select_shader, struct.pack("i", index), nw, nh)
+            return gpu_util.PyImageGenerateBuilder().add_shader(self.select_shader, struct.pack("i", index), nw, nh)
 
         def box_average_params(radius: int, step_x: int, step_y: int) -> bytes:
             return pack_box_average_dir_params(radius, step_x, step_y, nw, nh)
@@ -184,9 +184,9 @@ class GlowEffect(VideoEffectGeneratorBase):
         extract_params = struct.pack(
             "fifff", threshold_frac, 1 if use_source_color else 0, color[0], color[1], color[2]
         )
-        ext_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.extract_shader, extract_params, w, h)
+        ext_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.extract_shader, extract_params, w, h)
         expand_params = pack_expand_params(diffusion, diffusion, nw, nh)
-        glow_chain = ext_branch.add_slang(self.expand_shader, expand_params, nw, nh)
+        glow_chain = ext_branch.add_shader(self.expand_shader, expand_params, nw, nh)
 
         # --- 形状ごとの蓄積(README §5) ---
         if shape == "normal":
@@ -195,42 +195,49 @@ class GlowEffect(VideoEffectGeneratorBase):
             for i, (divisor, mult) in enumerate(zip(_NORMAL_DIVISORS, _NORMAL_MULTS)):
                 r = diffusion // divisor
                 gain = strength_scale * mult
-                v_branch = gpu_util.PyImageGenerateBuilder().add_slang(
+                v_branch = gpu_util.PyImageGenerateBuilder().add_shader(
                     self.box_average_dir_shader, box_average_params(r, 0, 1), nw, nh
                 )
                 glow_chain = glow_chain.add_parallel([v_branch, select_branch(0)])
-                glow_chain = glow_chain.add_slang(
+                glow_chain = glow_chain.add_shader(
                     self.line_accumulate_shader, line_accumulate_params(r, 1, 0, gain, i == 0), nw, nh
                 )
         else:
             directions = _SHAPE_DIRECTIONS.get(shape, _SHAPE_DIRECTIONS["cross8"])
             is_first = True
+            # line_accumulateは[和を取る元, これまでの蓄積]の2入力の固定長レイアウトで、
+            # 全パスで入力本数を揃える必要がある。初回はstateが拡張済み抽出結果1枚だけ
+            # なので、空ブランチ2つのparallelで同じテクスチャを複製して2枚にしておく
+            # (ディスパッチやテクスチャ確保は発生しない。is_first=1のとき2枚目は読まれない)。
+            glow_chain = glow_chain.add_parallel(
+                [gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()]
+            )
             for dx, dy in directions:
                 # 半径は r, r/2, r/4、strength倍率は 1, 2, 4(README §5.2: 3スケールの
                 # 合計利得がほぼ等しくなる組み合わせ)。
                 for radius_val, mult in ((diffusion, 1.0), (diffusion // 2, 2.0), (diffusion // 4, 4.0)):
                     gain = strength_scale * mult
-                    accumulate_branch = gpu_util.PyImageGenerateBuilder().add_slang(
+                    accumulate_branch = gpu_util.PyImageGenerateBuilder().add_shader(
                         self.line_accumulate_shader, line_accumulate_params(radius_val, dx, dy, gain, is_first), nw, nh
                     )
                     glow_chain = glow_chain.add_parallel([select_branch(0), accumulate_branch])
                     is_first = False
             # state = [source_const, accum] -> accum(index=1)だけを残す
-            glow_chain = glow_chain.add_slang(self.select_shader, struct.pack("i", 1), nw, nh)
+            glow_chain = glow_chain.add_shader(self.select_shader, struct.pack("i", 1), nw, nh)
 
         # --- 仕上げ`ぼかし`(README §6: カーネル幅で割る素のボックス平均を2ラウンド) ---
         if blur_radius > 0:
             for _ in range(2):
-                glow_chain = glow_chain.add_slang(
+                glow_chain = glow_chain.add_shader(
                     self.box_average_dir_shader, box_average_params(blur_radius, 0, 1), nw, nh
                 )
-                glow_chain = glow_chain.add_slang(
+                glow_chain = glow_chain.add_shader(
                     self.box_average_dir_shader, box_average_params(blur_radius, 1, 0), nw, nh
                 )
 
         # --- 最終合成(README §8) ---
-        base_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.expand_shader, expand_params, nw, nh)
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel([base_branch, glow_chain]).add_slang(
+        base_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.expand_shader, expand_params, nw, nh)
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([base_branch, glow_chain]).add_shader(
             self.composite_shader, struct.pack("i", 1 if light_only else 0), nw, nh
         )
 

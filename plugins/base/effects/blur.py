@@ -108,8 +108,8 @@ class BlurEffect(VideoEffectGeneratorBase):
         curve_base = 1.0
         if use_curve:
             curve_base = 1.0 + max(1, min(100, light_intensity)) * 0.001
-            builder = builder.add_slang(self.ycbcr_encode_shader, None, width, height)
-            builder = builder.add_slang(self.curve_shader, struct.pack("fii", curve_base, 0, 2), width, height)
+            builder = builder.add_shader(self.ycbcr_encode_shader, None, width, height)
+            builder = builder.add_shader(self.curve_shader, struct.pack("fii", curve_base, 0, 2), width, height)
 
         cur_w, cur_h = width, height
 
@@ -120,7 +120,7 @@ class BlurEffect(VideoEffectGeneratorBase):
             offset = 0 if fixed_size else radius
             new_w = cur_w if fixed_size else cur_w + 2 * radius
             shader_params = pack_box_blur_dir_params(radius, 1, 0, new_w, cur_h, offset, border_mode, divisor_mode)
-            b = b.add_slang(self.box_blur_dir_shader, shader_params, new_w, cur_h)
+            b = b.add_shader(self.box_blur_dir_shader, shader_params, new_w, cur_h)
             cur_w = new_w
             return b
 
@@ -131,7 +131,7 @@ class BlurEffect(VideoEffectGeneratorBase):
             offset = 0 if fixed_size else radius
             new_h = cur_h if fixed_size else cur_h + 2 * radius
             shader_params = pack_box_blur_dir_params(radius, 0, 1, cur_w, new_h, offset, border_mode, divisor_mode)
-            b = b.add_slang(self.box_blur_dir_shader, shader_params, cur_w, new_h)
+            b = b.add_shader(self.box_blur_dir_shader, shader_params, cur_w, new_h)
             cur_h = new_h
             return b
 
@@ -144,7 +144,7 @@ class BlurEffect(VideoEffectGeneratorBase):
         builder = v_pass(builder, ry_lo)
 
         if use_curve:
-            builder = builder.add_slang(self.curve_shader, struct.pack("fii", curve_base, 1, 2), cur_w, cur_h)
-            builder = builder.add_slang(self.ycbcr_decode_shader, None, cur_w, cur_h)
+            builder = builder.add_shader(self.curve_shader, struct.pack("fii", curve_base, 1, 2), cur_w, cur_h)
+            builder = builder.add_shader(self.ycbcr_decode_shader, None, cur_w, cur_h)
 
         return GeneratorBuilderReturn(builder, ItemResult(cur_w, cur_h))

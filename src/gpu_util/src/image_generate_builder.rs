@@ -1,7 +1,5 @@
-// image_generate_builder.rs
-
 use crate::compiled_func::{CompiledFunc, CompiledTextureFunc};
-use crate::compiled_slang::CompiledSlang;
+use crate::compiled_shader::CompiledShader;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -11,7 +9,7 @@ pub enum PipelineStep {
     /// 単一のSlangシェーダーを実行するステップ。
     Slang {
         id: String,
-        slang: Arc<CompiledSlang>,
+        shader: Arc<CompiledShader>,
         params: Option<Vec<u8>>,
         output_width: u32,
         output_height: u32,
@@ -118,24 +116,24 @@ impl ImageGenerateBuilder {
     ///
     /// # Arguments
     ///
-    /// * `slang` - CompiledSlangのArc参照。
+    /// * `slang` - CompiledShaderのArc参照。
     /// * `params` - シェーダーのStructuredBuffer<Params>に渡すパラメータ。bytemuckでシリアライズされたバイト列を渡します。
     /// * `output_width` - このステップの出力画像の幅。
     /// * `output_height` - このステップの出力画像の高さ。
-    pub fn add_slang(
+    pub fn add_shader(
         self,
-        slang: CompiledSlang,
+        shader: impl Into<Arc<CompiledShader>>,
         params: Option<Vec<u8>>,
         output_width: u32,
         output_height: u32,
     ) -> Self {
-        let slang = Arc::new(slang);
+        let slang = shader.into();
         let id = Uuid::new_v4().to_string();
 
         let mut new_steps = (*self.steps).clone();
         new_steps.push(PipelineStep::Slang {
             id,
-            slang,
+            shader: slang,
             params,
             output_width,
             output_height,

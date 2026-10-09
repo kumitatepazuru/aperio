@@ -109,31 +109,31 @@ class LensBlurEffect(VideoEffectGeneratorBase):
             grow_y = clamp(range_px, 0, max(0, (max_dim - height) // 2))
             gw, gh = width + 2 * grow_x, height + 2 * grow_y
             expand_params = pack_expand_params(grow_x, grow_y, gw, gh)
-            builder = builder.add_slang(self.expand_shader, expand_params, gw, gh)
+            builder = builder.add_shader(self.expand_shader, expand_params, gw, gh)
 
         # (2) README §4「輝度カーブ」: `ぼかし`と違い`光の強さ==0`でも無条件に
         # 1往復させる(ヘルパー側が[1,100]にクランプするのでbase=1.001で回る)。
         curve_base = 1.0 + max(1, min(100, light_intensity)) * 0.001
-        builder = builder.add_slang(self.ycbcr_encode_shader, None, gw, gh)
-        builder = builder.add_slang(self.curve_shader, struct.pack("fii", curve_base, 0, 2), gw, gh)
+        builder = builder.add_shader(self.ycbcr_encode_shader, None, gw, gh)
+        builder = builder.add_shader(self.curve_shader, struct.pack("fii", curve_base, 0, 2), gw, gh)
 
         # (3)/(4) README §4(4): R/range倍に縮小(縮小率は「ぼかし半径/縮尺」を
         # 一定に保つように選ばれている ―― 元画像でのぼかし半径がちょうどrange画素に
         # なる)。カーブ空間のまま縮小する。range<=8ならR==rangeなので縮小なし。
         dw = max(1, round(R * gw / range_px))
         dh = max(1, round(R * gh / range_px))
-        builder = builder.add_slang(
+        builder = builder.add_shader(
             self.resize_down_shader, struct.pack("iiii", gw, gh, dw, dh), dw, dh
         )
 
         # (5) README §5: 半径Rの円板カーネルで平均。
-        builder = builder.add_slang(self.disc_blur_shader, struct.pack("iii", R, dw, dh), dw, dh)
+        builder = builder.add_shader(self.disc_blur_shader, struct.pack("iii", R, dw, dh), dw, dh)
 
         # (6) 輝度カーブ 逆変換 -> YCbCr復元(まだ縮小サイズのまま)。
-        builder = builder.add_slang(self.curve_shader, struct.pack("fii", curve_base, 1, 2), dw, dh)
-        builder = builder.add_slang(self.ycbcr_decode_shader, None, dw, dh)
+        builder = builder.add_shader(self.curve_shader, struct.pack("fii", curve_base, 1, 2), dw, dh)
+        builder = builder.add_shader(self.ycbcr_decode_shader, None, dw, dh)
 
         # (7) README §4(7): 元のサイズ(拡張後のキャンバス)へ線形空間で拡大。
-        builder = builder.add_slang(self.resize_up_shader, struct.pack("ii", gw, gh), gw, gh)
+        builder = builder.add_shader(self.resize_up_shader, struct.pack("ii", gw, gh), gw, gh)
 
         return GeneratorBuilderReturn(builder, ItemResult(gw, gh))

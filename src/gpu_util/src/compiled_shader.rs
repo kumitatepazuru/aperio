@@ -10,9 +10,10 @@ use std::sync::Mutex;
 
 use anyhow::{bail, Result};
 
+use crate::image_generator::layout::InputArity;
 use crate::image_generator::ImageGenerator;
 use crate::image_pixel_format::ImagePixelFormat;
-use crate::rhi::{InputArity, Sampler, SamplerOptions};
+use crate::rhi::{Sampler, SamplerOptions};
 
 /// slang_shim.cppは実行体内で共有される単一のslang::IGlobalSessionを持つ
 /// (C++11のmagic staticsで初期化は保護されているが、その後のcreateSession
@@ -139,8 +140,8 @@ pub fn compile_slang_to_spirv(
     Ok(spirv)
 }
 
-/// コンパイル済みのSlangシェーダー1つ分。
-pub struct CompiledSlang {
+/// コンパイル済みのSPIR-Vシェーダー1つ分。
+pub struct CompiledShader {
     /// パイプラインキャッシュのキーにもなる名前。
     pub name: String,
     pub spirv: Vec<u32>,
@@ -153,12 +154,12 @@ pub struct CompiledSlang {
     pub sampler: Option<Sampler>,
 }
 
-impl CompiledSlang {
-    /// sourceをコンパイルし、(指定されていれば)サンプラーを生成する。
+impl CompiledShader {
+    /// slang sourceをコンパイルし、(指定されていれば)サンプラーを生成する。
     ///
     /// nameはパイプラインキャッシュのキーとしても使われるため、
     /// 同じソースを異なるdefinesでコンパイルする場合は必ず別のnameを渡すこと。
-    pub fn new(
+    pub fn from_slang(
         name: &str,
         source: &str,
         entry_point: &str,
@@ -186,6 +187,30 @@ impl CompiledSlang {
             &all_defines,
         )?;
 
+        Self::from_spirv(
+            name,
+            spirv,
+            entry_point,
+            generator,
+            output_format,
+            input_arity,
+            sampler_options,
+        )
+    }
+
+    /// コンパイル済みのSPIR-V(Slang / HLSLのどちらから作ったものでもよい)から作り、
+    /// (指定されていれば)サンプラーを生成する。
+    ///
+    /// `entry_point`はSPIR-V内のエントリポイント名(Slangは常に"main"、HLSLはソースの名前のまま)。
+    pub fn from_spirv(
+        name: &str,
+        spirv: Vec<u32>,
+        entry_point: &str,
+        generator: &ImageGenerator,
+        output_format: ImagePixelFormat,
+        input_arity: InputArity,
+        sampler_options: Option<&SamplerOptions>,
+    ) -> Result<Self> {
         let sampler = sampler_options
             .map(|options| generator.device.create_sampler(options))
             .transpose()?;

@@ -256,11 +256,11 @@ class LuminousEffect(VideoEffectGeneratorBase):
             max_radius, max_radius, new_width, new_height, border=(chroma_offset, chroma_offset, 0.0, 1.0)
         )
 
-        base_branch = gpu_util.PyImageGenerateBuilder().add_slang(self.expand_shader, expand_params, new_width, new_height)
+        base_branch = gpu_util.PyImageGenerateBuilder().add_shader(self.expand_shader, expand_params, new_width, new_height)
 
         # 明部抽出は1回だけ。出力は {r=amount*Cr係数, g=amount*Cb係数,
         # b=amount*輝度係数, a=amount} で、以降 combined_init だけがこれを読む。
-        threshold_branch = gpu_util.PyImageGenerateBuilder().add_slang(
+        threshold_branch = gpu_util.PyImageGenerateBuilder().add_shader(
             self.threshold_shader, threshold_params, width, height
         )
 
@@ -274,24 +274,31 @@ class LuminousEffect(VideoEffectGeneratorBase):
             curve_base = 1.0 + diffusion_speed_clamped * 0.001
 
         def select_branch(index: int) -> gpu_util.PyImageGenerateBuilder:
-            return gpu_util.PyImageGenerateBuilder().add_slang(
+            return gpu_util.PyImageGenerateBuilder().add_shader(
                 self.select_shader, struct.pack("i", index), new_width, new_height
             )
 
-        def exact_box_branch(r_h: int, r_v: int) -> gpu_util.PyImageGenerateBuilder:
+        def branch_start(narrow: bool) -> gpu_util.PyImageGenerateBuilder:
+            # parallelの各ブランチは直前までの全state([chain, accum, ...])を初期入力として
+            # 受け取る。box_blur_dir/downsampleは入力1枚の固定長レイアウトで、同名の
+            # パイプラインが全使用箇所で同じリソース形状(入力本数)でなければならない
+            # ので、stateが複数枚のときはselect(0)で先頭1枚だけに絞ってから始める。
+            return select_branch(0) if narrow else gpu_util.PyImageGenerateBuilder()
+
+        def exact_box_branch(r_h: int, r_v: int, narrow: bool) -> gpu_util.PyImageGenerateBuilder:
             # 方向別にクランプした半径で水平→垂直のボックスぼかし。両方向とも
             # 半径0のときだけ素通し(片方だけ0なら radius=0=恒等タップで安全)。
             if r_h <= 0 and r_v <= 0:
                 return select_branch(0)
             return (
-                gpu_util.PyImageGenerateBuilder()
-                .add_slang(
+                branch_start(narrow)
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(r_h, 1, 0, new_width, new_height, offset=0, border_mode=0, divisor_mode=0),
                     new_width,
                     new_height,
                 )
-                .add_slang(
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(r_v, 0, 1, new_width, new_height, offset=0, border_mode=0, divisor_mode=0),
                     new_width,
@@ -299,13 +306,13 @@ class LuminousEffect(VideoEffectGeneratorBase):
                 )
             )
 
-        def blur_branch_for(radius: int) -> gpu_util.PyImageGenerateBuilder:
+        def blur_branch_for(radius: int, narrow: bool) -> gpu_util.PyImageGenerateBuilder:
             r_h = min(radius, cap_h)
             r_v = min(radius, cap_v)
             # 「高速化」OFF(既定)は現行どおりの厳密ボックスぼかし(挙動完全不変)。
             factor = _choose_downsample_factor(radius, _FAST_BLUR_R_TARGET) if fast else 1
             if factor <= 1:
-                return exact_box_branch(r_h, r_v)
+                return exact_box_branch(r_h, r_v, narrow)
 
             # 「高速化」ON かつ大半径: 縮小 -> 小画像でボックス -> バイリニア拡大。
             # タップ数が factor^2 分の1になる。誤差は輪郭付近の遷移帯だけ(平坦部は
@@ -316,21 +323,21 @@ class LuminousEffect(VideoEffectGeneratorBase):
             rs_h = min(rs, max(0, small_w // 2 - 1))
             rs_v = min(rs, max(0, small_h // 2 - 1))
             return (
-                gpu_util.PyImageGenerateBuilder()
-                .add_slang(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
-                .add_slang(
+                branch_start(narrow)
+                .add_shader(self.downsample_shader, struct.pack("iii", factor, small_w, small_h), small_w, small_h)
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(rs_h, 1, 0, small_w, small_h, offset=0, border_mode=0, divisor_mode=0),
                     small_w,
                     small_h,
                 )
-                .add_slang(
+                .add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(rs_v, 0, 1, small_w, small_h, offset=0, border_mode=0, divisor_mode=0),
                     small_w,
                     small_h,
                 )
-                .add_slang(self.upsample_shader, struct.pack("iii", factor, new_width, new_height), new_width, new_height)
+                .add_shader(self.upsample_shader, struct.pack("iii", factor, new_width, new_height), new_width, new_height)
             )
 
         # --- 両経路共通の入口: 抽出結果を6パスぼかしに乗せる形へ整える ---
@@ -341,10 +348,10 @@ class LuminousEffect(VideoEffectGeneratorBase):
         combined_init_params = struct.pack(
             "ffi", curve_base, chroma_offset, 1 if use_diffusion_curve else 0
         )
-        combined_cont = threshold_branch.add_slang(
+        combined_cont = threshold_branch.add_shader(
             self.combined_init_shader, combined_init_params, width, height
         )
-        combined_cont = combined_cont.add_slang(self.expand_shader, combined_expand_params, new_width, new_height)
+        combined_cont = combined_cont.add_shader(self.expand_shader, combined_expand_params, new_width, new_height)
 
         # 6パスのぼかしは前段の出力を次段が再びぼかす「連鎖」で、各パスのぼかし
         # 結果を毎回アキュムレータへ蓄積する(AviUtl版が垂直パスのたびに蓄積
@@ -356,7 +363,9 @@ class LuminousEffect(VideoEffectGeneratorBase):
             state_len = 1
             for radius in radii:
                 passthrough = [select_branch(1)] if state_len > 1 else []
-                combined_cont = combined_cont.add_parallel([blur_branch_for(radius)] + passthrough)
+                combined_cont = combined_cont.add_parallel(
+                    [blur_branch_for(radius, narrow=state_len > 1)] + passthrough
+                )
                 # state = [new_chain] (初回) または [new_chain, old_accum] (2回目以降)
 
                 if state_len == 1:
@@ -370,7 +379,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     accumulate_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
-                        .add_slang(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
+                        .add_shader(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
                     )
                 else:
                     # accumulate_saturatingは[新チェーン, 旧蓄積]の2枚を前提に
@@ -378,7 +387,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     accumulate_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel([select_branch(0), select_branch(1)])
-                        .add_slang(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height)
+                        .add_shader(self.accumulate_saturating_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height)
                     )
                 combined_cont = combined_cont.add_parallel([select_branch(0), accumulate_branch])
                 state_len = 2
@@ -400,7 +409,9 @@ class LuminousEffect(VideoEffectGeneratorBase):
             combined_state_len = 1
             for radius in radii:
                 combined_passthrough = [select_branch(1), select_branch(2)] if combined_state_len > 1 else []
-                combined_cont = combined_cont.add_parallel([blur_branch_for(radius)] + combined_passthrough)
+                combined_cont = combined_cont.add_parallel(
+                    [blur_branch_for(radius, narrow=combined_state_len > 1)] + combined_passthrough
+                )
                 # state = [new_chain] (初回) または [new_chain, old_luma_accum, old_chroma_accum]
 
                 if combined_state_len == 1:
@@ -411,12 +422,12 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     luma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
-                        .add_slang(self.accumulate_luma_combined_shader, struct.pack("i", 1), new_width, new_height)
+                        .add_shader(self.accumulate_luma_combined_shader, struct.pack("i", 1), new_width, new_height)
                     )
                     chroma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel([gpu_util.PyImageGenerateBuilder(), gpu_util.PyImageGenerateBuilder()])
-                        .add_slang(self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
+                        .add_shader(self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 1), new_width, new_height)
                     )
                 else:
                     # accumulate_*は[新チェーン, 旧蓄積]の2枚を前提にinputTex[0]/[1]を
@@ -424,12 +435,12 @@ class LuminousEffect(VideoEffectGeneratorBase):
                     luma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel([select_branch(0), select_branch(1)])
-                        .add_slang(self.accumulate_luma_combined_shader, struct.pack("i", 0), new_width, new_height)
+                        .add_shader(self.accumulate_luma_combined_shader, struct.pack("i", 0), new_width, new_height)
                     )
                     chroma_accum_branch = (
                         gpu_util.PyImageGenerateBuilder()
                         .add_parallel([select_branch(0), select_branch(2)])
-                        .add_slang(
+                        .add_shader(
                             self.accumulate_chroma_shader, struct.pack("fi", chroma_offset, 0), new_width, new_height
                         )
                     )
@@ -441,10 +452,10 @@ class LuminousEffect(VideoEffectGeneratorBase):
             # state = [chain(不要), luma_accum, chroma_accum]。輝度だけカーブ逆変換で
             # a=y_finalに戻し、色差はそのままreconstructへ渡す(reconstruct_shader
             # 自体の呼び出しは最上位のparallelで行う)。
-            finalize_luma = gpu_util.PyImageGenerateBuilder().add_slang(
+            finalize_luma = gpu_util.PyImageGenerateBuilder().add_shader(
                 self.select_shader, struct.pack("i", 1), new_width, new_height
-            ).add_slang(self.curve_shader, struct.pack("fii", curve_base, 1, 3), new_width, new_height)
-            finalize_chroma = gpu_util.PyImageGenerateBuilder().add_slang(
+            ).add_shader(self.curve_shader, struct.pack("fii", curve_base, 1, 3), new_width, new_height)
+            finalize_chroma = gpu_util.PyImageGenerateBuilder().add_shader(
                 self.select_shader, struct.pack("i", 2), new_width, new_height
             )
             glow_branch = combined_cont.add_parallel([finalize_luma, finalize_chroma])
@@ -455,7 +466,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
         builder = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel([base_branch, glow_branch])
-            .add_slang(self.reconstruct_shader, None, new_width, new_height)
+            .add_shader(self.reconstruct_shader, None, new_width, new_height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(new_width, new_height))

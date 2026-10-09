@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.gpu_util import PyCompiledSlang
+from aperio.gpu_util import PyCompiledShader
 from aperio.item_structures import (
     AdditionalItem,
     FileFilter,
@@ -49,11 +49,11 @@ class _ShadowLayerShaders:
     `ShadowEffect`と`_ShadowLayerEffect`の双方が`__init__`で自前にコンパイルして持つ
     (シェーダーコンパイルは起動時に1回だけのコストなので、複製しても問題ない)。"""
 
-    expand: PyCompiledSlang
-    box_average_dir: PyCompiledSlang
-    encode_color: PyCompiledSlang
-    encode_pattern: PyCompiledSlang
-    tile: PyCompiledSlang
+    expand: PyCompiledShader
+    box_average_dir: PyCompiledShader
+    encode_color: PyCompiledShader
+    encode_pattern: PyCompiledShader
+    tile: PyCompiledShader
 
 
 def _compile_shadow_layer_shaders(source_file: str) -> _ShadowLayerShaders:
@@ -134,11 +134,11 @@ def _build_shadow_layer(
     entry = pattern_cache.get(pattern_path) if pattern_path else None
     loader, pattern_func = entry if entry is not None else (None, None)
 
-    mask_chain = gpu_util.PyImageGenerateBuilder().add_slang(
+    mask_chain = gpu_util.PyImageGenerateBuilder().add_shader(
         shaders.expand, pack_expand_params(r, r, box_w, box_h), box_w, box_h
     )
     for radius, step_x, step_y in ((r2, 0, 1), (r2, 1, 0), (r1, 0, 1), (r1, 1, 0)):
-        mask_chain = mask_chain.add_slang(
+        mask_chain = mask_chain.add_shader(
             shaders.box_average_dir,
             pack_box_average_dir_params(radius, step_x, step_y, box_w, box_h),
             box_w,
@@ -149,15 +149,15 @@ def _build_shadow_layer(
         tiled_branch = (
             gpu_util.PyImageGenerateBuilder()
             .add_texture_func(pattern_func, None, loader.width, loader.height)
-            .add_slang(shaders.tile, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
+            .add_shader(shaders.tile, struct.pack("iiii", 0, 0, box_w, box_h), box_w, box_h)
         )
         shadow_layer = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel([mask_chain, tiled_branch])
-            .add_slang(shaders.encode_pattern, struct.pack("f", density), box_w, box_h)
+            .add_shader(shaders.encode_pattern, struct.pack("f", density), box_w, box_h)
         )
     else:
-        shadow_layer = mask_chain.add_slang(
+        shadow_layer = mask_chain.add_shader(
             shaders.encode_color,
             struct.pack("ffff", density, color[0], color[1], color[2]),
             box_w,
@@ -268,16 +268,16 @@ class ShadowEffect(VideoEffectGeneratorBase):
         shadow_box_x, shadow_box_y = max(X, 0), max(Y, 0)
         obj_x, obj_y = max(-X, 0) + r, max(-Y, 0) + r
 
-        shadow_full_branch = shadow.builder.add_slang(
+        shadow_full_branch = shadow.builder.add_shader(
             self.shaders.expand, pack_expand_params(shadow_box_x, shadow_box_y, nw, nh), nw, nh
         )
-        object_full_branch = gpu_util.PyImageGenerateBuilder().add_slang(
+        object_full_branch = gpu_util.PyImageGenerateBuilder().add_shader(
             self.shaders.expand, pack_expand_params(obj_x, obj_y, nw, nh), nw, nh
         )
         final_builder = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel([object_full_branch, shadow_full_branch])
-            .add_slang(self.composite_shader, None, nw, nh)
+            .add_shader(self.composite_shader, None, nw, nh)
         )
         # キャンバスは|X|/|Y|ぶん片側にだけ伸びる(2rは対称)ので、オブジェクト自身の
         # 見た目の位置・回転/拡縮の基点(compose.slangのcenter_x/center_y)が

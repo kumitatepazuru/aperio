@@ -34,10 +34,10 @@ pub struct PyCharGlyphData {
 #[pymethods]
 impl PyTextRenderer {
     #[new]
-    pub fn new(device: &PyImageGenerator) -> Self {
-        Self {
-            inner: TextRenderer::new(&device.inner),
-        }
+    pub fn new(device: &PyImageGenerator) -> PyResult<Self> {
+        Ok(Self {
+            inner: TextRenderer::new(&device.inner)?,
+        })
     }
 
     /// テキストをシェイプしてグリフをアトラスに登録し、描画準備済みデータを返す。

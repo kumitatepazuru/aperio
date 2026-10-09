@@ -28,6 +28,7 @@ fn main() {
     let slang_include = format!("{}/include", vcpkg_installed);
     let slang_lib = format!("{}/lib", vcpkg_installed);
     let slang_bin = format!("{}/bin", vcpkg_installed);
+    let dxc_include = format!("{}/include/directx-dxc", vcpkg_installed);
 
     // ── compile C++ shim ────────────────────────────────────────────────────
     cc::Build::new()
@@ -46,6 +47,20 @@ fn main() {
         // GCC/Clang
         .flag_if_supported("-Wno-deprecated-declarations")
         .compile("gpu_util_slang_shim");
+
+    // ── compile C++ shim (HLSL / DXC) ───────────────────────────────────────
+    cc::Build::new()
+        .cpp(true)
+        .std("c++17")
+        .file("./cpp/src/hlsl_shim.cpp")
+        .include("./cpp/include")
+        .include(&dxc_include)
+        .flag_if_supported("/utf-8")
+        .flag_if_supported("/EHsc")
+        .flag_if_supported("/wd4244")
+        .flag_if_supported("/wd4267")
+        .flag_if_supported("-Wno-deprecated-declarations")
+        .compile("gpu_util_hlsl_shim");
 
     // ── link Slang ──────────────────────────────────────────────────────────
     // shader-slangはtripletのstatic/static-md設定に関わらず、本体(コード生成バックエンド
@@ -89,6 +104,18 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path");
     }
 
+    // ── Link DXC (HLSL → SPIR-V) ────────────────────────────────────────────
+    // dxcompilerもSlangと同様に共有ライブラリとして配布されるため、実行時に
+    // 実行体と同じディレクトリへ配置する。(dxil.dllはDXIL署名用で、SPIR-V出力には不要。)
+    println!("cargo:rustc-link-lib=dxcompiler");
+    if cfg!(target_os = "windows") {
+        copy_runtime_shared_libs(&slang_bin, &["dxcompiler.dll".to_string()]);
+    } else if cfg!(target_os = "linux") {
+        copy_runtime_shared_libs(&slang_lib, &["libdxcompiler.so".to_string()]);
+    } else if cfg!(target_os = "macos") {
+        copy_runtime_shared_libs(&slang_lib, &["libdxcompiler.dylib".to_string()]);
+    }
+
     // ── C++ standard library (needed when linking C++ from Rust) ────────────
     if cfg!(target_os = "linux") {
         println!("cargo:rustc-link-lib=stdc++");
@@ -110,7 +137,18 @@ fn main() {
         .write_to_file(PathBuf::from(&out_dir).join("slang_bindings.rs"))
         .expect("Couldn't write slang_bindings.rs");
 
+    let hlsl_bindings = bindgen::Builder::default()
+        .header("./cpp/include/hlsl_shim.h")
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .generate()
+        .expect("Unable to generate bindings for hlsl_shim.h");
+    hlsl_bindings
+        .write_to_file(PathBuf::from(&out_dir).join("hlsl_bindings.rs"))
+        .expect("Couldn't write hlsl_bindings.rs");
+
     println!("cargo:rerun-if-changed=./cpp/include/slang_shim.h");
+    println!("cargo:rerun-if-changed=./cpp/include/hlsl_shim.h");
+    println!("cargo:rerun-if-changed=./cpp/src/hlsl_shim.cpp");
     println!("cargo:rerun-if-changed=./cpp/src/slang_shim.cpp");
 }
 

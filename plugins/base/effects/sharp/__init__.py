@@ -76,7 +76,7 @@ class SharpEffect(VideoEffectGeneratorBase):
             if radius <= 0:
                 return b
             shader_params = pack_box_blur_dir_params(radius, step_x, step_y, w, h, divisor_mode=1)
-            return b.add_slang(self.box_blur_dir_shader, shader_params, w, h)
+            return b.add_shader(self.box_blur_dir_shader, shader_params, w, h)
 
         # 元画像の退避(README「スクラッチ」に相当) ―― 何もしないブランチがそのまま
         # 上流の状態(素の入力)を素通しする。
@@ -92,7 +92,7 @@ class SharpEffect(VideoEffectGeneratorBase):
         blur_branch = blur_pass(blur_branch, r_lo, 1, 0)
 
         composite_params = struct.pack("f", strength)
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, blur_branch]).add_slang(
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, blur_branch]).add_shader(
             self.composite_shader, composite_params, w, h
         )
 

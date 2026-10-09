@@ -122,13 +122,13 @@ class LightEffect(VideoEffectGeneratorBase):
         if B_frac > 0:
             avg_branch = gpu_util.PyImageGenerateBuilder()
             if backlight:
-                avg_branch = avg_branch.add_slang(self.invert_alpha_shader, None, w, h)
+                avg_branch = avg_branch.add_shader(self.invert_alpha_shader, None, w, h)
             avg_branch = (
-                avg_branch.add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 1, 0, w, h), w, h)
-                .add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 0, 1, w, h), w, h)
+                avg_branch.add_shader(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 1, 0, w, h), w, h)
+                .add_shader(self.box_average_dir_shader, pack_box_average_dir_params(r_shadow, 0, 1, w, h), w, h)
             )
             shadow_params = struct.pack("iffff", 1 if backlight else 0, B_frac, color[0], color[1], color[2])
-            shadowed = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, avg_branch]).add_slang(
+            shadowed = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, avg_branch]).add_shader(
                 self.shadow_apply_shader, shadow_params, w, h
             )
         else:
@@ -147,12 +147,12 @@ class LightEffect(VideoEffectGeneratorBase):
         nw, nh = w + 2 * r_halo, h + 2 * r_halo
         expand_params = pack_expand_params(r_halo, r_halo, nw, nh)
 
-        base_branch = shadowed.add_slang(self.expand_shader, expand_params, nw, nh)
+        base_branch = shadowed.add_shader(self.expand_shader, expand_params, nw, nh)
         avg2d_branch = (
             gpu_util.PyImageGenerateBuilder()
-            .add_slang(self.expand_shader, expand_params, nw, nh)
-            .add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 1, 0, nw, nh), nw, nh)
-            .add_slang(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 0, 1, nw, nh), nw, nh)
+            .add_shader(self.expand_shader, expand_params, nw, nh)
+            .add_shader(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 1, 0, nw, nh), nw, nh)
+            .add_shader(self.box_average_dir_shader, pack_box_average_dir_params(r_halo, 0, 1, nw, nh), nw, nh)
         )
 
         # 光色をY=1.0で復元した固定RGB(後光のストレート色)と、光色自身の輝度
@@ -163,7 +163,7 @@ class LightEffect(VideoEffectGeneratorBase):
         halo_b = 1.0 + 1.772 * cb
 
         composite_params = struct.pack("fffff", A_frac, halo_r, halo_g, halo_b, y)
-        final_builder = gpu_util.PyImageGenerateBuilder().add_parallel([base_branch, avg2d_branch]).add_slang(
+        final_builder = gpu_util.PyImageGenerateBuilder().add_parallel([base_branch, avg2d_branch]).add_shader(
             self.composite_shader, composite_params, nw, nh
         )
 

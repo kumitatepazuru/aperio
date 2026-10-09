@@ -91,14 +91,14 @@ class CompositeImageEffect(VideoEffectGeneratorBase):
 
         media_branch = gpu_util.PyImageGenerateBuilder().add_texture_func(image_func, None, loader.width, loader.height)
         if target_w != loader.width or target_h != loader.height:
-            media_branch = media_branch.add_slang(
+            media_branch = media_branch.add_shader(
                 self.resize_bilinear_shader, struct.pack("ii", target_w, target_h), target_w, target_h
             )
 
         if tile_image:
-            media_branch = media_branch.add_slang(self.tile_shader, struct.pack("iiii", x, y, w, h), w, h)
+            media_branch = media_branch.add_shader(self.tile_shader, struct.pack("iiii", x, y, w, h), w, h)
         else:
-            media_branch = media_branch.add_slang(
+            media_branch = media_branch.add_shader(
                 self.expand_shader, pack_expand_params(x, y, w, h), w, h
             )
 
@@ -109,14 +109,14 @@ class CompositeImageEffect(VideoEffectGeneratorBase):
             builder = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_parallel(branches)
-                .add_slang(self.composite_shader, None, w, h)
+                .add_shader(self.composite_shader, None, w, h)
             )
         else:
             mode_index = _MEDIA_MODE_INDEX.get(mode, 0)
             builder = (
                 gpu_util.PyImageGenerateBuilder()
                 .add_parallel([media_branch, dst_branch])
-                .add_slang(self.media_composite_mode_shader, struct.pack("i", mode_index), w, h)
+                .add_shader(self.media_composite_mode_shader, struct.pack("i", mode_index), w, h)
             )
 
         return GeneratorBuilderReturn(builder, ItemResult(w, h))

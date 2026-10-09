@@ -1,6 +1,6 @@
 pub mod compiled_func;
 pub mod compiled_hlsl;
-pub mod compiled_slang;
+pub mod compiled_shader;
 pub mod image_generate_builder;
 pub mod image_generator;
 pub mod image_pixel_format;

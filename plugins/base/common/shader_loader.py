@@ -2,7 +2,7 @@ import os
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.gpu_util import PyCompiledSlang
+from aperio.gpu_util import PyCompiledShader
 
 
 COMMON_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -29,10 +29,9 @@ def shared_slang_shader(
     min_output_format: "gpu_util.WrappedImagePixelFormat | None" = None,
     input_texture_layout: str = "fixed",
     sampler_options: "gpu_util.PySamplerOptions | None" = None,
-) -> PyCompiledSlang:
-    """{directory}/{filename} を PyCompiledSlang として読み込む
-    (各エフェクトが個別に持っていた `load()` + PyCompiledWgsl(...) の定型を
-    まとめたもの)。Slangは`import`をモジュール検索パスから解決するため、
+) -> PyCompiledShader:
+    """{directory}/{filename} を PyCompiledShader として読み込む
+    (各エフェクトが個別に持っていた `load()` + コンパイルの定型をまとめたもの)。Slangは`import`をモジュール検索パスから解決するため、
     naga_oil時代の`shared_shader`/`compose_common_shader`の使い分けは不要になり、
     このヘルパー1つで単一ファイル・複数ファイル合成のどちらにも対応する。
 
@@ -44,7 +43,7 @@ def shared_slang_shader(
     同じ`.slang`ファイルを使うすべての呼び出し元で同じ値を渡すこと。
     """
     resolved_search_dirs = search_dirs if search_dirs is not None else [directory, COMMON_DIR, LIB_DIR]
-    return PyCompiledSlang(
+    return PyCompiledShader.from_slang(
         name,
         load_text(os.path.join(directory, filename)),
         aperio_plugin.image_generator,

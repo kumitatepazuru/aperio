@@ -94,7 +94,7 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         box_blur_v_branch = gpu_util.PyImageGenerateBuilder()
         if ry > 0:
             v_params = pack_box_blur_dir_params(ry, 0, 1, width, height)
-            box_blur_v_branch = box_blur_v_branch.add_slang(self.box_blur_dir_shader, v_params, width, height)
+            box_blur_v_branch = box_blur_v_branch.add_shader(self.box_blur_dir_shader, v_params, width, height)
 
         # box_blur_h + alpha_merge を1シェーダーに統合(box_blur_h_alpha_merge.slang)。
         # radius=0の水平パスは単一タップ=恒等になるため、rx=0でも特別扱い不要。
@@ -102,7 +102,7 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
         builder = (
             gpu_util.PyImageGenerateBuilder()
             .add_parallel([box_blur_v_branch, gpu_util.PyImageGenerateBuilder()])
-            .add_slang(self.box_blur_h_alpha_merge_shader, h_params, width, height)
+            .add_shader(self.box_blur_h_alpha_merge_shader, h_params, width, height)
         )
 
         return GeneratorBuilderReturn(builder, ItemResult(width, height))

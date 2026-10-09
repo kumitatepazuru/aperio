@@ -126,7 +126,7 @@ class WipeEffect(VideoEffectGeneratorBase):
         # --- パターン生成(README §4) ---
         # 型の大きさは入力(オブジェクト)と同じなので、シェーダーは寸法を
         # inputTex[0] から取る。画素値そのものは読まない。
-        mask_branch = gpu_util.PyImageGenerateBuilder().add_slang(
+        mask_branch = gpu_util.PyImageGenerateBuilder().add_shader(
             self.mask_shader, struct.pack("iif", pattern, int(invert), g), w, h
         )
 
@@ -138,7 +138,7 @@ class WipeEffect(VideoEffectGeneratorBase):
             if radius <= 0:
                 continue
             for step_x, step_y in ((0, 1), (1, 0)):
-                mask_branch = mask_branch.add_slang(
+                mask_branch = mask_branch.add_shader(
                     self.box_blur_dir_shader,
                     pack_box_blur_dir_params(radius, step_x, step_y, w, h, divisor_mode=1),
                     w,
@@ -148,7 +148,7 @@ class WipeEffect(VideoEffectGeneratorBase):
         # --- 最終合成(README §7) ---
         # 何もしないブランチが上流の状態(元のオブジェクト)をそのまま素通しする。
         original_branch = gpu_util.PyImageGenerateBuilder()
-        builder = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, mask_branch]).add_slang(
+        builder = gpu_util.PyImageGenerateBuilder().add_parallel([original_branch, mask_branch]).add_shader(
             self.composite_shader, None, w, h
         )
 
