@@ -19,7 +19,9 @@ def load_text(path: str) -> str:
     with open(path, "r") as f:
         return f.read()
 
-
+# TODO: nameとmin_output_formatが同じになってしまうと内部で同じキャッシュが使われてしまうため、
+# プラグインをまたいだ名前の重複に対して対応するコードを挿入したい。
+# 例：元プラグインのnameを識別子に組み込む　そもそもこのutilityたちをplugin managerの管理下に置くことを検討したほうがいい
 def shared_slang_shader(
     name: str,
     directory: str,

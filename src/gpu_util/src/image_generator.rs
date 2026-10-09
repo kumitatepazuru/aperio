@@ -341,8 +341,12 @@ impl ImageGenerator {
         };
         let layout = shape.layout();
 
+        // SPIR-Vにはストレージイメージのフォーマットが焼き込まれるため、
+        // 同名でも出力フォーマットが異なるシェーダーはキャッシュ上で別物として扱う。
+        let cache_key = format!("{}#{:?}", shader.name, shader.output_format);
+
         let mut cache = self.pipeline_cache.lock().unwrap();
-        if let Some(cached) = cache.get(&shader.name) {
+        if let Some(cached) = cache.get(&cache_key) {
             if *cached.layout() != layout {
                 bail!(
                     "Slang shader '{}' was first used with a different resource shape \
@@ -360,7 +364,7 @@ impl ImageGenerator {
             self.device
                 .create_compute_pipeline(&shader.spirv, &shader.entry_point, &layout)?;
 
-        cache.insert(shader.name.clone(), pipeline.clone());
+        cache.insert(cache_key, pipeline.clone());
         Ok(pipeline)
     }
 }

@@ -34,6 +34,8 @@ impl VulkanAllocator {
         })
     }
 
+    /// CpuToGpu / GpuToCpuのメモリはgpu-allocatorが常にHOST_COHERENTを要求するため、
+    /// マップ済みポインタ経由のCPU読み書きにflush/invalidateは不要。
     pub fn allocate(&self, desc: &AllocationCreateDesc<'_>) -> Result<Allocation> {
         self.inner
             .lock()

@@ -17,6 +17,8 @@ pub struct VulkanDevice {
     /// VK_KHR_dynamic_rendering(render pass / framebufferオブジェクトを使わずに描画する)。
     pub(crate) dynamic_rendering: ash::khr::dynamic_rendering::Device,
     pub queue_family: u32,
+    /// キューファミリ内の0番目のキュー(単一のMutexで保護して共有する)。
+    queue: Queue,
     /// このデバイスが実際にサポートする上限値
     pub limits: vk::PhysicalDeviceLimits,
     /// D3D12リソースのインポート(VK_KHR_external_memory_win32)。拡張が無いデバイスではNone。
@@ -39,6 +41,10 @@ impl VulkanDevice {
         let (device, external_memory) =
             create_logical_device(&instance, physical_device, queue_family)?;
         let allocator = VulkanAllocator::new(&instance, &device, physical_device)?;
+        let queue = Queue {
+            raw: Mutex::new(unsafe { device.get_device_queue(queue_family, 0) }),
+            family_index: queue_family,
+        };
         let dynamic_rendering =
             ash::khr::dynamic_rendering::Device::new(&instance.instance, &device);
         let limits = unsafe {
@@ -64,6 +70,7 @@ impl VulkanDevice {
             device,
             dynamic_rendering,
             queue_family,
+            queue,
             limits,
             #[cfg(target_os = "windows")]
             external_memory_win32,
@@ -99,12 +106,9 @@ impl VulkanDevice {
 
     /// キューファミリ内の0番目のキューを取得する。
     /// (現状はグラフィックス/コンピュート兼用の単一キューのみを使う設計。)
-    pub(crate) fn queue(&self) -> Queue {
-        let raw = unsafe { self.device.get_device_queue(self.queue_family, 0) };
-        Queue {
-            raw: Mutex::new(raw),
-            family_index: self.queue_family,
-        }
+    /// vkQueueSubmitは外部同期が必要なため、全submitで同じMutexを共有する。
+    pub(crate) fn queue(&self) -> &Queue {
+        &self.queue
     }
 }
 
