@@ -8,7 +8,9 @@ struct ClipParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<ClipParams>> res;
 
 [shader("compute")]

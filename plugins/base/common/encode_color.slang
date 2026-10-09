@@ -11,7 +11,9 @@ struct EncodeColorParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<EncodeColorParams>> res;
 
 // 色版の共通エンコード。inputs.tex0は被覆率マップ(.aだけ使う、[0,1]に正規化済み

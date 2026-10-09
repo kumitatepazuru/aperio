@@ -20,7 +20,9 @@ struct WipeMaskParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<WipeMaskParams>> res;
 
 // 進捗 g から「型」のマスクを描く(README §4)。型はオブジェクトと同じ大きさなので、

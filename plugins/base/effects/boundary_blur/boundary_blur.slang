@@ -6,7 +6,9 @@ struct BoundaryBlurParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<BoundaryBlurParams>> res;
 
 static const float PI = 3.14159265358979323846;

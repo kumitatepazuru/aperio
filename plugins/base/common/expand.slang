@@ -15,7 +15,9 @@ struct ExpandParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<ExpandParams>> res;
 
 // 元画像を、そのままの値で新しい(より大きい)キャンバスの

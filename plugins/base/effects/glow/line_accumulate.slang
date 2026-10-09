@@ -17,7 +17,9 @@ struct LineAccumulateParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<LineAccumulateParams>> res;
 
 // inputs.tex0: 和を取る元テクスチャ(通常形状は垂直ボックス平均後、ストリーク系は

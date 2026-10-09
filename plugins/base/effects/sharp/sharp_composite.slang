@@ -7,7 +7,9 @@ struct SharpCompositeParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<SharpCompositeParams>> res;
 
 // アンシャープマスクの合成本体(exedit-inspect sharp README §5)。inputs.tex0は

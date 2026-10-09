@@ -1,7 +1,9 @@
 import aperio_bindings;
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResourcesNoParams> res;
 
 // 端は最近傍にクランプする(README §7: 行-1←行0 / 行h←行h-1 の複製と同じ。

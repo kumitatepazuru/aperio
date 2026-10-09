@@ -1,33 +1,24 @@
-// VulkanDeviceがgpu-allocator経由でCPUから書き込み可能なバッファを実際に
-// 確保でき、マップされたポインタへ安全に読み書きできることを確認する。
+// CPUから書き込み可能なバッファを確保でき、マップされたポインタへ読み書きできることを確認する。
 
-use ash::vk;
-use gpu_allocator::MemoryLocation;
-use gpu_util::rhi::vulkan::VulkanDevice;
+use gpu_util::rhi::{BufferUsage, Device};
 
 #[test]
 fn allocates_and_writes_host_visible_buffer() {
-    let device = match VulkanDevice::new() {
+    let device = match Device::new() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("Skipping allocates_and_writes_host_visible_buffer: no Vulkan device ({e:#})");
+            eprintln!("Skipping allocates_and_writes_host_visible_buffer: no GPU device ({e:#})");
             return;
         }
     };
 
     let size = 256u64;
     let buffer = device
-        .create_buffer(
-            size,
-            vk::BufferUsageFlags::STORAGE_BUFFER,
-            MemoryLocation::CpuToGpu,
-            "test host-visible buffer",
-        )
+        .create_buffer(size, BufferUsage::STORAGE, true, "test host-visible buffer")
         .expect("buffer allocation should succeed");
-
     let ptr = buffer
         .mapped_ptr()
-        .expect("CpuToGpu allocation should be host-mapped")
+        .expect("host-visible allocation should be mapped")
         .cast::<u8>();
 
     unsafe {

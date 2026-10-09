@@ -10,7 +10,9 @@ struct BorderPass1Params {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<BorderPass1Params>> res;
 
 // `境界補正 > 0` のパス1。距離 d(gamut_distanceの結果、0=完全一致・1=無関係)を

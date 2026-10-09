@@ -4,7 +4,9 @@ struct SelectParams {
     int index;
 };
 
+[vk::binding(0, 0)]
 ParameterBlock<InputTexturesVar> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResourcesSampler<SelectParams>> res;
 
 // inputs.tex[params.index] をそのままoutputTexへコピーするだけの素通しシェーダー。

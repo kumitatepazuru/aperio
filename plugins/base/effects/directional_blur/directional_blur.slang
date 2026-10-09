@@ -21,7 +21,9 @@ struct DirectionalBlurParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<DirectionalBlurParams>> res;
 
 // README §1: 出力画素を中心に角度方向へ±range画素の線分を取り、その上を等間隔に

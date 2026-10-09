@@ -17,7 +17,9 @@ struct EmissionBlurParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<EmissionBlurParams>> res;
 
 // 放射ブラーのワーカー(README §1・4・5)。出力画素ごとに中心へ向かう線分を

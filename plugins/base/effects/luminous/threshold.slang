@@ -14,7 +14,9 @@ struct ThresholdParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<ThresholdParams>> res;
 
 // 明部抽出(実機 sub_100535a0/sub_100536d0、README手順3)。

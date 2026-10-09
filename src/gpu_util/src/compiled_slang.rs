@@ -1,5 +1,8 @@
-// cpp/src/slang_shim.cpp (Slang C API) の安全なRustラッパー。SPIR-Vへの
-// コンパイルのみを扱う。
+// cpp/src/slang_shim.cpp (Slang C API) のrust wrapper
+//
+// [vk::binding(0, 0)] ParameterBlock<...> inputs;
+// [vk::binding(0, 1)] ParameterBlock<...> res;
+// で常にinputs=set0・res=set1に固定されており、setの自動割り当てに依存しない。
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -7,18 +10,27 @@ use std::sync::Mutex;
 
 use anyhow::{bail, Result};
 
-/// `slang_shim.cpp`は実行体内で共有される単一の`slang::IGlobalSession`を持つ
-/// (C++11のmagic staticsで初期化は保護されているが、その後の`createSession`
+use crate::image_generator::ImageGenerator;
+use crate::image_pixel_format::ImagePixelFormat;
+use crate::rhi::{InputArity, Sampler, SamplerOptions};
+
+/// slang_shim.cppは実行体内で共有される単一のslang::IGlobalSessionを持つ
+/// (C++11のmagic staticsで初期化は保護されているが、その後のcreateSession
 /// 等の並行呼び出しがスレッドセーフである保証はない)。
 static COMPILE_LOCK: Mutex<()> = Mutex::new(());
 
-#[allow(non_upper_case_globals, non_camel_case_types, non_snake_case, dead_code)]
+#[allow(
+    non_upper_case_globals,
+    non_camel_case_types,
+    non_snake_case,
+    dead_code
+)]
 mod ffi {
     include!(concat!(env!("OUT_DIR"), "/slang_bindings.rs"));
 }
 
-/// `slang_shim_compile_to_spirv`が返す結果へのRAIIガード。Dropで必ず
-/// `slang_shim_result_free`を呼ぶため、`?`による早期returnでもリークしない。
+/// slang_shim_compile_to_spirvが返す結果へのRAIIガード。Dropで必ず
+/// slang_shim_result_freeを呼ぶため、?による早期returnでもリークしない。
 struct CompileResultGuard(*mut ffi::SlangShimCompileResult);
 
 impl Drop for CompileResultGuard {
@@ -67,7 +79,9 @@ pub fn compile_slang_to_spirv(
     let define_value_ptrs: Vec<*const c_char> =
         define_value_cs.iter().map(|s| s.as_ptr()).collect();
 
-    let _guard = COMPILE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = COMPILE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let result_ptr = unsafe {
         ffi::slang_shim_compile_to_spirv(
@@ -123,4 +137,66 @@ pub fn compile_slang_to_spirv(
     }
 
     Ok(spirv)
+}
+
+/// コンパイル済みのSlangシェーダー1つ分。
+pub struct CompiledSlang {
+    /// パイプラインキャッシュのキーにもなる名前。
+    pub name: String,
+    pub spirv: Vec<u32>,
+    pub entry_point: String,
+    /// このシェーダーの出力ストレージテクスチャが実際に使うフォーマット。
+    pub output_format: ImagePixelFormat,
+    pub input_arity: InputArity,
+    /// Someならresが`EffectResourcesSampler<Params>`(サンプラー付き)、
+    /// NoneならEffectResources<Params>/EffectResourcesNoParams。
+    pub sampler: Option<Sampler>,
+}
+
+impl CompiledSlang {
+    /// sourceをコンパイルし、(指定されていれば)サンプラーを生成する。
+    ///
+    /// nameはパイプラインキャッシュのキーとしても使われるため、
+    /// 同じソースを異なるdefinesでコンパイルする場合は必ず別のnameを渡すこと。
+    pub fn new(
+        name: &str,
+        source: &str,
+        entry_point: &str,
+        generator: &ImageGenerator,
+        output_format: ImagePixelFormat,
+        input_arity: InputArity,
+        search_paths: &[&str],
+        defines: &[(&str, &str)],
+        sampler_options: Option<&SamplerOptions>,
+    ) -> Result<Self> {
+        // [vk::image_format(APERIO_IMAGE_FORMAT)]が
+        // 参照するマクロを自動的に注入する(呼び出し側が毎回指定しなくてよいように)。
+        let mut all_defines: Vec<(&str, &str)> = defines.to_vec();
+        all_defines.push((
+            "APERIO_IMAGE_FORMAT",
+            output_format.to_slang_image_format_literal(),
+        ));
+
+        let spirv = compile_slang_to_spirv(
+            name,
+            &format!("{name}.slang"),
+            source,
+            entry_point,
+            search_paths,
+            &all_defines,
+        )?;
+
+        let sampler = sampler_options
+            .map(|options| generator.device.create_sampler(options))
+            .transpose()?;
+
+        Ok(Self {
+            name: name.to_string(),
+            spirv,
+            entry_point: entry_point.to_string(),
+            output_format,
+            input_arity,
+            sampler,
+        })
+    }
 }

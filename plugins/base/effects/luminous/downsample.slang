@@ -7,7 +7,9 @@ struct DownsampleParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<DownsampleParams>> res;
 
 // 「高速化」ONの近似ぼかし用: 元画像を factor×factor の窓で単純平均して

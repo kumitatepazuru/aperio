@@ -8,7 +8,9 @@ struct LumaKeyParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<LumaKeyParams>> res;
 
 // exedit-inspect luma_key README §7: 近傍を一切見ず、その画素自身のy・aだけで

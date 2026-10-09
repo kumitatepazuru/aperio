@@ -13,7 +13,9 @@ struct LightCompositeParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<LightCompositeParams>> res;
 
 // 後光パスのエンコードと最終合成を1パスに融合したもの(exedit-inspect light

@@ -15,7 +15,9 @@ struct EdgeMagnitudeParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<EdgeMagnitudeParams>> res;
 
 // exedit-inspect edge_extraction README §5: Prewittオペレータでエッジの強さを求め、

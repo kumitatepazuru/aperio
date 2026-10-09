@@ -10,7 +10,9 @@ struct TileParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<TileParams>> res;
 
 // パターン画像(inputs.tex0)を出力サイズいっぱいに単純タイルする(補間なし)。

@@ -7,7 +7,9 @@ struct DiscBlurParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<DiscBlurParams>> res;
 
 // 半径Rの円板(disc)カーネルによる一様重み平均(exedit-inspect lens_blur README §5)。

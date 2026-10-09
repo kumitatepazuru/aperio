@@ -23,7 +23,9 @@ struct BoxBlurDirParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<BoxBlurDirParams>> res;
 
 // 一様重みのボックス(矩形)ぼかし。blur/diffusion_light/luminous/boundary_blur共通。

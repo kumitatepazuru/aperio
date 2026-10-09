@@ -2,7 +2,9 @@ import aperio_color;
 import aperio_bindings;
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; Texture2D<float4> tex2; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResourcesNoParams> res;
 
 // 輝度アキュムレータ(inputs.tex1)と色差アキュムレータ(inputs.tex2)を

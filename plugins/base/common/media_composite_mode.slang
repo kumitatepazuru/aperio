@@ -7,7 +7,9 @@ struct MediaCompositeModeParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<MediaCompositeModeParams>> res;
 
 // exedit-inspect composite_video/composite_image README 共通の3合成モード。

@@ -14,7 +14,9 @@ struct CurveParams {
 // 汎用のImageStorageTexture(+floor)方式に統一しても実際のバインド先フォーマットは
 // 変わらない。
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<CurveParams>> res;
 
 // べき平均カーブの往復変換。ぼかし前に対象量(0~1程度の値)を

@@ -1,12 +1,21 @@
 // image_generate_builder.rs
 
 use crate::compiled_func::{CompiledFunc, CompiledTextureFunc};
+use crate::compiled_slang::CompiledSlang;
 use std::sync::Arc;
 use uuid::Uuid;
 
 /// パイプラインの各ステップを表すenum。
 #[derive(Clone)]
 pub enum PipelineStep {
+    /// 単一のSlangシェーダーを実行するステップ。
+    Slang {
+        id: String,
+        slang: Arc<CompiledSlang>,
+        params: Option<Vec<u8>>,
+        output_width: u32,
+        output_height: u32,
+    },
     /// 複数のシェーダーパイプラインを並列に実行するステップ。
     Parallel {
         /// このステップ固有の自動採番id。IDはテクスチャごとではなくstepごとに
@@ -44,7 +53,8 @@ impl PipelineStep {
     /// このステップ固有の自動採番id。全バリアントが持つため`Option`ではない。
     pub fn id(&self) -> &str {
         match self {
-            PipelineStep::Parallel { id, .. }
+            PipelineStep::Slang { id, .. }
+            | PipelineStep::Parallel { id, .. }
             | PipelineStep::CpuFunc { id, .. }
             | PipelineStep::TextureFunc { id, .. }
             | PipelineStep::Linked { id, .. } => id,
@@ -65,7 +75,10 @@ impl PipelineStep {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IdTree {
     Single(String),
-    Parallel { id: String, branches: Vec<Vec<IdTree>> },
+    Parallel {
+        id: String,
+        branches: Vec<Vec<IdTree>>,
+    },
 }
 
 /// 画像生成パイプラインを構築するためのビルダー。
@@ -98,6 +111,38 @@ impl ImageGenerateBuilder {
                 branches: pipelines.iter().map(|p| p.id_tree()).collect(),
             },
             other => IdTree::Single(other.id().to_string()),
+        }
+    }
+
+    /// Slang処理ステップをパイプラインに追加します（直列実行）。
+    ///
+    /// # Arguments
+    ///
+    /// * `slang` - CompiledSlangのArc参照。
+    /// * `params` - シェーダーのStructuredBuffer<Params>に渡すパラメータ。bytemuckでシリアライズされたバイト列を渡します。
+    /// * `output_width` - このステップの出力画像の幅。
+    /// * `output_height` - このステップの出力画像の高さ。
+    pub fn add_slang(
+        self,
+        slang: CompiledSlang,
+        params: Option<Vec<u8>>,
+        output_width: u32,
+        output_height: u32,
+    ) -> Self {
+        let slang = Arc::new(slang);
+        let id = Uuid::new_v4().to_string();
+
+        let mut new_steps = (*self.steps).clone();
+        new_steps.push(PipelineStep::Slang {
+            id,
+            slang,
+            params,
+            output_width,
+            output_height,
+        });
+
+        Self {
+            steps: Arc::new(new_steps),
         }
     }
 

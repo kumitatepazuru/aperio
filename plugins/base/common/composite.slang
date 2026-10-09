@@ -1,7 +1,9 @@
 import aperio_bindings;
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResourcesNoParams> res;
 
 // 2枚のストレートアルファ画像を標準的なプリマルチプライドsource-overで合成する

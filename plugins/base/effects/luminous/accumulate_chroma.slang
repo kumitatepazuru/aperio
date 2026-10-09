@@ -6,7 +6,9 @@ struct AccumulateChromaParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<AccumulateChromaParams>> res;
 
 // 符号付きバイト127相当。yc48の2032 = 正規化 2032/4096 = 0.49609375

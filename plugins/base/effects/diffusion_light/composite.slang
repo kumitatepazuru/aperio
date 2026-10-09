@@ -5,7 +5,9 @@ struct CompositeParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<CompositeParams>> res;
 
 // inputs.tex0: このラウンドのボックスぼかし結果(YCbCr+alpha、ストレート、

@@ -1,6 +1,4 @@
-// Buffer/Texture/TextureView/Sampler の生成と、それに対応するVulkanリソース
-// (vkBuffer/vkImage/vkImageView/vkSampler + gpu-allocatorのAllocation)の
-// 解放をDropで自動化する所有権付きラッパー。
+// Buffer/Texture/TextureView/Sampler とVulkanリソースの所有権(Dropで解放)。
 
 use std::sync::Arc;
 
@@ -10,14 +8,43 @@ use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
 
 use super::device::VulkanDevice;
+use crate::image_pixel_format::ImagePixelFormat;
 
-struct BufferInner {
+/// ImagePixelFormatとVulkanの生フォーマットとの相互変換。
+pub(crate) fn to_vk_format(format: ImagePixelFormat) -> vk::Format {
+    match format {
+        ImagePixelFormat::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
+        ImagePixelFormat::Rgba16Float => vk::Format::R16G16B16A16_SFLOAT,
+        ImagePixelFormat::Rgba32Float => vk::Format::R32G32B32A32_SFLOAT,
+    }
+}
+
+pub(crate) fn from_vk_format(format: vk::Format) -> Result<ImagePixelFormat> {
+    match format {
+        vk::Format::R8G8B8A8_UNORM => Ok(ImagePixelFormat::Rgba8Unorm),
+        vk::Format::R16G16B16A16_SFLOAT => Ok(ImagePixelFormat::Rgba16Float),
+        vk::Format::R32G32B32A32_SFLOAT => Ok(ImagePixelFormat::Rgba32Float),
+        other => anyhow::bail!("Unsupported Vulkan format for ImagePixelFormat: {other:?}"),
+    }
+}
+
+pub struct Buffer {
     device: Arc<VulkanDevice>,
     handle: vk::Buffer,
     allocation: Option<gpu_allocator::vulkan::Allocation>,
 }
 
-impl Drop for BufferInner {
+impl Buffer {
+    pub(crate) fn handle(&self) -> vk::Buffer {
+        self.handle
+    }
+
+    pub fn mapped_ptr(&self) -> Option<std::ptr::NonNull<std::ffi::c_void>> {
+        self.allocation.as_ref().and_then(|a| a.mapped_ptr())
+    }
+}
+
+impl Drop for Buffer {
     fn drop(&mut self) {
         unsafe { self.device.device.destroy_buffer(self.handle, None) };
         if let Some(allocation) = self.allocation.take() {
@@ -26,30 +53,99 @@ impl Drop for BufferInner {
     }
 }
 
-#[derive(Clone)]
-pub struct Buffer(Arc<BufferInner>);
-
-impl Buffer {
-    pub fn handle(&self) -> vk::Buffer {
-        self.0.handle
-    }
-
-    /// CPUマップされている場合、そのポインタを返す(`location`が
-    /// `CpuToGpu`/`GpuToCpu`で確保した場合のみ`Some`になりうる)。
-    pub fn mapped_ptr(&self) -> Option<std::ptr::NonNull<std::ffi::c_void>> {
-        self.0.allocation.as_ref().and_then(|a| a.mapped_ptr())
+impl std::fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Buffer")
+            .field("handle", &self.handle)
+            .finish()
     }
 }
 
-struct TextureInner {
+pub struct Texture {
     device: Arc<VulkanDevice>,
     handle: vk::Image,
     allocation: Option<gpu_allocator::vulkan::Allocation>,
     format: vk::Format,
     extent: vk::Extent3D,
+    /// 現在のイメージレイアウト(プールで使い回されるため自前で追跡する)。
+    layout: std::sync::Mutex<vk::ImageLayout>,
 }
 
-impl Drop for TextureInner {
+impl Texture {
+    pub(crate) fn handle(&self) -> vk::Image {
+        self.handle
+    }
+
+    pub(crate) fn vk_format(&self) -> vk::Format {
+        self.format
+    }
+
+    pub fn width(&self) -> u32 {
+        self.extent.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.extent.height
+    }
+
+    pub fn format(&self) -> ImagePixelFormat {
+        // 生成経路は常にImagePixelFormat由来のフォーマットしか使わない。
+        from_vk_format(self.format).expect("Texture was created with a non-abstract Vulkan format")
+    }
+
+    pub(crate) fn extent(&self) -> vk::Extent3D {
+        self.extent
+    }
+
+    /// 追跡中のレイアウトがnew_layoutと異なる場合のみバリアを発行して遷移する。
+    pub(crate) fn transition(
+        &self,
+        device: &VulkanDevice,
+        command_buffer: vk::CommandBuffer,
+        new_layout: vk::ImageLayout,
+        src_stage: vk::PipelineStageFlags,
+        dst_stage: vk::PipelineStageFlags,
+        src_access: vk::AccessFlags,
+        dst_access: vk::AccessFlags,
+    ) {
+        let mut current = self.layout.lock().unwrap();
+        if *current == new_layout {
+            return;
+        }
+
+        let barrier = vk::ImageMemoryBarrier::default()
+            .old_layout(*current)
+            .new_layout(new_layout)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(self.handle)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .src_access_mask(src_access)
+            .dst_access_mask(dst_access);
+
+        unsafe {
+            device.device.cmd_pipeline_barrier(
+                command_buffer,
+                src_stage,
+                dst_stage,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+
+        *current = new_layout;
+    }
+}
+
+impl Drop for Texture {
     fn drop(&mut self) {
         unsafe { self.device.device.destroy_image(self.handle, None) };
         if let Some(allocation) = self.allocation.take() {
@@ -58,76 +154,64 @@ impl Drop for TextureInner {
     }
 }
 
-#[derive(Clone)]
-pub struct Texture(Arc<TextureInner>);
-
-impl Texture {
-    pub fn handle(&self) -> vk::Image {
-        self.0.handle
-    }
-
-    pub fn format(&self) -> vk::Format {
-        self.0.format
-    }
-
-    pub fn extent(&self) -> vk::Extent3D {
-        self.0.extent
+impl std::fmt::Debug for Texture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Texture")
+            .field("handle", &self.handle)
+            .field("format", &self.format)
+            .field("extent", &self.extent)
+            .finish()
     }
 }
 
-struct TextureViewInner {
+pub struct TextureView {
     device: Arc<VulkanDevice>,
     handle: vk::ImageView,
-    /// ビューが参照するイメージが生きている間はビューも有効でなければならない
-    /// ため、所有権を保持しておく(vkImageViewはvkImageより先に破棄する必要がある)。
-    _texture: Texture,
+    /// vkImageViewはvkImageより先に破棄する必要があるため、所有権を保持する。
+    texture: Arc<Texture>,
 }
 
-impl Drop for TextureViewInner {
+impl TextureView {
+    pub(crate) fn handle(&self) -> vk::ImageView {
+        self.handle
+    }
+
+    pub(crate) fn texture(&self) -> &Arc<Texture> {
+        &self.texture
+    }
+}
+
+impl Drop for TextureView {
     fn drop(&mut self) {
         unsafe { self.device.device.destroy_image_view(self.handle, None) };
     }
 }
 
-#[derive(Clone)]
-pub struct TextureView(Arc<TextureViewInner>);
-
-impl TextureView {
-    pub fn handle(&self) -> vk::ImageView {
-        self.0.handle
-    }
-}
-
-struct SamplerInner {
+pub struct Sampler {
     device: Arc<VulkanDevice>,
     handle: vk::Sampler,
 }
 
-impl Drop for SamplerInner {
+impl Sampler {
+    pub(crate) fn handle(&self) -> vk::Sampler {
+        self.handle
+    }
+}
+
+impl Drop for Sampler {
     fn drop(&mut self) {
         unsafe { self.device.device.destroy_sampler(self.handle, None) };
     }
 }
 
-#[derive(Clone)]
-pub struct Sampler(Arc<SamplerInner>);
-
-impl Sampler {
-    pub fn handle(&self) -> vk::Sampler {
-        self.0.handle
-    }
-}
-
 impl VulkanDevice {
-    /// `usage`を満たすバッファを1つ確保する。
-    /// locationはCPU/GPUどちらからアクセスするかのヒント(gpu_allocator::MemoryLocation)。
-    pub fn create_buffer(
+    pub(crate) fn create_vk_buffer(
         self: &Arc<Self>,
         size: u64,
         usage: vk::BufferUsageFlags,
         location: MemoryLocation,
         name: &str,
-    ) -> Result<Buffer> {
+    ) -> Result<Arc<Buffer>> {
         let buffer_create_info = vk::BufferCreateInfo::default()
             .size(size)
             .usage(usage)
@@ -154,22 +238,21 @@ impl VulkanDevice {
         }
         .context("Failed to bind buffer memory")?;
 
-        Ok(Buffer(Arc::new(BufferInner {
+        Ok(Arc::new(Buffer {
             device: self.clone(),
             handle,
             allocation: Some(allocation),
-        })))
+        }))
     }
 
-    /// 2Dテクスチャを1枚確保する。
-    pub fn create_texture(
+    pub(crate) fn create_vk_texture(
         self: &Arc<Self>,
         width: u32,
         height: u32,
         format: vk::Format,
         usage: vk::ImageUsageFlags,
         name: &str,
-    ) -> Result<Texture> {
+    ) -> Result<Arc<Texture>> {
         let extent = vk::Extent3D {
             width,
             height,
@@ -209,24 +292,25 @@ impl VulkanDevice {
         }
         .context("Failed to bind image memory")?;
 
-        Ok(Texture(Arc::new(TextureInner {
+        Ok(Arc::new(Texture {
             device: self.clone(),
             handle,
             allocation: Some(allocation),
             format,
             extent,
-        })))
+            layout: std::sync::Mutex::new(vk::ImageLayout::UNDEFINED),
+        }))
     }
 
-    pub fn create_texture_view(
+    pub(crate) fn create_vk_texture_view(
         self: &Arc<Self>,
-        texture: &Texture,
+        texture: &Arc<Texture>,
         aspect_mask: vk::ImageAspectFlags,
-    ) -> Result<TextureView> {
+    ) -> Result<Arc<TextureView>> {
         let view_create_info = vk::ImageViewCreateInfo::default()
             .image(texture.handle())
             .view_type(vk::ImageViewType::TYPE_2D)
-            .format(texture.format())
+            .format(texture.vk_format())
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask,
                 base_mip_level: 0,
@@ -238,18 +322,18 @@ impl VulkanDevice {
         let handle = unsafe { self.device.create_image_view(&view_create_info, None) }
             .context("Failed to create Vulkan image view")?;
 
-        Ok(TextureView(Arc::new(TextureViewInner {
+        Ok(Arc::new(TextureView {
             device: self.clone(),
             handle,
-            _texture: texture.clone(),
-        })))
+            texture: texture.clone(),
+        }))
     }
 
-    pub fn create_sampler(
+    pub(crate) fn create_vk_sampler(
         self: &Arc<Self>,
         address_mode: vk::SamplerAddressMode,
         filter: vk::Filter,
-    ) -> Result<Sampler> {
+    ) -> Result<Arc<Sampler>> {
         let create_info = vk::SamplerCreateInfo::default()
             .mag_filter(filter)
             .min_filter(filter)
@@ -260,9 +344,9 @@ impl VulkanDevice {
         let handle = unsafe { self.device.create_sampler(&create_info, None) }
             .context("Failed to create Vulkan sampler")?;
 
-        Ok(Sampler(Arc::new(SamplerInner {
+        Ok(Arc::new(Sampler {
             device: self.clone(),
             handle,
-        })))
+        }))
     }
 }

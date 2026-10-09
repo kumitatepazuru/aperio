@@ -14,7 +14,9 @@ struct FlatParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<FlatParams>> res;
 
 // `境界補正 = 0` の経路。単一パスで完結する。

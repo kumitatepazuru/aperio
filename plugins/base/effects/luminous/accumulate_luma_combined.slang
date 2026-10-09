@@ -5,7 +5,9 @@ struct AccumulateLumaCombinedParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<AccumulateLumaCombinedParams>> res;
 
 // 輝度・色差の6パスを1本化した経路(combined_init.slang)用の輝度アキュムレータ。

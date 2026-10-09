@@ -14,7 +14,9 @@ struct DiagonalClippingParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<DiagonalClippingParams>> res;
 
 // exedit-inspect diagonal_clipping README §6/§9 の3モードを、Q16固定小数点を経由せず

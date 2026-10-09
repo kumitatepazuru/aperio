@@ -11,7 +11,9 @@ struct BoxBlurAlphaMergeParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<BoxBlurAlphaMergeParams>> res;
 
 // common/lib/aperio-blur.slang の box_sum (common/box_blur_dir.slang と共用) の水平パスと

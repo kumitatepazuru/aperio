@@ -11,7 +11,9 @@ struct ColorKeyBorderPass1Params {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<ColorKeyBorderPass1Params>> res;
 
 // `境界補正 > 0` のパス1(exedit-inspect color_key README §5)。キー判定後の

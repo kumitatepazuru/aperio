@@ -6,7 +6,7 @@ use ash::vk;
 use super::device::VulkanDevice;
 
 impl VulkanDevice {
-    pub fn create_command_pool(&self) -> Result<vk::CommandPool> {
+    pub(crate) fn create_command_pool(&self) -> Result<vk::CommandPool> {
         let create_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(self.queue_family)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
@@ -14,7 +14,7 @@ impl VulkanDevice {
             .context("Failed to create Vulkan command pool")
     }
 
-    pub fn allocate_command_buffer(&self, pool: vk::CommandPool) -> Result<vk::CommandBuffer> {
+    pub(crate) fn allocate_command_buffer(&self, pool: vk::CommandPool) -> Result<vk::CommandBuffer> {
         let alloc_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(pool)
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -25,7 +25,7 @@ impl VulkanDevice {
     }
 
     /// recordでコマンドバッファに記録し、キューへsubmitして完了までブロックする単純な同期実行ヘルパー。
-    pub fn submit_and_wait(
+    pub(crate) fn submit_and_wait(
         &self,
         command_buffer: vk::CommandBuffer,
         record: impl FnOnce(vk::CommandBuffer),

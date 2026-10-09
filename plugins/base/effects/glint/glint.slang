@@ -25,7 +25,9 @@ struct GlintParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<GlintParams>> res;
 
 // 閃光の光線ワーカー(実機 0x1004e9c0 / 0x1004ee20、README手順4・5)。

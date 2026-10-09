@@ -12,7 +12,9 @@ struct BoxAverageDirParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<BoxAverageDirParams>> res;
 
 // 方向ベクトルに沿った素のボックス平均(rgba全チャンネル、alpha非加重)。範囲外は

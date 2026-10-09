@@ -7,7 +7,9 @@ struct DeinterlaceFieldParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<DeinterlaceFieldParams>> res;
 
 // 近傍1画素を {cr, cb, y, a} で取る。端は最近傍にクランプする

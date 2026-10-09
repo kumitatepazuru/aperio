@@ -19,7 +19,9 @@ struct RgbSplitParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<RgbSplitParams>> res;
 
 // exedit-inspect rgb_split README: R/G/Bのうち2チャンネルを反対方向へ`ずれ幅`だけ

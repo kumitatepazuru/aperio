@@ -6,7 +6,9 @@ struct AccumulateSaturatingParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; Texture2D<float4> tex1; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<AccumulateSaturatingParams>> res;
 
 // 拡散速度0用の輝度・色差**結合**飽和アキュムレータ(実機 sub_100540a0/sub_100544a0、

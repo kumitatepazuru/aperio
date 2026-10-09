@@ -43,14 +43,14 @@ impl CompiledFunc {
 
 // GPUテクスチャ関数への入力用のstruct
 pub struct GpuInputTexture {
-    pub texture: Arc<wgpu::Texture>,
+    pub texture: crate::rhi::Texture,
     pub width: u32,
     pub height: u32,
 }
 
 // GPUテクスチャ関数の出力用のstruct。widthとheightはステップのadd時に指定するため不要。
 pub struct GpuTextureOutput {
-    pub texture: Arc<wgpu::Texture>,
+    pub texture: crate::rhi::Texture,
 }
 
 // GPUテクスチャを処理する関数の型エイリアス。

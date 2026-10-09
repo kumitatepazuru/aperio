@@ -2,7 +2,9 @@ import aperio_color;
 import aperio_bindings;
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResourcesNoParams> res;
 
 // ycbcr_encode.slang の逆変換。{r=Cr偏差, g=Cb偏差, b=Y} からBT.601でRGBを

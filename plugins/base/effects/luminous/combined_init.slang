@@ -9,7 +9,9 @@ struct CombinedInitParams {
 };
 
 struct InputTextures { Texture2D<float4> tex0; };
+[vk::binding(0, 0)]
 ParameterBlock<InputTextures> inputs;
+[vk::binding(0, 1)]
 ParameterBlock<EffectResources<CombinedInitParams>> res;
 
 // threshold.slang が作った抽出量(r=amount*Cr係数, g=amount*Cb係数, b=amount*輝度係数)
