@@ -82,6 +82,8 @@ fn main() {
         for lib in &[
             "bcrypt", "ws2_32", "secur32", "mfplat", "mf", "mfuuid", "strmiids", "ole32", "user32",
             "psapi", "uuid", "oleaut32", "shlwapi", "gdi32", "vfw32", "ncrypt", "crypt32",
+            // x265がレジストリ(Reg*)を参照する
+            "advapi32",
         ] {
             println!("cargo:rustc-link-lib={}", lib);
         }
