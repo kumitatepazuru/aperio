@@ -2,9 +2,12 @@ use anyhow::Result;
 
 use crate::{
     compiled_slang::CompiledSlang,
-    image_generator::{ImageGenerator, ProcessingState, StepOutput},
+    image_generator::{
+        layout::{self, AperioDispatch, DispatchOutput},
+        ImageGenerator, ProcessingState, StepOutput,
+    },
     image_pixel_format::ImagePixelFormat,
-    rhi::{self, BufferUsage, ComputeDispatch, DispatchOutput, TextureUsage},
+    rhi::{self, BufferUsage, TextureUsage},
 };
 
 /// CPU側の`Vec<f32>`(RGBA32Float相当)をGPUテクスチャへアップロードする。
@@ -104,14 +107,17 @@ pub fn handle_slang_step(
         None
     };
 
-    device.dispatch_compute(ComputeDispatch {
-        pipeline: &pipeline,
-        inputs: &input_views,
-        output: DispatchOutput::Texture(&output_view),
-        sampler: slang.sampler.as_ref(),
-        params: params_buffer.as_ref(),
-        workgroups: (output_width.div_ceil(16), output_height.div_ceil(16), 1),
-    })?;
+    layout::dispatch(
+        device,
+        AperioDispatch {
+            pipeline: &pipeline,
+            inputs: &input_views,
+            output: DispatchOutput::Texture(&output_view),
+            sampler: slang.sampler.as_ref(),
+            params: params_buffer.as_ref(),
+            workgroups: (output_width.div_ceil(16), output_height.div_ceil(16), 1),
+        },
+    )?;
 
     Ok(vec![StepOutput::Gpu {
         texture: output_texture,

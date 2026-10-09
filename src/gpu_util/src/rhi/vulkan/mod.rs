@@ -1,16 +1,21 @@
 // rhiのVulkan(ash)バックエンド。型はすべてrhiのenumの内側からのみ使われる。
 
+mod bindings;
 mod command;
 mod descriptor;
 mod device;
 mod dispatch;
+mod graphics;
 mod instance;
 mod memory;
+mod native_texture;
 mod pipeline;
 mod resources;
 
+pub use bindings::{Resource, ResourceBinding};
 pub use device::VulkanDevice;
-pub use dispatch::DispatchOutput;
+pub use dispatch::TextureCopy;
+pub use graphics::{Draw, GraphicsPipeline};
 pub use pipeline::ComputePipeline;
 pub use resources::{Buffer, Sampler, Texture, TextureView};
 

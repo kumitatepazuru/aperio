@@ -2,8 +2,9 @@
 
 use std::time::Instant;
 
+use crate::image_generator::layout::{self, AperioDispatch, DispatchOutput};
 use crate::image_generator::{ImageGenerator, ProcessingState, StepOutput};
-use crate::rhi::{BufferUsage, ComputeDispatch, DispatchOutput};
+use crate::rhi::BufferUsage;
 use anyhow::{bail, Context, Result};
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
@@ -47,14 +48,17 @@ pub async fn handle_final_process(
             )?;
             let input_view = generator.device.create_texture_view(&texture)?;
 
-            generator.device.dispatch_compute(ComputeDispatch {
-                pipeline: &generator.post_process_pipeline,
-                inputs: &[input_view],
-                output: DispatchOutput::Buffer(&u32_buffer),
-                sampler: None,
-                params: None,
-                workgroups: (width.div_ceil(16), height.div_ceil(16), 1),
-            })?;
+            layout::dispatch(
+                &generator.device,
+                AperioDispatch {
+                    pipeline: &generator.post_process_pipeline,
+                    inputs: &[input_view],
+                    output: DispatchOutput::Buffer(&u32_buffer),
+                    sampler: None,
+                    params: None,
+                    workgroups: (width.div_ceil(16), height.div_ceil(16), 1),
+                },
+            )?;
 
             let ptr = u32_buffer
                 .mapped_ptr()

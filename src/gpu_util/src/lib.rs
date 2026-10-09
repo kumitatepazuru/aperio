@@ -1,5 +1,5 @@
-pub mod common_pipeline;
 pub mod compiled_func;
+pub mod compiled_hlsl;
 pub mod compiled_slang;
 pub mod image_generate_builder;
 pub mod image_generator;

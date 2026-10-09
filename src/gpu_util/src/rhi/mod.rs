@@ -11,15 +11,6 @@ use anyhow::{bail, Result};
 
 use crate::image_pixel_format::ImagePixelFormat;
 
-/// 入力テクスチャの束ね方。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputArity {
-    /// 固定長入力。実際の本数とディスパッチ時の入力テクスチャ数は一致する必要がある。
-    Fixed,
-    /// Texture2D<float4> tex[]のような単一の可変長配列バインディング。
-    Variable,
-}
-
 macro_rules! bitflags_u8 {
     ($(#[$meta:meta])* $name:ident { $($variant:ident = $bit:literal),+ $(,)? }) => {
         $(#[$meta])*
@@ -45,6 +36,8 @@ bitflags_u8!(
         STORAGE = 1,
         TRANSFER_SRC = 2,
         TRANSFER_DST = 3,
+        // グラフィックスパイプラインのカラーターゲットとして描画する。
+        COLOR_TARGET = 4,
     }
 );
 
@@ -54,8 +47,55 @@ bitflags_u8!(
         STORAGE = 0,
         TRANSFER_SRC = 1,
         TRANSFER_DST = 2,
+        UNIFORM = 3,
+        VERTEX = 4,
     }
 );
+
+bitflags_u8!(
+    /// リソースを参照するシェーダーステージ。
+    ShaderStages {
+        COMPUTE = 0,
+        VERTEX = 1,
+        FRAGMENT = 2,
+    }
+);
+
+/// テクスチャのピクセル形式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextureFormat {
+    Rgba8Unorm,
+    Bgra8Unorm,
+    Rgba16Float,
+    Rgba32Float,
+    R8Unorm,
+    Rg8Unorm,
+    /// 16bit正規化形式は任意機能のため、非対応のデバイスではテクスチャ生成が失敗する。
+    R16Unorm,
+    Rg16Unorm,
+}
+
+impl TextureFormat {
+    pub fn bytes_per_texel(self) -> u32 {
+        match self {
+            Self::R8Unorm => 1,
+            Self::Rg8Unorm | Self::R16Unorm => 2,
+            Self::Rgba8Unorm | Self::Bgra8Unorm | Self::Rg16Unorm => 4,
+            Self::Rgba16Float => 8,
+            Self::Rgba32Float => 16,
+        }
+    }
+}
+
+impl From<ImagePixelFormat> for TextureFormat {
+    fn from(format: ImagePixelFormat) -> Self {
+        match format {
+            ImagePixelFormat::Rgba8Unorm => Self::Rgba8Unorm,
+            ImagePixelFormat::Rgba16Float => Self::Rgba16Float,
+            ImagePixelFormat::Rgba32Float => Self::Rgba32Float,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressMode {
@@ -77,26 +117,101 @@ pub struct SamplerOptions {
     pub filter: FilterMode,
 }
 
-/// コンピュートパイプラインの出力リソースの種類。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputKind {
-    Texture,
-    Buffer,
+/// ディスクリプタ1つのリソース種別。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BindingKind {
+    SampledImage,
+    StorageImage,
+    StorageBuffer,
+    UniformBuffer,
+    Sampler,
 }
 
-/// パイプライン生成時に指定する、シェーダーのリソース形状。
-///
-/// 入力=set 0、`res`=set 1で、出力・サンプラー・paramsがこの順にbinding 0,1,2...
-/// に従うシェーダーを前提とする。
-#[derive(Debug, Clone)]
-pub struct PipelineDesc {
-    pub entry_point: String,
-    pub input_arity: InputArity,
-    /// input_arity == Fixedの場合の入力本数。Variableでは無視される。
-    pub input_count: u32,
-    pub has_sampler: bool,
-    pub has_params: bool,
-    pub output: OutputKind,
+/// セット内の1バインディングの記述。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BindingDesc {
+    pub binding: u32,
+    pub kind: BindingKind,
+    /// 配列の本数(配列でないなら1)。`variable_count`がtrueの場合は無視され、
+    /// デバイスの上限が最大本数として使われる(実際の本数はディスパッチ時の
+    /// `Resource::TextureArray`の長さで決まる)。
+    pub count: u32,
+    /// 実行時に本数が決まる可変長配列。`SampledImage`のみ指定でき、
+    /// セット内で最大のbinding番号に置く必要がある。
+    pub variable_count: bool,
+    pub stages: ShaderStages,
+}
+
+/// 1つのディスクリプタセットの形。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct SetLayoutDesc {
+    pub bindings: Vec<BindingDesc>,
+}
+
+/// パイプライン全体のリソースレイアウト(セット番号は`sets`の添字)。
+/// RHIはここで渡された形をそのまま処理するだけで、特定の規約は持たない。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct PipelineLayoutDesc {
+    pub sets: Vec<SetLayoutDesc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VertexFormat {
+    Float32x2,
+    Float32x3,
+    Float32x4,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VertexAttribute {
+    pub location: u32,
+    pub format: VertexFormat,
+    pub offset: u32,
+}
+
+/// 頂点バッファ1本ぶんの並び。`GraphicsPipelineDesc::vertex_buffers`の添字が
+/// 頂点バッファのスロット番号になる。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VertexBufferLayout {
+    pub stride: u32,
+    /// trueならインスタンスごと、falseなら頂点ごとに進める。
+    pub per_instance: bool,
+    pub attributes: Vec<VertexAttribute>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlendFactor {
+    Zero,
+    One,
+    SrcAlpha,
+    OneMinusSrcAlpha,
+}
+
+/// ブレンド演算は常にAdd。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlendComponent {
+    pub src_factor: BlendFactor,
+    pub dst_factor: BlendFactor,
+}
+
+/// 色とアルファを別々に指定できるブレンド設定。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlendState {
+    pub color: BlendComponent,
+    pub alpha: BlendComponent,
+}
+
+/// グラフィックスパイプライン(三角形リスト、カラーターゲット1枚、深度なし)の記述。
+pub struct GraphicsPipelineDesc<'a> {
+    pub vertex_spirv: &'a [u32],
+    pub vertex_entry: &'a str,
+    pub fragment_spirv: &'a [u32],
+    pub fragment_entry: &'a str,
+    pub layout: PipelineLayoutDesc,
+    pub vertex_buffers: Vec<VertexBufferLayout>,
+    pub color_format: TextureFormat,
+    /// Noneならブレンドなし(上書き)。
+    pub blend: Option<BlendState>,
 }
 
 #[derive(Clone)]
@@ -124,6 +239,11 @@ pub enum ComputePipeline {
     Vulkan(Arc<vulkan::ComputePipeline>),
 }
 
+#[derive(Clone)]
+pub enum GraphicsPipeline {
+    Vulkan(Arc<vulkan::GraphicsPipeline>),
+}
+
 impl Buffer {
     /// CPUマップされている場合、そのポインタを返す。
     pub fn mapped_ptr(&self) -> Option<NonNull<c_void>> {
@@ -146,7 +266,7 @@ impl Texture {
         }
     }
 
-    pub fn format(&self) -> ImagePixelFormat {
+    pub fn format(&self) -> TextureFormat {
         match self {
             Self::Vulkan(t) => t.format(),
         }
@@ -154,27 +274,99 @@ impl Texture {
 }
 
 impl ComputePipeline {
-    pub fn desc(&self) -> &PipelineDesc {
+    pub fn layout(&self) -> &PipelineLayoutDesc {
         match self {
-            Self::Vulkan(p) => p.desc(),
+            Self::Vulkan(p) => p.layout_desc(),
         }
     }
 }
 
-/// コンピュートディスパッチの出力先。
-pub enum DispatchOutput<'a> {
+/// 1バインディングに束縛するリソース。
+#[derive(Clone, Copy)]
+pub enum Resource<'a> {
     Texture(&'a TextureView),
+    /// 配列バインディング(固定長なら`count`と、可変長ならデバイス上限以下の本数)。
+    TextureArray(&'a [TextureView]),
     Buffer(&'a Buffer),
+    Sampler(&'a Sampler),
 }
 
-/// 1回のコンピュートディスパッチに必要な情報。形状はPipelineDescと一致させる。
+pub struct ResourceBinding<'a> {
+    pub binding: u32,
+    pub resource: Resource<'a>,
+}
+
+/// 1回のコンピュートディスパッチに必要な情報。
+/// `sets[i]`がパイプラインレイアウトのセットiに対応し、各セットのバインディングは
+/// すべて過不足なく指定する必要がある。
 pub struct ComputeDispatch<'a> {
     pub pipeline: &'a ComputePipeline,
-    pub inputs: &'a [TextureView],
-    pub output: DispatchOutput<'a>,
-    pub sampler: Option<&'a Sampler>,
-    pub params: Option<&'a Buffer>,
+    pub sets: &'a [&'a [ResourceBinding<'a>]],
     pub workgroups: (u32, u32, u32),
+}
+
+impl<'a> ResourceBinding<'a> {
+    fn to_vulkan(&self) -> vulkan::ResourceBinding<'a> {
+        let resource = match self.resource {
+            Resource::Texture(TextureView::Vulkan(v)) => vulkan::Resource::Texture(v),
+            Resource::TextureArray(views) => vulkan::Resource::TextureArray(
+                views
+                    .iter()
+                    .map(|TextureView::Vulkan(v)| &**v)
+                    .collect(),
+            ),
+            Resource::Buffer(Buffer::Vulkan(b)) => vulkan::Resource::Buffer(b),
+            Resource::Sampler(Sampler::Vulkan(s)) => vulkan::Resource::Sampler(s),
+        };
+        vulkan::ResourceBinding {
+            binding: self.binding,
+            resource,
+        }
+    }
+}
+
+/// 他のグラフィックスAPI(D3D12 / dmabuf)が所有するテクスチャへのハンドル。
+/// `Device::import_external_texture`でRHIのテクスチャとして取り込める。
+#[derive(Debug, Clone)]
+pub enum ExternalTextureHandle {
+    /// Windows: D3D12_HEAP_FLAG_SHARED付きで作られたリソースの`CreateSharedHandle`のNTハンドル。
+    /// ハンドルの所有権は呼び出し側に残る。
+    #[cfg(target_os = "windows")]
+    D3D12Resource { nt_handle: usize },
+    /// Linux: dmabuf。fdは複製してから取り込むので、呼び出し側のfdはそのまま残る。
+    /// 単一プレーンのみ対応。`modifier`はDRM format modifier(0=LINEAR)。
+    #[cfg(target_os = "linux")]
+    DmaBuf { planes: Vec<DmaBufPlane>, modifier: u64 },
+}
+
+/// dmabufの1プレーン分の情報。
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+pub struct DmaBufPlane {
+    pub fd: std::os::fd::RawFd,
+    pub stride: u32,
+    pub offset: u32,
+    pub size: u32,
+}
+
+/// `Device::render_pass`の1回の描画コマンド。
+/// `sets`はパイプラインレイアウトのセットに対応する(`ComputeDispatch`と同じ規則)。
+pub struct Draw<'a> {
+    pub pipeline: &'a GraphicsPipeline,
+    pub sets: &'a [&'a [ResourceBinding<'a>]],
+    /// スロット番号順の頂点バッファ。
+    pub vertex_buffers: &'a [&'a Buffer],
+    pub vertex_count: u32,
+    pub instance_count: u32,
+}
+
+/// `Device::copy_textures`の1件分(フォーマットが一致する矩形コピー)。
+pub struct TextureCopy<'a> {
+    pub src: &'a Texture,
+    pub src_origin: (u32, u32),
+    pub dst: &'a Texture,
+    pub dst_origin: (u32, u32),
+    pub size: (u32, u32),
 }
 
 #[derive(Clone)]
@@ -207,7 +399,7 @@ impl Device {
         &self,
         width: u32,
         height: u32,
-        format: ImagePixelFormat,
+        format: TextureFormat,
         usage: TextureUsage,
         label: &str,
     ) -> Result<Texture> {
@@ -230,9 +422,16 @@ impl Device {
         }
     }
 
-    pub fn create_compute_pipeline(&self, spirv: &[u32], desc: &PipelineDesc) -> Result<ComputePipeline> {
+    pub fn create_compute_pipeline(
+        &self,
+        spirv: &[u32],
+        entry_point: &str,
+        layout: &PipelineLayoutDesc,
+    ) -> Result<ComputePipeline> {
         match self {
-            Self::Vulkan(d) => Ok(ComputePipeline::Vulkan(d.create_compute_pipeline(spirv, desc)?)),
+            Self::Vulkan(d) => Ok(ComputePipeline::Vulkan(
+                d.create_compute_pipeline(spirv, entry_point, layout)?,
+            )),
         }
     }
 
@@ -240,26 +439,129 @@ impl Device {
     pub fn dispatch_compute(&self, dispatch: ComputeDispatch<'_>) -> Result<()> {
         match self {
             Self::Vulkan(d) => {
-                let ComputeDispatch { pipeline, inputs, output, sampler, params, workgroups } = dispatch;
+                let ComputeDispatch { pipeline, sets, workgroups } = dispatch;
                 let ComputePipeline::Vulkan(pipeline) = pipeline;
-                let inputs: Vec<&vulkan::TextureView> = inputs
+                let sets: Vec<Vec<vulkan::ResourceBinding<'_>>> = sets
                     .iter()
-                    .map(|v| match v {
-                        TextureView::Vulkan(v) => &**v,
-                    })
+                    .map(|set| set.iter().map(ResourceBinding::to_vulkan).collect())
                     .collect();
-                let output = match output {
-                    DispatchOutput::Texture(TextureView::Vulkan(v)) => vulkan::DispatchOutput::Texture(v),
-                    DispatchOutput::Buffer(Buffer::Vulkan(b)) => vulkan::DispatchOutput::Buffer(b),
-                };
-                let sampler = sampler.map(|Sampler::Vulkan(s)| &**s);
-                let params = params.map(|Buffer::Vulkan(b)| &**b);
-                d.dispatch_compute(pipeline, &inputs, output, sampler, params, workgroups)
+                d.dispatch_compute(pipeline, &sets, workgroups)
             }
         }
     }
 
-    /// CPU側のバイト列をテクスチャへアップロードする。
+    pub fn create_graphics_pipeline(&self, desc: &GraphicsPipelineDesc<'_>) -> Result<GraphicsPipeline> {
+        match self {
+            Self::Vulkan(d) => Ok(GraphicsPipeline::Vulkan(d.create_graphics_pipeline(desc)?)),
+        }
+    }
+
+    /// 1つのカラーターゲットへ`draws`を順に描画する(同期)。`clear`がNoneなら既存内容を保持する。
+    /// ターゲットは`COLOR_TARGET`用途で作られ、パイプラインの`color_format`と同じ形式である必要がある。
+    /// NDCのy+は画面上方向(wgpu / D3D / Metalと同じ向き)。
+    pub fn render_pass(
+        &self,
+        target: &TextureView,
+        clear: Option<[f32; 4]>,
+        draws: &[Draw<'_>],
+    ) -> Result<()> {
+        match self {
+            Self::Vulkan(d) => {
+                let TextureView::Vulkan(target) = target;
+                let draws: Vec<vulkan::Draw<'_>> = draws
+                    .iter()
+                    .map(|draw| {
+                        let GraphicsPipeline::Vulkan(pipeline) = draw.pipeline;
+                        vulkan::Draw {
+                            pipeline,
+                            sets: draw
+                                .sets
+                                .iter()
+                                .map(|set| set.iter().map(ResourceBinding::to_vulkan).collect())
+                                .collect(),
+                            vertex_buffers: draw
+                                .vertex_buffers
+                                .iter()
+                                .map(|Buffer::Vulkan(b)| &**b)
+                                .collect(),
+                            vertex_count: draw.vertex_count,
+                            instance_count: draw.instance_count,
+                        }
+                    })
+                    .collect();
+                d.render_pass(target, clear, &draws)
+            }
+        }
+    }
+
+    /// 他のAPIが所有するテクスチャをRHIのテクスチャとして取り込む。
+    /// 取り込んだテクスチャは`usage`に従って描画先・コピー先などに使える
+    /// (中身は元のリソースと共有されるため、書き込みは外部APIから見える)。
+    pub fn import_external_texture(
+        &self,
+        handle: &ExternalTextureHandle,
+        width: u32,
+        height: u32,
+        format: TextureFormat,
+        usage: TextureUsage,
+    ) -> Result<Texture> {
+        match (self, handle) {
+            #[cfg(target_os = "windows")]
+            (Self::Vulkan(d), ExternalTextureHandle::D3D12Resource { nt_handle }) => Ok(
+                Texture::Vulkan(d.import_d3d12_texture(*nt_handle, width, height, format, usage)?),
+            ),
+            #[cfg(target_os = "linux")]
+            (Self::Vulkan(d), ExternalTextureHandle::DmaBuf { planes, modifier }) => {
+                Ok(Texture::Vulkan(d.import_dmabuf_texture(
+                    planes, *modifier, width, height, format, usage,
+                )?))
+            }
+        }
+    }
+
+    /// このデバイスのアダプタのLUID(外部APIで同じGPUを選ぶために使う)。取得できなければNone。
+    pub fn adapter_luid(&self) -> Option<[u8; 8]> {
+        match self {
+            Self::Vulkan(d) => d.adapter_luid(),
+        }
+    }
+
+    /// テクスチャの矩形領域へCPU側のバイト列(行詰め)をアップロードする。
+    pub fn upload_texture_region(
+        &self,
+        texture: &Texture,
+        origin: (u32, u32),
+        size: (u32, u32),
+        data: &[u8],
+    ) -> Result<()> {
+        match (self, texture) {
+            (Self::Vulkan(d), Texture::Vulkan(t)) => d.upload_texture_region(t, origin, size, data),
+        }
+    }
+
+    /// テクスチャ間の矩形コピーを1回のsubmitでまとめて実行する(同期)。
+    pub fn copy_textures(&self, copies: &[TextureCopy<'_>]) -> Result<()> {
+        match self {
+            Self::Vulkan(d) => {
+                let copies: Vec<vulkan::TextureCopy<'_>> = copies
+                    .iter()
+                    .map(|c| {
+                        let (Texture::Vulkan(src), Texture::Vulkan(dst)) = (c.src, c.dst);
+                        vulkan::TextureCopy {
+                            src,
+                            src_origin: c.src_origin,
+                            dst,
+                            dst_origin: c.dst_origin,
+                            size: c.size,
+                        }
+                    })
+                    .collect();
+                d.copy_textures(&copies)
+            }
+        }
+    }
+
+    /// テクスチャ全体へCPU側のバイト列をアップロードする。
     pub fn upload_texture_data(&self, texture: &Texture, data: &[u8]) -> Result<()> {
         match (self, texture) {
             (Self::Vulkan(d), Texture::Vulkan(t)) => d.upload_texture_data(t, data),

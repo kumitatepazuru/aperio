@@ -3,25 +3,25 @@ use std::sync::Arc;
 
 use crate::compiled_func::{CompiledFunc, CpuInputImage};
 use crate::image_generator::{ImageGenerator, ProcessingState, StepOutput};
-use crate::image_pixel_format::ImagePixelFormat;
-use crate::rhi::Texture;
+use crate::rhi::{Texture, TextureFormat};
 use anyhow::Result;
 use futures::future::join_all;
 use futures::FutureExt;
 
 /// depad済みの生バイト列を、フォーマットに応じて正規化非依存のVec<f32>へ変換する。
-fn raw_bytes_to_f32(format: ImagePixelFormat, raw_pixels: &[u8]) -> Vec<f32> {
-    match format {
-        ImagePixelFormat::Rgba32Float => raw_pixels
+fn raw_bytes_to_f32(format: TextureFormat, raw_pixels: &[u8]) -> Result<Vec<f32>> {
+    Ok(match format {
+        TextureFormat::Rgba32Float => raw_pixels
             .chunks_exact(4)
             .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
             .collect(),
-        ImagePixelFormat::Rgba16Float => raw_pixels
+        TextureFormat::Rgba16Float => raw_pixels
             .chunks_exact(2)
             .map(|c| half::f16::from_le_bytes(c.try_into().unwrap()).to_f32())
             .collect(),
-        ImagePixelFormat::Rgba8Unorm => raw_pixels.iter().map(|&b| b as f32 / 255.0).collect(),
-    }
+        TextureFormat::Rgba8Unorm => raw_pixels.iter().map(|&b| b as f32 / 255.0).collect(),
+        other => anyhow::bail!("{other:?} textures cannot be read back as RGBA f32"),
+    })
 }
 
 /// GPUテクスチャをCPU側のVec<f32>(常に正規化されたRGBA、内部フォーマット非依存)へダウンロードする。
@@ -35,7 +35,7 @@ async fn download_gpu_texture(
 
     let raw_pixels = generator.device.download_texture_data(texture_to_read)?;
 
-    Ok((raw_bytes_to_f32(format, &raw_pixels), width, height))
+    Ok((raw_bytes_to_f32(format, &raw_pixels)?, width, height))
 }
 
 pub async fn handle_cpu_func_step(
@@ -97,7 +97,12 @@ pub async fn handle_cpu_func_step(
     let cpu_inputs: Vec<CpuInputImage> = owned_cpu_data
         .iter()
         .map(|step_output| {
-            if let StepOutput::Cpu { data, width, height } = step_output {
+            if let StepOutput::Cpu {
+                data,
+                width,
+                height,
+            } = step_output
+            {
                 CpuInputImage {
                     data: data.as_slice(),
                     width: *width,

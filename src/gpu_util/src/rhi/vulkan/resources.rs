@@ -8,23 +8,33 @@ use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
 
 use super::device::VulkanDevice;
-use crate::image_pixel_format::ImagePixelFormat;
+use crate::rhi::TextureFormat;
 
-/// ImagePixelFormatとVulkanの生フォーマットとの相互変換。
-pub(crate) fn to_vk_format(format: ImagePixelFormat) -> vk::Format {
+/// rhi::TextureFormatとVulkanの生フォーマットとの相互変換。
+pub(crate) fn to_vk_format(format: TextureFormat) -> vk::Format {
     match format {
-        ImagePixelFormat::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
-        ImagePixelFormat::Rgba16Float => vk::Format::R16G16B16A16_SFLOAT,
-        ImagePixelFormat::Rgba32Float => vk::Format::R32G32B32A32_SFLOAT,
+        TextureFormat::Rgba8Unorm => vk::Format::R8G8B8A8_UNORM,
+        TextureFormat::Bgra8Unorm => vk::Format::B8G8R8A8_UNORM,
+        TextureFormat::Rgba16Float => vk::Format::R16G16B16A16_SFLOAT,
+        TextureFormat::Rgba32Float => vk::Format::R32G32B32A32_SFLOAT,
+        TextureFormat::R8Unorm => vk::Format::R8_UNORM,
+        TextureFormat::Rg8Unorm => vk::Format::R8G8_UNORM,
+        TextureFormat::R16Unorm => vk::Format::R16_UNORM,
+        TextureFormat::Rg16Unorm => vk::Format::R16G16_UNORM,
     }
 }
 
-pub(crate) fn from_vk_format(format: vk::Format) -> Result<ImagePixelFormat> {
+pub(crate) fn from_vk_format(format: vk::Format) -> Result<TextureFormat> {
     match format {
-        vk::Format::R8G8B8A8_UNORM => Ok(ImagePixelFormat::Rgba8Unorm),
-        vk::Format::R16G16B16A16_SFLOAT => Ok(ImagePixelFormat::Rgba16Float),
-        vk::Format::R32G32B32A32_SFLOAT => Ok(ImagePixelFormat::Rgba32Float),
-        other => anyhow::bail!("Unsupported Vulkan format for ImagePixelFormat: {other:?}"),
+        vk::Format::R8G8B8A8_UNORM => Ok(TextureFormat::Rgba8Unorm),
+        vk::Format::B8G8R8A8_UNORM => Ok(TextureFormat::Bgra8Unorm),
+        vk::Format::R16G16B16A16_SFLOAT => Ok(TextureFormat::Rgba16Float),
+        vk::Format::R32G32B32A32_SFLOAT => Ok(TextureFormat::Rgba32Float),
+        vk::Format::R8_UNORM => Ok(TextureFormat::R8Unorm),
+        vk::Format::R8G8_UNORM => Ok(TextureFormat::Rg8Unorm),
+        vk::Format::R16_UNORM => Ok(TextureFormat::R16Unorm),
+        vk::Format::R16G16_UNORM => Ok(TextureFormat::Rg16Unorm),
+        other => anyhow::bail!("Unsupported Vulkan format for TextureFormat: {other:?}"),
     }
 }
 
@@ -65,6 +75,8 @@ pub struct Texture {
     device: Arc<VulkanDevice>,
     handle: vk::Image,
     allocation: Option<gpu_allocator::vulkan::Allocation>,
+    /// 外部メモリをインポートして作ったイメージ専用のメモリ(アロケータ管理外)。
+    imported_memory: Option<vk::DeviceMemory>,
     format: vk::Format,
     extent: vk::Extent3D,
     /// 現在のイメージレイアウト(プールで使い回されるため自前で追跡する)。
@@ -72,6 +84,26 @@ pub struct Texture {
 }
 
 impl Texture {
+    /// 外部メモリをインポートしたイメージを包む。memoryとimageの所有権はTextureに移る。
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    pub(super) fn from_imported(
+        device: Arc<VulkanDevice>,
+        image: vk::Image,
+        memory: vk::DeviceMemory,
+        format: vk::Format,
+        extent: vk::Extent3D,
+    ) -> Self {
+        Self {
+            device,
+            handle: image,
+            allocation: None,
+            imported_memory: Some(memory),
+            format,
+            extent,
+            layout: std::sync::Mutex::new(vk::ImageLayout::UNDEFINED),
+        }
+    }
+
     pub(crate) fn handle(&self) -> vk::Image {
         self.handle
     }
@@ -88,8 +120,8 @@ impl Texture {
         self.extent.height
     }
 
-    pub fn format(&self) -> ImagePixelFormat {
-        // 生成経路は常にImagePixelFormat由来のフォーマットしか使わない。
+    pub fn format(&self) -> TextureFormat {
+        // 生成経路は常にTextureFormat由来のフォーマットしか使わない。
         from_vk_format(self.format).expect("Texture was created with a non-abstract Vulkan format")
     }
 
@@ -150,6 +182,9 @@ impl Drop for Texture {
         unsafe { self.device.device.destroy_image(self.handle, None) };
         if let Some(allocation) = self.allocation.take() {
             let _ = self.device.allocator.free(allocation);
+        }
+        if let Some(memory) = self.imported_memory.take() {
+            unsafe { self.device.device.free_memory(memory, None) };
         }
     }
 }
@@ -259,6 +294,36 @@ impl VulkanDevice {
             depth: 1,
         };
 
+        // 用途ごとに必要なフォーマット機能を、デバイスが実際に満たしているか確認する
+        // (R16_UNORM等の16bit正規化形式は任意機能のため、非対応なら明確なエラーにする)。
+        let supported = unsafe {
+            self.instance
+                .instance
+                .get_physical_device_format_properties(self.physical_device, format)
+        }
+        .optimal_tiling_features;
+        for (usage_flag, feature, name) in [
+            (
+                vk::ImageUsageFlags::SAMPLED,
+                vk::FormatFeatureFlags::SAMPLED_IMAGE,
+                "sampling",
+            ),
+            (
+                vk::ImageUsageFlags::STORAGE,
+                vk::FormatFeatureFlags::STORAGE_IMAGE,
+                "storage image",
+            ),
+            (
+                vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                vk::FormatFeatureFlags::COLOR_ATTACHMENT,
+                "color attachment",
+            ),
+        ] {
+            if usage.contains(usage_flag) && !supported.contains(feature) {
+                anyhow::bail!("This device does not support {format:?} for {name} usage");
+            }
+        }
+
         let image_create_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .format(format)
@@ -296,6 +361,7 @@ impl VulkanDevice {
             device: self.clone(),
             handle,
             allocation: Some(allocation),
+            imported_memory: None,
             format,
             extent,
             layout: std::sync::Mutex::new(vk::ImageLayout::UNDEFINED),

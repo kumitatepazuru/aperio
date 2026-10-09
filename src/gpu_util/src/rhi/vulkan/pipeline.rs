@@ -2,23 +2,20 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use ash::vk;
 
 use super::descriptor::{DescriptorBindingDesc, DescriptorSetLayout};
 use super::device::VulkanDevice;
-use crate::rhi::{InputArity, OutputKind, PipelineDesc};
-
-const INPUTS_SET: usize = 0;
-const RES_SET: usize = 1;
+use crate::rhi::{BindingDesc, BindingKind, PipelineLayoutDesc, ShaderStages};
 
 pub struct ComputePipeline {
     device: Arc<VulkanDevice>,
     pipeline: vk::Pipeline,
     layout: vk::PipelineLayout,
-    /// [inputs(set 0), res(set 1)]
-    pub(super) set_layouts: [Arc<DescriptorSetLayout>; 2],
-    desc: PipelineDesc,
+    /// layout_descのセット順に並んだディスクリプタセットレイアウト。
+    pub(super) set_layouts: Vec<Arc<DescriptorSetLayout>>,
+    layout_desc: PipelineLayoutDesc,
 }
 
 impl ComputePipeline {
@@ -30,8 +27,8 @@ impl ComputePipeline {
         self.layout
     }
 
-    pub fn desc(&self) -> &PipelineDesc {
-        &self.desc
+    pub fn layout_desc(&self) -> &PipelineLayoutDesc {
+        &self.layout_desc
     }
 }
 
@@ -46,80 +43,101 @@ impl Drop for ComputePipeline {
     }
 }
 
-fn compute_binding(binding: u32, descriptor_type: vk::DescriptorType) -> DescriptorBindingDesc {
-    DescriptorBindingDesc {
-        binding,
-        descriptor_type,
-        descriptor_count: 1,
-        stage_flags: vk::ShaderStageFlags::COMPUTE,
-        variable_count: false,
+fn to_vk_descriptor_type(kind: BindingKind) -> vk::DescriptorType {
+    match kind {
+        BindingKind::SampledImage => vk::DescriptorType::SAMPLED_IMAGE,
+        BindingKind::StorageImage => vk::DescriptorType::STORAGE_IMAGE,
+        BindingKind::StorageBuffer => vk::DescriptorType::STORAGE_BUFFER,
+        BindingKind::UniformBuffer => vk::DescriptorType::UNIFORM_BUFFER,
+        BindingKind::Sampler => vk::DescriptorType::SAMPLER,
     }
 }
 
+fn to_vk_stages(stages: ShaderStages) -> vk::ShaderStageFlags {
+    let mut flags = vk::ShaderStageFlags::empty();
+    if stages.contains(ShaderStages::COMPUTE) {
+        flags |= vk::ShaderStageFlags::COMPUTE;
+    }
+    if stages.contains(ShaderStages::VERTEX) {
+        flags |= vk::ShaderStageFlags::VERTEX;
+    }
+    if stages.contains(ShaderStages::FRAGMENT) {
+        flags |= vk::ShaderStageFlags::FRAGMENT;
+    }
+    flags
+}
+
 impl VulkanDevice {
+    fn to_descriptor_binding_desc(&self, b: &BindingDesc) -> Result<DescriptorBindingDesc> {
+        if b.variable_count && b.kind != BindingKind::SampledImage {
+            bail!(
+                "binding {}: variable_count is only supported for SampledImage bindings",
+                b.binding
+            );
+        }
+        Ok(DescriptorBindingDesc {
+            binding: b.binding,
+            descriptor_type: to_vk_descriptor_type(b.kind),
+            // 可変長はデバイスの上限を最大本数とする。
+            descriptor_count: if b.variable_count {
+                self.max_variable_sampled_image_count()
+            } else {
+                b.count
+            },
+            stage_flags: to_vk_stages(b.stages),
+            variable_count: b.variable_count,
+        })
+    }
+
+    /// レイアウト記述からディスクリプタセットレイアウト群とVkPipelineLayoutを作る
+    /// (compute / graphics共通)。
+    pub(super) fn create_pipeline_layout_from_desc(
+        self: &Arc<Self>,
+        layout_desc: &PipelineLayoutDesc,
+    ) -> Result<(Vec<Arc<DescriptorSetLayout>>, vk::PipelineLayout)> {
+        let set_layouts = layout_desc
+            .sets
+            .iter()
+            .map(|set| {
+                let bindings = set
+                    .bindings
+                    .iter()
+                    .map(|b| self.to_descriptor_binding_desc(b))
+                    .collect::<Result<Vec<_>>>()?;
+                self.create_descriptor_set_layout(&bindings)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let handles: Vec<vk::DescriptorSetLayout> =
+            set_layouts.iter().map(|l| l.handle()).collect();
+
+        let create_info = vk::PipelineLayoutCreateInfo::default().set_layouts(&handles);
+        let layout = unsafe { self.device.create_pipeline_layout(&create_info, None) }
+            .context("Failed to create Vulkan pipeline layout")?;
+        Ok((set_layouts, layout))
+    }
+
+    pub(super) fn create_shader_module(&self, spirv: &[u32]) -> Result<vk::ShaderModule> {
+        let create_info = vk::ShaderModuleCreateInfo::default().code(spirv);
+        unsafe { self.device.create_shader_module(&create_info, None) }
+            .context("Failed to create Vulkan shader module from SPIR-V")
+    }
+
     pub fn create_compute_pipeline(
         self: &Arc<Self>,
         spirv: &[u32],
-        desc: &PipelineDesc,
+        entry_point: &str,
+        layout_desc: &PipelineLayoutDesc,
     ) -> Result<Arc<ComputePipeline>> {
-        let inputs_bindings = match desc.input_arity {
-            InputArity::Fixed => (0..desc.input_count)
-                .map(|i| compute_binding(i, vk::DescriptorType::SAMPLED_IMAGE))
-                .collect::<Vec<_>>(),
-            InputArity::Variable => vec![DescriptorBindingDesc {
-                // 実機の上限をそのまま使う。実際の使用本数はセット確保時に別途指定する。
-                descriptor_count: self.max_variable_sampled_image_count(),
-                variable_count: true,
-                ..compute_binding(0, vk::DescriptorType::SAMPLED_IMAGE)
-            }],
-        };
+        let (set_layouts, layout) = self.create_pipeline_layout_from_desc(layout_desc)?;
 
-        let output_type = match desc.output {
-            OutputKind::Texture => vk::DescriptorType::STORAGE_IMAGE,
-            OutputKind::Buffer => vk::DescriptorType::STORAGE_BUFFER,
-        };
-        let mut res_bindings = vec![compute_binding(0, output_type)];
-        if desc.has_sampler {
-            res_bindings.push(compute_binding(
-                res_bindings.len() as u32,
-                vk::DescriptorType::SAMPLER,
-            ));
-        }
-        if desc.has_params {
-            res_bindings.push(compute_binding(
-                res_bindings.len() as u32,
-                vk::DescriptorType::STORAGE_BUFFER,
-            ));
-        }
-
-        let set_layouts = [
-            self.create_descriptor_set_layout(&inputs_bindings)?,
-            self.create_descriptor_set_layout(&res_bindings)?,
-        ];
-        let set_layout_handles = [
-            set_layouts[INPUTS_SET].handle(),
-            set_layouts[RES_SET].handle(),
-        ];
-
-        let shader_module = {
-            let create_info = vk::ShaderModuleCreateInfo::default().code(spirv);
-            unsafe { self.device.create_shader_module(&create_info, None) }
-                .context("Failed to create Vulkan shader module from SPIR-V")?
-        };
-        let entry_point_c = std::ffi::CString::new(desc.entry_point.as_str())?;
-
-        let layout_create_info =
-            vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layout_handles);
-        let layout = match unsafe {
-            self.device
-                .create_pipeline_layout(&layout_create_info, None)
-        } {
-            Ok(l) => l,
+        let shader_module = match self.create_shader_module(spirv) {
+            Ok(m) => m,
             Err(e) => {
-                unsafe { self.device.destroy_shader_module(shader_module, None) };
-                return Err(e).context("Failed to create Vulkan pipeline layout");
+                unsafe { self.device.destroy_pipeline_layout(layout, None) };
+                return Err(e);
             }
         };
+        let entry_point_c = std::ffi::CString::new(entry_point)?;
 
         let stage = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::COMPUTE)
@@ -149,7 +167,7 @@ impl VulkanDevice {
             pipeline,
             layout,
             set_layouts,
-            desc: desc.clone(),
+            layout_desc: layout_desc.clone(),
         }))
     }
 }

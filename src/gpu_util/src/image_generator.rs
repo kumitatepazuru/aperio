@@ -1,5 +1,7 @@
+pub(crate) mod blit;
 pub mod cpu_func_process;
 pub mod final_process;
+pub mod layout;
 pub(crate) mod linked_memo;
 pub mod parallel_process;
 pub mod slang_process;
@@ -16,13 +18,16 @@ use crate::{
     compiled_slang::compile_slang_to_spirv,
     image_generate_builder::{ImageGenerateBuilder, PipelineStep},
     image_generator::{
-        cpu_func_process::handle_cpu_func_step, final_process::handle_final_process,
-        parallel_process::handle_parallel_step, slang_process::handle_slang_step,
+        cpu_func_process::handle_cpu_func_step,
+        final_process::handle_final_process,
+        layout::{InputArity, OutputKind, ShaderShape},
+        parallel_process::handle_parallel_step,
+        slang_process::handle_slang_step,
         texture_func_process::handle_texture_func_step,
     },
     image_pixel_format::ImagePixelFormat,
     resource_pool::{LruCache, ResourcePool},
-    rhi::{self, BufferUsage, InputArity, OutputKind, PipelineDesc, TextureUsage},
+    rhi::{self, BufferUsage, TextureFormat, TextureUsage},
 };
 use anyhow::{bail, Context, Result};
 use std::sync::{Arc, Mutex};
@@ -34,7 +39,7 @@ const POST_PROCESS_SLANG: &str = include_str!("shaders/post_process.slang");
 pub(crate) struct TextureCacheKey {
     width: u32,
     height: u32,
-    format: ImagePixelFormat,
+    format: TextureFormat,
     usage: TextureUsage,
 }
 
@@ -88,6 +93,9 @@ pub struct ImageGenerator {
 
     // バッファリソースプール
     buffer_pool: Arc<Mutex<ResourcePool<BufferCacheKey, rhi::Buffer>>>,
+
+    // 共有テクスチャへの書き出し(blit)用の遅延生成リソース
+    pub(crate) blit: Arc<Mutex<blit::BlitResources>>,
 }
 
 impl ImageGenerator {
@@ -109,14 +117,15 @@ impl ImageGenerator {
         let post_process_pipeline = device
             .create_compute_pipeline(
                 &post_process_spirv,
-                &PipelineDesc {
-                    entry_point: "main".to_string(),
+                "main",
+                &ShaderShape {
                     input_arity: InputArity::Fixed,
                     input_count: 1,
                     has_sampler: false,
                     has_params: false,
                     output: OutputKind::Buffer,
-                },
+                }
+                .layout(),
             )
             .context("Failed to create the built-in post_process pipeline")?;
 
@@ -135,6 +144,8 @@ impl ImageGenerator {
 
             // バッファリソースプールの初期化
             buffer_pool: Arc::new(Mutex::new(ResourcePool::new(10))),
+
+            blit: Arc::new(Mutex::new(blit::BlitResources::default())),
         })
     }
 
@@ -154,10 +165,11 @@ impl ImageGenerator {
         &self,
         width: u32,
         height: u32,
-        format: ImagePixelFormat,
+        format: impl Into<TextureFormat>,
         usage: TextureUsage,
         label: &str,
     ) -> Result<rhi::Texture> {
+        let format = format.into();
         let key = TextureCacheKey {
             width,
             height,
@@ -320,18 +332,23 @@ impl ImageGenerator {
         input_count: u32,
         has_params: bool,
     ) -> Result<rhi::ComputePipeline> {
+        let shape = ShaderShape {
+            input_arity: slang.input_arity,
+            input_count,
+            has_sampler: slang.sampler.is_some(),
+            has_params,
+            output: OutputKind::Texture,
+        };
+        let layout = shape.layout();
+
         let mut cache = self.pipeline_cache.lock().unwrap();
         if let Some(cached) = cache.get(&slang.name) {
-            let desc = cached.desc();
-            if desc.input_count != input_count || desc.has_params != has_params {
+            if *cached.layout() != layout {
                 bail!(
-                    "Slang shader '{}' was first used with {} input texture(s) and \
-                     has_params={}, but this call provides {} input texture(s) and \
-                     has_params={}. A compiled shader's resource shape must stay consistent \
-                     across all uses.",
+                    "Slang shader '{}' was first used with a different resource shape \
+                     than this call ({} input texture(s), has_params={}). A compiled \
+                     shader's resource shape must stay consistent across all uses.",
                     slang.name,
-                    desc.input_count,
-                    desc.has_params,
                     input_count,
                     has_params
                 );
@@ -339,17 +356,9 @@ impl ImageGenerator {
             return Ok(cached);
         }
 
-        let pipeline = self.device.create_compute_pipeline(
-            &slang.spirv,
-            &PipelineDesc {
-                entry_point: slang.entry_point.clone(),
-                input_arity: slang.input_arity,
-                input_count,
-                has_sampler: slang.sampler.is_some(),
-                has_params,
-                output: OutputKind::Texture,
-            },
-        )?;
+        let pipeline =
+            self.device
+                .create_compute_pipeline(&slang.spirv, &slang.entry_point, &layout)?;
 
         cache.insert(slang.name.clone(), pipeline.clone());
         Ok(pipeline)

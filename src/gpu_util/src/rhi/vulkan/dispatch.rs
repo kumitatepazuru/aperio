@@ -1,4 +1,5 @@
-// VulkanDeviceの公開メソッド群(rhi::DeviceのVulkan側の実体)。
+// VulkanDeviceの公開メソッド群(rhi::DeviceのVulkan側の実体)のうち、
+// リソース生成・コンピュートディスパッチ・テクスチャ転送。
 
 use std::sync::Arc;
 
@@ -6,27 +7,24 @@ use anyhow::{bail, Context, Result};
 use ash::vk;
 use gpu_allocator::MemoryLocation;
 
+use super::bindings::{ResourceBinding, TouchedTextures};
 use super::device::VulkanDevice;
 use super::pipeline::ComputePipeline;
-use super::resources::{from_vk_format, to_vk_format, Buffer, Sampler, Texture, TextureView};
-use crate::image_pixel_format::ImagePixelFormat;
+use super::resources::{to_vk_format, Buffer, Sampler, Texture, TextureView};
 use crate::rhi::{
-    AddressMode, BufferUsage, FilterMode, InputArity, OutputKind, SamplerOptions, TextureUsage,
+    AddressMode, BufferUsage, FilterMode, SamplerOptions, TextureFormat, TextureUsage,
 };
-
-/// `VulkanDevice::dispatch_compute`の出力先。
-pub enum DispatchOutput<'a> {
-    Texture(&'a TextureView),
-    Buffer(&'a Buffer),
-}
-
-const INPUTS_SET: usize = 0;
-const RES_SET: usize = 1;
 
 fn to_vk_buffer_usage(usage: BufferUsage) -> vk::BufferUsageFlags {
     let mut flags = vk::BufferUsageFlags::empty();
     if usage.contains(BufferUsage::STORAGE) {
         flags |= vk::BufferUsageFlags::STORAGE_BUFFER;
+    }
+    if usage.contains(BufferUsage::UNIFORM) {
+        flags |= vk::BufferUsageFlags::UNIFORM_BUFFER;
+    }
+    if usage.contains(BufferUsage::VERTEX) {
+        flags |= vk::BufferUsageFlags::VERTEX_BUFFER;
     }
     if usage.contains(BufferUsage::TRANSFER_SRC) {
         flags |= vk::BufferUsageFlags::TRANSFER_SRC;
@@ -37,13 +35,16 @@ fn to_vk_buffer_usage(usage: BufferUsage) -> vk::BufferUsageFlags {
     flags
 }
 
-fn to_vk_texture_usage(usage: TextureUsage) -> vk::ImageUsageFlags {
+pub(super) fn to_vk_texture_usage(usage: TextureUsage) -> vk::ImageUsageFlags {
     let mut flags = vk::ImageUsageFlags::empty();
     if usage.contains(TextureUsage::SAMPLED) {
         flags |= vk::ImageUsageFlags::SAMPLED;
     }
     if usage.contains(TextureUsage::STORAGE) {
         flags |= vk::ImageUsageFlags::STORAGE;
+    }
+    if usage.contains(TextureUsage::COLOR_TARGET) {
+        flags |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
     }
     if usage.contains(TextureUsage::TRANSFER_SRC) {
         flags |= vk::ImageUsageFlags::TRANSFER_SRC;
@@ -70,6 +71,22 @@ fn to_vk_filter(mode: FilterMode) -> vk::Filter {
     }
 }
 
+const COLOR_SUBRESOURCE: vk::ImageSubresourceLayers = vk::ImageSubresourceLayers {
+    aspect_mask: vk::ImageAspectFlags::COLOR,
+    mip_level: 0,
+    base_array_layer: 0,
+    layer_count: 1,
+};
+
+/// copy_texturesの1件分。
+pub struct TextureCopy<'a> {
+    pub src: &'a Texture,
+    pub src_origin: (u32, u32),
+    pub dst: &'a Texture,
+    pub dst_origin: (u32, u32),
+    pub size: (u32, u32),
+}
+
 impl VulkanDevice {
     pub fn create_buffer(
         self: &Arc<Self>,
@@ -90,7 +107,7 @@ impl VulkanDevice {
         self: &Arc<Self>,
         width: u32,
         height: u32,
-        format: ImagePixelFormat,
+        format: TextureFormat,
         usage: TextureUsage,
         label: &str,
     ) -> Result<Arc<Texture>> {
@@ -115,174 +132,53 @@ impl VulkanDevice {
     }
 
     /// 同期実行する(完了までブロックする)。
+    ///
+    /// `sets[i]`はパイプラインレイアウトのセットiに対応する。レイアウトの各バインディングに
+    /// 過不足なくリソースが与えられ、種別・本数が一致していることを検証してから実行する。
     pub fn dispatch_compute(
         &self,
         pipeline: &ComputePipeline,
-        inputs: &[&TextureView],
-        output: DispatchOutput<'_>,
-        sampler: Option<&Sampler>,
-        params: Option<&Buffer>,
+        sets: &[Vec<ResourceBinding<'_>>],
         workgroups: (u32, u32, u32),
     ) -> Result<()> {
-        let desc = pipeline.desc();
-        let output_kind = match output {
-            DispatchOutput::Texture(_) => OutputKind::Texture,
-            DispatchOutput::Buffer(_) => OutputKind::Buffer,
-        };
-        if output_kind != desc.output {
-            bail!("dispatch_compute: output kind does not match the pipeline's shape");
-        }
-        if sampler.is_some() != desc.has_sampler {
-            bail!("dispatch_compute: sampler presence does not match the pipeline's shape");
-        }
-        if params.is_some() != desc.has_params {
-            bail!("dispatch_compute: params presence does not match the pipeline's shape");
-        }
-        if desc.input_arity == InputArity::Fixed && inputs.len() as u32 != desc.input_count {
-            bail!(
-                "dispatch_compute: pipeline expects {} fixed input texture(s), got {}",
-                desc.input_count,
-                inputs.len()
-            );
-        }
-
-        if desc.input_arity == InputArity::Variable
-            && inputs.len() as u32 > self.max_variable_sampled_image_count()
-        {
-            bail!(
-                "dispatch_compute: {} input textures exceed the device limit of {}",
-                inputs.len(),
-                self.max_variable_sampled_image_count()
-            );
-        }
+        let layout_desc = pipeline.layout_desc();
+        let variable_counts = self
+            .validate_sets(layout_desc, sets)
+            .context("dispatch_compute")?;
 
         // 呼び出しごとに専用プールを作って使い捨てる。
         // TODO: プールをパイプライン側で使い回す。
-        let pool = self.create_descriptor_pool_for(&pipeline.set_layouts, inputs.len() as u32)?;
+        let pool_layouts: Vec<_> = pipeline.set_layouts.iter().zip(&variable_counts).collect();
+        let pool = self.create_descriptor_pool_for(&pool_layouts)?;
 
-        let mut sets = Vec::with_capacity(pipeline.set_layouts.len());
-        for layout in pipeline.set_layouts.iter() {
-            let variable_count = layout
-                .bindings()
-                .iter()
-                .any(|b| b.variable_count)
-                .then_some(inputs.len() as u32);
-            sets.push(self.allocate_descriptor_set(pool, layout.handle(), variable_count)?);
-        }
+        let mut touched = TouchedTextures::default();
+        let vk_sets = self.allocate_and_write_sets(
+            pool,
+            &pipeline.set_layouts,
+            layout_desc,
+            sets,
+            &variable_counts,
+            &mut touched,
+        )?;
 
-        // set 0 = inputs、set 1 = res(binding 0 = 出力、続いて(あれば)サンプラー、params)。
-        match &output {
-            DispatchOutput::Texture(view) => self.write_image_descriptor(
-                sets[RES_SET],
-                0,
-                0,
-                vk::DescriptorType::STORAGE_IMAGE,
-                view.handle(),
-                vk::ImageLayout::GENERAL,
-                vk::Sampler::null(),
-            ),
-            DispatchOutput::Buffer(buffer) => self.write_buffer_descriptor(
-                sets[RES_SET],
-                0,
-                vk::DescriptorType::STORAGE_BUFFER,
-                buffer.handle(),
-                0,
-                vk::WHOLE_SIZE,
-            ),
-        }
-
-        let mut next_res_binding = 1;
-        if let Some(sampler) = sampler {
-            self.write_image_descriptor(
-                sets[RES_SET],
-                next_res_binding,
-                0,
-                vk::DescriptorType::SAMPLER,
-                vk::ImageView::null(),
-                vk::ImageLayout::UNDEFINED,
-                sampler.handle(),
-            );
-            next_res_binding += 1;
-        }
-
-        if let Some(params) = params {
-            self.write_buffer_descriptor(
-                sets[RES_SET],
-                next_res_binding,
-                vk::DescriptorType::STORAGE_BUFFER,
-                params.handle(),
-                0,
-                vk::WHOLE_SIZE,
-            );
-        }
-
-        match desc.input_arity {
-            InputArity::Fixed => {
-                for (i, view) in inputs.iter().enumerate() {
-                    self.write_image_descriptor(
-                        sets[INPUTS_SET],
-                        i as u32,
-                        0,
-                        vk::DescriptorType::SAMPLED_IMAGE,
-                        view.handle(),
-                        vk::ImageLayout::GENERAL,
-                        vk::Sampler::null(),
-                    );
-                }
-            }
-            InputArity::Variable => {
-                for (i, view) in inputs.iter().enumerate() {
-                    self.write_image_descriptor(
-                        sets[INPUTS_SET],
-                        0,
-                        i as u32,
-                        vk::DescriptorType::SAMPLED_IMAGE,
-                        view.handle(),
-                        vk::ImageLayout::GENERAL,
-                        vk::Sampler::null(),
-                    );
-                }
-            }
-        }
-
-        // --- コマンド記録・実行 ---
         let command_pool = self.create_command_pool()?;
         let command_buffer = self.allocate_command_buffer(command_pool)?;
 
         self.submit_and_wait(command_buffer, |cb| unsafe {
-            for view in inputs {
-                view.texture().transition(
-                    self,
-                    cb,
-                    vk::ImageLayout::GENERAL,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::COMPUTE_SHADER,
-                    vk::AccessFlags::empty(),
-                    vk::AccessFlags::SHADER_READ,
-                );
-            }
-            if let DispatchOutput::Texture(view) = &output {
-                view.texture().transition(
-                    self,
-                    cb,
-                    vk::ImageLayout::GENERAL,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::COMPUTE_SHADER,
-                    vk::AccessFlags::empty(),
-                    vk::AccessFlags::SHADER_WRITE,
-                );
-            }
+            self.transition_touched(cb, &touched, vk::PipelineStageFlags::COMPUTE_SHADER);
 
             self.device
                 .cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, pipeline.handle());
-            self.device.cmd_bind_descriptor_sets(
-                cb,
-                vk::PipelineBindPoint::COMPUTE,
-                pipeline.pipeline_layout(),
-                0,
-                &sets,
-                &[],
-            );
+            if !vk_sets.is_empty() {
+                self.device.cmd_bind_descriptor_sets(
+                    cb,
+                    vk::PipelineBindPoint::COMPUTE,
+                    pipeline.pipeline_layout(),
+                    0,
+                    &vk_sets,
+                    &[],
+                );
+            }
             let (x, y, z) = workgroups;
             self.device.cmd_dispatch(cb, x, y, z);
         })?;
@@ -295,12 +191,39 @@ impl VulkanDevice {
         Ok(())
     }
 
+    /// テクスチャ全体へCPU側のバイト列をアップロードする。
     pub fn upload_texture_data(self: &Arc<Self>, texture: &Texture, data: &[u8]) -> Result<()> {
-        let extent = texture.extent();
-        let byte_len = data.len() as u64;
+        self.upload_texture_region(texture, (0, 0), (texture.width(), texture.height()), data)
+    }
+
+    /// テクスチャの矩形領域へCPU側のバイト列(行詰め)をアップロードする。
+    pub fn upload_texture_region(
+        self: &Arc<Self>,
+        texture: &Texture,
+        origin: (u32, u32),
+        size: (u32, u32),
+        data: &[u8],
+    ) -> Result<()> {
+        let (x, y) = origin;
+        let (w, h) = size;
+        if x + w > texture.width() || y + h > texture.height() {
+            bail!(
+                "upload region {w}x{h}@({x},{y}) exceeds the {}x{} texture",
+                texture.width(),
+                texture.height()
+            );
+        }
+        let expected = w as u64 * h as u64 * texture.format().bytes_per_texel() as u64;
+        if data.len() as u64 != expected {
+            bail!(
+                "upload data is {} bytes, but a {w}x{h} {:?} region needs {expected}",
+                data.len(),
+                texture.format()
+            );
+        }
 
         let staging = self.create_vk_buffer(
-            byte_len,
+            data.len() as u64,
             vk::BufferUsageFlags::TRANSFER_SRC,
             MemoryLocation::CpuToGpu,
             "Texture Upload Staging",
@@ -328,14 +251,17 @@ impl VulkanDevice {
                 buffer_offset: 0,
                 buffer_row_length: 0,
                 buffer_image_height: 0,
-                image_subresource: vk::ImageSubresourceLayers {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    mip_level: 0,
-                    base_array_layer: 0,
-                    layer_count: 1,
+                image_subresource: COLOR_SUBRESOURCE,
+                image_offset: vk::Offset3D {
+                    x: x as i32,
+                    y: y as i32,
+                    z: 0,
                 },
-                image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
-                image_extent: extent,
+                image_extent: vk::Extent3D {
+                    width: w,
+                    height: h,
+                    depth: 1,
+                },
             };
             self.device.cmd_copy_buffer_to_image(
                 cb,
@@ -352,8 +278,9 @@ impl VulkanDevice {
 
     pub fn download_texture_data(self: &Arc<Self>, texture: &Texture) -> Result<Vec<u8>> {
         let extent = texture.extent();
-        let format = texture.vk_format();
-        let byte_len = (extent.width as u64) * (extent.height as u64) * bytes_per_texel(format)?;
+        let byte_len = (extent.width as u64)
+            * (extent.height as u64)
+            * texture.format().bytes_per_texel() as u64;
 
         let readback = self.create_vk_buffer(
             byte_len,
@@ -378,12 +305,7 @@ impl VulkanDevice {
                 buffer_offset: 0,
                 buffer_row_length: 0,
                 buffer_image_height: 0,
-                image_subresource: vk::ImageSubresourceLayers {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    mip_level: 0,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                },
+                image_subresource: COLOR_SUBRESOURCE,
                 image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
                 image_extent: extent,
             };
@@ -406,20 +328,91 @@ impl VulkanDevice {
         Ok(bytes)
     }
 
+    /// テクスチャ間の矩形コピーを1回のsubmitでまとめて実行する(同期)。
+    /// コピー元とコピー先のフォーマットは一致している必要がある。
+    pub fn copy_textures(&self, copies: &[TextureCopy<'_>]) -> Result<()> {
+        for c in copies {
+            if c.src.format() != c.dst.format() {
+                bail!(
+                    "copy_textures: format mismatch ({:?} -> {:?})",
+                    c.src.format(),
+                    c.dst.format()
+                );
+            }
+            let (w, h) = c.size;
+            if c.src_origin.0 + w > c.src.width()
+                || c.src_origin.1 + h > c.src.height()
+                || c.dst_origin.0 + w > c.dst.width()
+                || c.dst_origin.1 + h > c.dst.height()
+            {
+                bail!("copy_textures: region exceeds a texture's bounds");
+            }
+        }
+        if copies.is_empty() {
+            return Ok(());
+        }
+
+        let pool = self.create_command_pool()?;
+        let cb = self.allocate_command_buffer(pool)?;
+        self.submit_and_wait(cb, |cb| unsafe {
+            for c in copies {
+                c.src.transition(
+                    self,
+                    cb,
+                    vk::ImageLayout::GENERAL,
+                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::AccessFlags::empty(),
+                    vk::AccessFlags::TRANSFER_READ,
+                );
+                c.dst.transition(
+                    self,
+                    cb,
+                    vk::ImageLayout::GENERAL,
+                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::AccessFlags::empty(),
+                    vk::AccessFlags::TRANSFER_WRITE,
+                );
+                let region = vk::ImageCopy {
+                    src_subresource: COLOR_SUBRESOURCE,
+                    src_offset: vk::Offset3D {
+                        x: c.src_origin.0 as i32,
+                        y: c.src_origin.1 as i32,
+                        z: 0,
+                    },
+                    dst_subresource: COLOR_SUBRESOURCE,
+                    dst_offset: vk::Offset3D {
+                        x: c.dst_origin.0 as i32,
+                        y: c.dst_origin.1 as i32,
+                        z: 0,
+                    },
+                    extent: vk::Extent3D {
+                        width: c.size.0,
+                        height: c.size.1,
+                        depth: 1,
+                    },
+                };
+                self.device.cmd_copy_image(
+                    cb,
+                    c.src.handle(),
+                    vk::ImageLayout::GENERAL,
+                    c.dst.handle(),
+                    vk::ImageLayout::GENERAL,
+                    &[region],
+                );
+            }
+        })?;
+        unsafe { self.device.destroy_command_pool(pool, None) };
+
+        Ok(())
+    }
+
     pub fn max_variable_texture_array_len(&self) -> u32 {
         self.max_variable_sampled_image_count()
     }
 
     pub fn maximum_texture_size(&self) -> u32 {
         self.limits.max_image_dimension2_d
-    }
-}
-
-/// 1テクセルあたりのバイト数(`download_texture_data`のバッファサイズ算出用)。
-fn bytes_per_texel(format: vk::Format) -> Result<u64> {
-    match from_vk_format(format)? {
-        ImagePixelFormat::Rgba8Unorm => Ok(4),
-        ImagePixelFormat::Rgba16Float => Ok(8),
-        ImagePixelFormat::Rgba32Float => Ok(16),
     }
 }

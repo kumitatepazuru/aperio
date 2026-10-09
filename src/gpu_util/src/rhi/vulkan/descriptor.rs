@@ -98,26 +98,26 @@ impl VulkanDevice {
         }))
     }
 
-    /// layoutsを1セットずつ確保するのにちょうど足りるサイズのディスクリプタプールを1つ作る。
-    /// 可変長バインディングはレイアウト上の最大本数で確保すると無駄に巨大になるため、variable_count本で計上する
+    /// 各(layout, variable_count)を1セットずつ確保するのにちょうど足りるサイズの
+    /// ディスクリプタプールを1つ作る。variable_countはそのlayoutの可変長バインディングの実際の本数
     pub(super) fn create_descriptor_pool_for(
         &self,
-        layouts: &[Arc<DescriptorSetLayout>],
-        variable_count: u32,
+        layouts: &[(&Arc<DescriptorSetLayout>, &u32)],
     ) -> Result<vk::DescriptorPool> {
         let pool_sizes: Vec<vk::DescriptorPoolSize> = layouts
             .iter()
-            .flat_map(|l| l.bindings())
-            .map(|b| {
-                let count = if b.variable_count {
-                    variable_count
-                } else {
-                    b.descriptor_count
-                };
-                // プールサイズに0は指定できない。
-                vk::DescriptorPoolSize::default()
-                    .ty(b.descriptor_type)
-                    .descriptor_count(count.max(1))
+            .flat_map(|&(l, &variable_count)| {
+                l.bindings().iter().map(move |b| {
+                    let count = if b.variable_count {
+                        variable_count
+                    } else {
+                        b.descriptor_count
+                    };
+                    // プールサイズに0は指定できない。
+                    vk::DescriptorPoolSize::default()
+                        .ty(b.descriptor_type)
+                        .descriptor_count(count.max(1))
+                })
             })
             .collect();
 
