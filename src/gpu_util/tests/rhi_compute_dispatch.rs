@@ -1,9 +1,10 @@
 // Slangでコンパイルしたコンピュートシェーダーをパイプライン化し、出力バッファへ
 // dispatchして結果をCPUから読み戻せることを確認する。
 
-use gpu_util::compiled_slang::compile_slang_to_spirv;
+use gpu_util::compiled_shader::compile_slang_to_spirv;
 use gpu_util::rhi::{
-    BufferUsage, ComputeDispatch, Device, DispatchOutput, InputArity, OutputKind, PipelineDesc,
+    BindingDesc, BindingKind, BufferUsage, ComputeDispatch, Device, PipelineLayoutDesc, Resource,
+    ResourceBinding, SetLayoutDesc, ShaderStages,
 };
 
 #[test]
@@ -18,9 +19,9 @@ fn dispatches_compute_shader_and_reads_back_buffer() {
         }
     };
 
-    // set 0 = 入力(なし)、set 1 binding 0 = 出力バッファ。
+    // RHIは任意のレイアウトを受け取れる。ここではset 1 binding 0 = 出力バッファのみ。
     let source = r#"
-        [[vk::binding(0, 1)]]
+        [[vk::binding(0, 0)]]
         RWStructuredBuffer<uint> output;
 
         [shader("compute")]
@@ -39,18 +40,19 @@ fn dispatches_compute_shader_and_reads_back_buffer() {
     )
     .expect("shader should compile to SPIR-V");
 
+    let layout = PipelineLayoutDesc {
+        sets: vec![SetLayoutDesc {
+            bindings: vec![BindingDesc {
+                binding: 0,
+                kind: BindingKind::StorageBuffer,
+                count: 1,
+                variable_count: false,
+                stages: ShaderStages::COMPUTE,
+            }],
+        }],
+    };
     let pipeline = device
-        .create_compute_pipeline(
-            &spirv,
-            &PipelineDesc {
-                entry_point: "main".to_string(),
-                input_arity: InputArity::Fixed,
-                input_count: 0,
-                has_sampler: false,
-                has_params: false,
-                output: OutputKind::Buffer,
-            },
-        )
+        .create_compute_pipeline(&spirv, "main", &layout)
         .expect("compute pipeline creation should succeed");
 
     const COUNT: u64 = 64;
@@ -66,10 +68,10 @@ fn dispatches_compute_shader_and_reads_back_buffer() {
     device
         .dispatch_compute(ComputeDispatch {
             pipeline: &pipeline,
-            inputs: &[],
-            output: DispatchOutput::Buffer(&buffer),
-            sampler: None,
-            params: None,
+            sets: &[&[ResourceBinding {
+                binding: 0,
+                resource: Resource::Buffer(&buffer),
+            }]],
             workgroups: (1, 1, 1),
         })
         .expect("dispatch should succeed");

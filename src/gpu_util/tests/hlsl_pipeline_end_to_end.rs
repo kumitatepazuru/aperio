@@ -1,17 +1,15 @@
-// CompiledShader + ImageGenerateBuilder::add_shader + ImageGenerator::generate_buf
-// という、プラグインが実際に使う経路をエンドツーエンドで検証する。
-// aperio_bindings.slangのEffectResources<Params>パターン(ParameterBlock
-// 経由の出力ストレージテクスチャ)を模したシェーダーを実際にコンパイル・実行し、
-// 期待通りの色がCPUへ読み戻せることを確認する。
+// compile_hlsl_compute + ImageGenerateBuilder::add_shader + ImageGenerator::generate_buf。
+// HLSLで書いたコンピュートシェーダーが、Slangシェーダーと同じ経路(同じレイアウト規約)で
+// 実行できることを確認する。
 
-use gpu_util::compiled_shader::CompiledShader;
+use gpu_util::compiled_hlsl::compile_hlsl_compute;
 use gpu_util::image_generate_builder::ImageGenerateBuilder;
 use gpu_util::image_generator::layout::InputArity;
 use gpu_util::image_generator::ImageGenerator;
 use gpu_util::ImagePixelFormat;
 
 #[test]
-fn runs_a_single_slang_step_end_to_end() {
+fn runs_a_single_hlsl_step_end_to_end() {
     let rt = tokio::runtime::Runtime::new().expect("failed to build a tokio runtime");
     rt.block_on(run());
 }
@@ -20,33 +18,30 @@ async fn run() {
     let generator = match ImageGenerator::new(ImagePixelFormat::Rgba8Unorm) {
         Ok(g) => g,
         Err(e) => {
-            eprintln!("Skipping runs_a_single_slang_step_end_to_end: no Vulkan device ({e:#})");
+            eprintln!("Skipping runs_a_single_hlsl_step_end_to_end: no Vulkan device ({e:#})");
             return;
         }
     };
 
+    // 出力は set 1 binding 0 のストレージテクスチャ(Slangのres.outputTexと同じ位置)。
     let source = r#"
-        struct EffectResources {
-            [vk::image_format(APERIO_IMAGE_FORMAT)]
-            RWTexture2D<float4> outputTex;
-        };
-        [vk::binding(0, 1)]
-        ParameterBlock<EffectResources> res;
+        [[vk::binding(0, 1)]]
+        [[vk::image_format(APERIO_IMAGE_FORMAT)]]
+        RWTexture2D<float4> outputTex;
 
-        [shader("compute")]
         [numthreads(16, 16, 1)]
         void main(uint3 gid : SV_DispatchThreadID) {
             uint w, h;
-            res.outputTex.GetDimensions(w, h);
+            outputTex.GetDimensions(w, h);
             if (gid.x >= w || gid.y >= h) {
                 return;
             }
-            res.outputTex[gid.xy] = float4(1.0, 0.5, 0.25, 1.0);
+            outputTex[gid.xy] = float4(1.0, 0.5, 0.25, 1.0);
         }
     "#;
 
-    let compiled = CompiledShader::from_slang(
-        "slang_pipeline_e2e_solid_color",
+    let compiled = compile_hlsl_compute(
+        "hlsl_pipeline_e2e_solid_color",
         source,
         "main",
         &generator,
@@ -56,19 +51,16 @@ async fn run() {
         &[],
         None,
     )
-    .expect("solid-color shader should compile");
+    .expect("solid-color HLSL shader should compile");
 
-    let width = 4u32;
-    let height = 4u32;
+    let (width, height) = (4u32, 4u32);
     let builder = ImageGenerateBuilder::new().add_shader(compiled, None, width, height);
-
     let bytes = generator
         .generate_buf(builder)
         .await
         .expect("pipeline execution should succeed");
 
     assert_eq!(bytes.len(), (width * height * 4) as usize);
-
     for pixel in bytes.chunks_exact(4) {
         let [r, g, b, a] = [pixel[0], pixel[1], pixel[2], pixel[3]];
         assert_eq!(r, 255, "red channel mismatch");

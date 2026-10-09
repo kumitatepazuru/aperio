@@ -1,6 +1,6 @@
-// `compiled_slang::compile_slang_to_spirv`が実際にSlangソースをSPIR-Vへコンパイルできることを確認する。
+// `compiled_shader::compile_slang_to_spirv`が実際にSlangソースをSPIR-Vへコンパイルできることを確認する。
 
-use gpu_util::compiled_slang::compile_slang_to_spirv;
+use gpu_util::compiled_shader::compile_slang_to_spirv;
 
 #[test]
 fn compiles_trivial_compute_shader() {

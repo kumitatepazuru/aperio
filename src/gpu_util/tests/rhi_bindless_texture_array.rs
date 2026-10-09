@@ -4,12 +4,12 @@
 // 各スレッドがparamsから読んだ(スレッドごとに異なる)添字で
 // tex[NonUniformResourceIndex(idx)]を参照して出力バッファへ書き戻す。
 
-use gpu_util::compiled_slang::compile_slang_to_spirv;
+use gpu_util::compiled_shader::compile_slang_to_spirv;
 use gpu_util::rhi::{
-    BufferUsage, ComputeDispatch, Device, DispatchOutput, InputArity, OutputKind, PipelineDesc,
-    TextureUsage, TextureView,
+    BindingDesc, BindingKind, BufferUsage, ComputeDispatch, Device, PipelineLayoutDesc, Resource,
+    ResourceBinding, SetLayoutDesc, ShaderStages, TextureUsage, TextureView,
 };
-use gpu_util::ImagePixelFormat;
+use gpu_util::rhi::TextureFormat;
 
 const TEXTURE_COUNT: usize = 4;
 
@@ -19,7 +19,7 @@ fn create_filled_texture_view(device: &Device, value: [f32; 4], name: &str) -> T
         .create_texture(
             1,
             1,
-            ImagePixelFormat::Rgba32Float,
+            TextureFormat::Rgba32Float,
             TextureUsage::SAMPLED | TextureUsage::TRANSFER_DST,
             name,
         )
@@ -86,18 +86,28 @@ fn reads_variable_length_texture_array_with_nonuniform_indices() {
     )
     .expect("bindless shader should compile to SPIR-V");
 
-    let pipeline = device
-        .create_compute_pipeline(
-            &spirv,
-            &PipelineDesc {
-                entry_point: "main".to_string(),
-                input_arity: InputArity::Variable,
-                input_count: 0,
-                has_sampler: false,
-                has_params: true,
-                output: OutputKind::Buffer,
+    let binding = |binding, kind, variable_count| BindingDesc {
+        binding,
+        kind,
+        count: 1,
+        variable_count,
+        stages: ShaderStages::COMPUTE,
+    };
+    let layout = PipelineLayoutDesc {
+        sets: vec![
+            SetLayoutDesc {
+                bindings: vec![binding(0, BindingKind::SampledImage, true)],
             },
-        )
+            SetLayoutDesc {
+                bindings: vec![
+                    binding(0, BindingKind::StorageBuffer, false),
+                    binding(1, BindingKind::StorageBuffer, false),
+                ],
+            },
+        ],
+    };
+    let pipeline = device
+        .create_compute_pipeline(&spirv, "main", &layout)
         .expect("compute pipeline creation should succeed");
 
     // 各スレッドに割り当てる添字を、あえて連番でない(=uniformでない)順序にする。
@@ -124,10 +134,22 @@ fn reads_variable_length_texture_array_with_nonuniform_indices() {
     device
         .dispatch_compute(ComputeDispatch {
             pipeline: &pipeline,
-            inputs: &views,
-            output: DispatchOutput::Buffer(&output_buffer),
-            sampler: None,
-            params: Some(&params_buffer),
+            sets: &[
+                &[ResourceBinding {
+                    binding: 0,
+                    resource: Resource::TextureArray(&views),
+                }],
+                &[
+                    ResourceBinding {
+                        binding: 0,
+                        resource: Resource::Buffer(&output_buffer),
+                    },
+                    ResourceBinding {
+                        binding: 1,
+                        resource: Resource::Buffer(&params_buffer),
+                    },
+                ],
+            ],
             workgroups: (1, 1, 1),
         })
         .expect("dispatch should succeed");

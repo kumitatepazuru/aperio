@@ -1,17 +1,24 @@
-// `plugins/`配下のすべてのエフェクトシェーダーが実際にコンパイルできること、
+// `plugins/`配下のすべてのエフェクトシェーダー(と、プラグイン本体のcompose等)が実際にコンパイルできること、
 // および`gpu_util`側が決め打ちする配置(set 0 = inputs, set 1 = res)と食い違わないよう、
 // `ParameterBlock<InputTextures*> inputs;`/`ParameterBlock<EffectResources*> res;`
 // の直前に`[vk::binding(0, 0)]`/`[vk::binding(0, 1)]`が付与されていることを
 // 一括で確認する回帰テスト。
 
-use gpu_util::compiled_slang::compile_slang_to_spirv;
+use gpu_util::compiled_shader::compile_slang_to_spirv;
 use std::path::{Path, PathBuf};
 
 const APERIO_LIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/base/common/lib");
 const PLUGINS_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins");
+/// プラグイン本体(aperio_plugin)が使うcompose / fill_blackなどのシェーダー。
+const FRAMEWORK_SHADERS_ROOT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../src-python/src/aperio_plugin/shaders"
+);
 
 fn collect_slang_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -26,13 +33,17 @@ fn collect_slang_files(dir: &Path, out: &mut Vec<PathBuf>) {
 fn verify_all_effect_shaders_compile_with_pinned_bindings() {
     let mut files = Vec::new();
     collect_slang_files(Path::new(PLUGINS_ROOT), &mut files);
+    collect_slang_files(Path::new(FRAMEWORK_SHADERS_ROOT), &mut files);
     files.sort();
 
     let mut failures = Vec::new();
     let mut checked = 0usize;
 
     for path in &files {
-        let source = std::fs::read_to_string(path).expect("failed to read shader source");
+        // gitのautocrlf次第でCRLFになるため、改行コードの違いで固定チェックが外れないよう揃える。
+        let source = std::fs::read_to_string(path)
+            .expect("failed to read shader source")
+            .replace("\r\n", "\n");
         // res/inputsを両方持つ「実際のエフェクトシェーダー」だけを対象にする
         // (common/lib配下のimport専用モジュールや、common.slangのような
         // ヘルパー限定ファイルは対象外)。
@@ -74,6 +85,10 @@ fn verify_all_effect_shaders_compile_with_pinned_bindings() {
 
     println!("checked {checked} effect shader(s)");
     if !failures.is_empty() {
-        panic!("{} shader(s) failed:\n{}", failures.len(), failures.join("\n\n"));
+        panic!(
+            "{} shader(s) failed:\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
     }
 }
