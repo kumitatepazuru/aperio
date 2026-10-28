@@ -1,0 +1,24 @@
+[project]
+name = "aperio-plugin-stubs"
+version = "0.1.0"
+description = "A stub-only package for aperio plugin development"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "numpy>=2.3.3",
+]
+classifiers = [
+    "Typing :: Stubs Only"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# パッケージのソースディレクトリを持たない(スタブは生成物)ので、ファイル選択はフックに任せる。
+bypass-selection = true
+# editable インストールでは .pth で build/stub/ を直接参照する(再生成が即反映され、未生成でもインストールできる)。
+dev-mode-dirs = ["../../build/stub"]
+
+# 配布用の wheel では、hatch_build.py が build/stub/ のスタブを取り込む。
+[tool.hatch.build.targets.wheel.hooks.custom]

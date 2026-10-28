@@ -1,12 +1,19 @@
 version = 1
 revision = 5
-requires-python = ">=3.14"
+requires-python = "==3.14.*"
+
+[manifest]
+members = [
+    "aperio",
+    "aperio-plugin-stubs",
+]
 
 [[package]]
 name = "aperio"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aperio-plugin-stubs" },
     { name = "mypy" },
     { name = "numpy" },
     { name = "requests" },
@@ -14,10 +21,22 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aperio-plugin-stubs", editable = "python/stubs" },
     { name = "mypy", specifier = ">=1.18.2" },
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "requests", specifier = ">=2.32.5" },
 ]
+
+[[package]]
+name = "aperio-plugin-stubs"
+version = "0.1.0"
+source = { editable = "python/stubs" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=2.3.3" }]
 
 [[package]]
 name = "certifi"

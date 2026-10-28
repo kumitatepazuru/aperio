@@ -14,6 +14,8 @@
   - bunは `bunfig.toml` でhoisted linkerを指定している
 3. `uv sync` を実行して、Pythonの依存関係をインストール
   - `tools/` 配下のPythonスクリプトや、moonのタスクのうちPython系のものはこのuv環境で実行される
+4. `bun moon run uv:update` を実行して、uvバイナリをダウンロードする。
+  バイナリは`dist/resources/` に保存され、内部で使用される。
 4. ルートディレクトリで、`bun moon run root:build` でビルド、`bun moon run root:dev` でデバッグモードでのビルド・起動が可能
   - ビルドされたファイルは `dist/app/` に出力される
   - タスクは [moon](https://moonrepo.dev/) で管理している。`<project>:<task>` の形式で実行し、`bun moon query tasks` で一覧を確認できる。設定は `.moon/` と各プロジェクトの `moon.yml`
@@ -36,7 +38,10 @@ TypeScript/React のビルド・bundle 系(`ui:start`, `ui:build`, `main:build`,
   - これにより、Rustコードの型定義をPython側で利用できるようになる
 - `bun moon run plugin:stubgen` で、プラグインマネージャ(`python/aperio_plugin/`)のPythonコードからstubファイルを `build/stub/aperio_plugin/` に生成することが可能
   - これにより、Pythonコードの型定義をプラグイン側で利用できるようになる
-  - stubは生成物でgit管理されない。`mypy` の `mypy_path` と `.vscode/settings.json` の `python.analysis.extraPaths` が `build/stub/` を参照する
+  - stubは生成物でgit管理されない。`uv sync` で入る `aperio-plugin-stubs` の `.pth` と、`mypy` の `mypy_path`、`.vscode/settings.json` の `python.analysis.extraPaths` が `build/stub/` を参照する
+- `bun moon run plugin:stubs-wheel` で、両方のstubを含む配布用のstub-only wheelを `build/stubs-wheel/` に生成する(stubは自動で生成される)
+  - 中身は `python/stubs/`(`aperio-plugin-stubs`)で、wheelにはhatchのビルドフック(`hatch_build.py`)が `build/stub/` を取り込む。`uv sync` ではeditableインストールになるのでstub未生成でも通る
+  - sdistには `build/stub/` が含まれないため、配布は必ずwheel(`uv build --wheel python/stubs`)で行う
 - `bun moon run plugin:check` で、生成済みstubと実際のコードの不整合を検査する(必要なstubは自動で生成される)
 - `bun moon run python:build` / `python:release` で、maturinによるPythonホイールのビルドができる
 - `bun moon run root:dist` で、ビルドからelectron-builderによるパッケージングまで行う

@@ -5,6 +5,7 @@ description = "A Plugin-based Open Source Video Editor"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "aperio-plugin-stubs",
     "mypy>=1.18.2",
     "numpy>=2.4.4",
     "requests>=2.32.5",
@@ -15,6 +16,13 @@ dependencies = [
 [tool.uv]
 package = false
 
-# プラグイン(plugins/)の型チェックは、`bun moon run python:stubgen` / `plugin:stubgen` が生成するスタブを参照する。
+# aperio.* / aperio_plugin.* のstubをインストールする
+[tool.uv.workspace]
+members = ["python/stubs"]
+
+[tool.uv.sources]
+aperio-plugin-stubs = { workspace = true }
+
+# mypy は editable インストールの .pth を辿らないので、スタブの場所を明示する。
 [tool.mypy]
 mypy_path = ["build/stub"]
