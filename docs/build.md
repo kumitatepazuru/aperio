@@ -5,7 +5,7 @@
 1. 以下のソフトウェア・ライブラリを使用しているのでインストール
   - rust(cargo)
   - uv(python3.14)
-  - node lts/npm(bunの使用を勧める。ビルド用スクリプトはbunで実行される)
+  - node lts/bun(bunの使用を勧める。ビルドタスクを管理するmoonはbunの依存関係としてインストールされ、`bun moon` で実行する)
   - vcpkg
   - clang(bindgenのビルドに必要) [詳細](https://rust-lang.github.io/rust-bindgen/requirements.html)
   - Linuxのみ：cpal用の追加パッケージ(libpulse-dev libpipewire-0.3-dev libasound2-dev)
@@ -13,18 +13,10 @@
   - `apps/*` と `packages/*` はworkspaceになっているので、ルートで1回実行すればよい
   - bunは `bunfig.toml` でhoisted linkerを指定している
 3. `uv sync` を実行して、Pythonの依存関係をインストール
-  - `tools/` 配下のスクリプトはこのuv環境で実行される(`uv run tools/<name>.py`)
-4. `native/` に移動し、`vcpkg install` を実行してC++の依存関係をインストール
-  - avloader(ffmpeg)とgpu_util(shader-slang, directx-dxc)の両方の依存関係が `native/vcpkg.json` にまとまっている。インストール先は `native/vcpkg_installed/`
-  - 15分程度かかる
-  - windowsの場合は利便性の観点からstatic tripletでのインストールをする
-  --triplet=x64-windows-static-mdまたは--triplet=arm64-windows-static-mdをつけてインストールすること
-5. `uv run tools/update_uv.py` を実行して、同梱するuvを最新バージョンに更新
-  - これにより、uvのバイナリが `dist/resources/[os]-[arch]/bin/` にダウンロードされる(`-a` で全プラットフォーム分)
-6. ルートディレクトリで、`bun run build` でビルド、`bun run dev` でデバッグモードでのビルド・起動が可能
+  - `tools/` 配下のPythonスクリプトや、moonのタスクのうちPython系のものはこのuv環境で実行される
+4. ルートディレクトリで、`bun moon run root:build` でビルド、`bun moon run root:dev` でデバッグモードでのビルド・起動が可能
   - ビルドされたファイルは `dist/app/` に出力される
-  - ビルドは `tools/build.py` が次の順序で行う: UI(vite) → ネイティブ(napi) → main/preload(rolldown)
-    - viteが `dist/app/` を空にするため、UIを先に実行する。main/preloadはnapiが生成する `dist/app/native/index.js` を取り込むため、napiの後に実行する
+  - タスクは [moon](https://moonrepo.dev/) で管理している。`<project>:<task>` の形式で実行し、`bun moon query tasks` で一覧を確認できる。設定は `.moon/` と各プロジェクトの `moon.yml`
   - ネイティブのビルドでは、Rustのコードをnapiで `.node` として出力し、あわせて実行時に必要な共有ライブラリ(slang, dxcompiler, libpython)を `dist/app/` にコピーする
     - 読み込みに失敗するとnpmのバグが起きた旨のエラーが出ることがあるが、これはPythonやslang、DXCのdllが見つからないことが原因である
 
@@ -32,16 +24,22 @@
 
 ## その他のコマンド
 
-- `bun run napi:debug` または `napi:build` で、ネイティブ(Rust)のみをビルドして `dist/app/` に出力することも可能。
+TypeScript/React のビルド・bundle 系(`ui:start`, `ui:build`, `main:build`, `electron:dev`, `lint`, `typecheck`)だけは `package.json` の scripts に残しており、`bun run <script>` で実行できる。
+それ以外はすべて `bun moon run <project>:<task>` で実行する。
+
+- `bun moon run napi:debug` または `napi:build` で、ネイティブ(Rust)のみをビルドして `dist/app/` に出力することも可能。
   - typescriptの型(`dist/app/native/index.d.ts`)も生成されるため、単に型の更新をするときはこれを利用する
-- `bun run python:copy` で、libpython(`python314.dll` 等)だけを `dist/app/` にコピーできる(`napi:*` でも自動で行われる)
-  - `uv run tools/copy_python.py --python <実行ファイル>` で、uv環境以外のPythonを指定することもできる
-- `bun run python:stubgen` で、RustのコードからPythonのstubファイルを `build/stub/aperio/` に生成することが可能
+- `bun moon run ui:build` / `main:build` で、UI(vite) / main・preload(rolldown) だけをビルドできる。`ui:start` はviteのdev server
+- `bun moon run python:copy` で、libpython(`python314.dll` 等)だけを `dist/app/` にコピーできる(`napi:*` でも自動で行われる)
+  - `bun moon run python:copy -- --python <実行ファイル>` で、uv環境以外のPythonを指定することもできる
+- `bun moon run python:stubgen` で、RustのコードからPythonのstubファイルを `build/stub/aperio/` に生成することが可能
   - これにより、Rustコードの型定義をPython側で利用できるようになる
-- `bun run plugin:stubgen` で、プラグインマネージャ(`python/aperio_plugin/`)のPythonコードからstubファイルを `build/stub/aperio_plugin/` に生成することが可能
+- `bun moon run plugin:stubgen` で、プラグインマネージャ(`python/aperio_plugin/`)のPythonコードからstubファイルを `build/stub/aperio_plugin/` に生成することが可能
   - これにより、Pythonコードの型定義をプラグイン側で利用できるようになる
   - stubは生成物でgit管理されない。`mypy` の `mypy_path` と `.vscode/settings.json` の `python.analysis.extraPaths` が `build/stub/` を参照する
-- `bun run plugin:check` で、生成済みstubと実際のコードの不整合を検査する
+- `bun moon run plugin:check` で、生成済みstubと実際のコードの不整合を検査する(必要なstubは自動で生成される)
+- `bun moon run python:build` / `python:release` で、maturinによるPythonホイールのビルドができる
+- `bun moon run root:dist` で、ビルドからelectron-builderによるパッケージングまで行う
 - `bun run typecheck` で、`apps/` と `packages/` のTypeScriptを型チェックする
 
 ## ディレクトリ構成
@@ -53,7 +51,8 @@ crates/      Rustのworkspace。aperio-napi(napi/pyo3の公開層), aperio-macro
 native/      FFI対象のC++(cpp/)とvcpkgの設定
 python/      プラグインマネージャ(aperio_plugin)のPythonコード
 plugins/     組み込みプラグイン(PythonとSlangシェーダー)
-tools/       ビルド・コード生成用のPythonスクリプト
+tools/       moonのタスクから呼ばれるPythonスクリプト(update_uv.py, copy_python.py, vcpkg.py)
+.moon/       moonのワークスペース設定。各タスクの定義は各プロジェクトの moon.yml (ルート, apps/ui, apps/main, crates/aperio-napi, python, python/aperio_plugin, native, tools)
 docs/        ドキュメント
 build/       (生成物) cargoのtarget/, Pythonのstub/, electron-builderのrelease/
 dist/        (生成物) app/(アプリ本体), resources/(同梱するuv等)

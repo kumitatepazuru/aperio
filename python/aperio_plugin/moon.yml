@@ -1,0 +1,34 @@
+# プラグインマネージャ(python/aperio_plugin)のスタブ生成と検査。
+# このファイルは electron-builder の extraResources からは除外している(package.json の build.extraResources)。
+tasks:
+  # 削除されたモジュールのスタブが残らないよう、生成前に前回の出力を消す。
+  clean:
+    command: bun
+    args:
+      - -e
+      - "require('node:fs').rmSync('build/stub/aperio_plugin', { recursive: true, force: true })"
+    options:
+      cache: false
+      shell: false
+
+  # mypy の stubgen で build/stub/aperio_plugin/ にスタブ(.pyi)を生成する。
+  stubgen:
+    command: uv
+    args: [run, stubgen, python/aperio_plugin, -o, build/stub, --include-docstrings]
+    deps:
+      - ~:clean
+    outputs:
+      - /build/stub/aperio_plugin
+
+  # 生成済みスタブと実際のコードの不整合を mypy.stubtest で検査する。
+  check:
+    command: uv
+    args: [run, python, -m, mypy.stubtest, aperio_plugin]
+    deps:
+      - ~:stubgen
+      - python:stubgen
+    env:
+      MYPYPATH: build/stub
+      PYTHONPATH: python
+    options:
+      cache: false

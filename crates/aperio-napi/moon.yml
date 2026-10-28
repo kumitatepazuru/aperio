@@ -1,0 +1,93 @@
+# ネイティブ(Rust)側のビルド。成果物は dist/app/ に出力する。
+#   napi:debug / napi:build  : .node + ローダ(native/index.js, index.d.ts) + 実行時共有ライブラリ + libpython
+#   napi:artifacts           : napi artifacts
+tasks:
+  # napi build は出力先ディレクトリを作らないので、先に dist/app/native を作る。
+  mkdir:
+    command: bun
+    args:
+      - -e
+      - "require('node:fs').mkdirSync('dist/app/native', { recursive: true })"
+    options:
+      cache: false
+      shell: false
+
+  compile-debug:
+    command: bun
+    args:
+      - x
+      - napi
+      - build
+      - --package
+      - aperio-napi
+      - --platform
+      - --output-dir
+      - dist/app
+      - --js
+      - native/index.js
+      - --esm
+      - --dts
+      - native/index.d.ts
+    deps:
+      - ~:mkdir
+      - vcpkg:install
+    inputs: &compile-inputs
+      - /crates/**/*
+      - /native/cpp/**/*
+      - /native/overlay-ports/**/*
+      - /native/vcpkg.json
+      - /native/vcpkg-configuration.json
+      - /Cargo.toml
+      - /Cargo.lock
+      - /.cargo/config.toml
+      - /package.json
+    outputs: &compile-outputs
+      - /dist/app/native
+      - /dist/app/*.node
+
+  compile-release:
+    command: bun
+    args:
+      - x
+      - napi
+      - build
+      - --package
+      - aperio-napi
+      - --platform
+      - --release
+      - --output-dir
+      - dist/app
+      - --js
+      - native/index.js
+      - --esm
+      - --dts
+      - native/index.d.ts
+    deps:
+      - ~:mkdir
+      - vcpkg:install
+    inputs: *compile-inputs
+    outputs: *compile-outputs
+
+  debug:
+    command: noop
+    deps:
+      - ~:compile-debug
+      - vcpkg:copy-libs
+      - python:copy
+    options:
+      runDepsInParallel: false
+
+  build:
+    command: noop
+    deps:
+      - ~:compile-release
+      - vcpkg:copy-libs
+      - python:copy
+    options:
+      runDepsInParallel: false
+
+  artifacts:
+    command: bun
+    args: [x, napi, artifacts]
+    options:
+      cache: false

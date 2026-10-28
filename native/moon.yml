@@ -1,0 +1,15 @@
+# C++ 依存関係(vcpkg_installed)の管理。napi / python のビルドが依存する。
+tasks:
+  # native/vcpkg_installed/<triplet> が無ければ `vcpkg install --triplet <triplet>` を実行する。
+  install:
+    command: uv
+    args: [run, tools/vcpkg.py, install]
+    options:
+      cache: false
+
+  # slang / dxcompiler の共有ライブラリ(実行時に必要)を dist/app/ にコピーする。
+  copy-libs:
+    command: uv
+    args: [run, tools/vcpkg.py, copy-libs]
+    options:
+      cache: false

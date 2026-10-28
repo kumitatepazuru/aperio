@@ -1,0 +1,15 @@
+defaultProject: "root"
+
+projects:
+  root: "."
+  ui: "apps/ui"
+  main: "apps/main"
+  napi: "crates/aperio-napi"
+  python: "python"
+  plugin: "python/aperio_plugin"
+  uv: "tools"
+  vcpkg: "native"
+
+vcs:
+  client: "git"
+  defaultBranch: "master"

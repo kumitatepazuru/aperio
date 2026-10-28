@@ -10,11 +10,11 @@ dependencies = [
     "requests>=2.32.5",
 ]
 
-# 開発用環境(tools/ の実行、プラグイン開発時の型チェック)のためのプロジェクトで、
+# 開発用環境(tools/ のスクリプトや moon タスクの実行、プラグイン開発時の型チェック)のためのプロジェクトで、
 # それ自体はパッケージとしてビルド・配布しない。
 [tool.uv]
 package = false
 
-# プラグイン(plugins/)の型チェックは、tools/stubgen.py が生成するスタブを参照する。
+# プラグイン(plugins/)の型チェックは、`bun moon run python:stubgen` / `plugin:stubgen` が生成するスタブを参照する。
 [tool.mypy]
 mypy_path = ["build/stub"]

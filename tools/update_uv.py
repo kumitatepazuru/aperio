@@ -17,7 +17,7 @@ from pathlib import Path
 
 import requests
 
-from common import DIST_RESOURCES
+DIST_RESOURCES = Path(__file__).resolve().parent.parent / "dist" / "resources"
 
 UV_LINK = "https://github.com/astral-sh/uv/releases/latest/download"
 FILES = [

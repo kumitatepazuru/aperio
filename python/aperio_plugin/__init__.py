@@ -26,7 +26,7 @@ except ImportError as e:
         "\n1. Make sure numpy are installed in the python environment used by Aperio."
         "\n  Running Environment can be checked in below debug info. Generally, required packages should be installed during post running process."
         "\n2. If you are using OS managed python (like apt install python3 on Debian/Ubuntu) to compile and run Aperio, it may cause this error."
-        "\n  Please try to install python separately (recommends uv) with `uv python install --reinstall --no-managed-python` and run `uv run tools/copy_python.py`."
+        "\n  Please try to install python separately (recommends uv) with `uv python install --reinstall --no-managed-python` and run `bun moon run python:copy`."
         "\n3. For Linux: Make sure that libpython is preloaded as RTLD_GLOBAL correctly. In linux, libpython must be able to be seen globally because of policy of manylinux."
         "\n  Try add the environment LD_PRELOAD to specify the path to libpython3.x.so explicitly."
     ) from e

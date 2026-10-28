@@ -1,0 +1,3 @@
+# 全タスク共通の設定。
+taskOptions:
+  runFromWorkspaceRoot: true

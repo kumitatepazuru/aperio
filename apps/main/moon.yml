@@ -1,0 +1,22 @@
+# rolldown で main / preload をバンドルする(設定は apps/main/rolldown.config.js)。
+# 実コマンドはルート package.json の scripts (main:build) に残している。
+tasks:
+  build:
+    command: bun
+    args: [run, main:build]
+    inputs:
+      - /apps/main/**/*
+      - /apps/preload/**/*
+      - /apps/tsconfig.node.json
+      - /packages/shared/**/*
+      - /bun.lock
+      - /package.json
+      - /tsconfig.json
+      # napi が生成するローダ(dist/app/native/index.js)をバンドルに取り込む。
+      # 先に napi:debug / napi:build を実行しておくこと(root:dev / root:build は順序を保証する)。
+      - /dist/app/native/index.js
+    outputs:
+      - /dist/app/main.js
+      - /dist/app/main.js.map
+      - /dist/app/preload.js
+      - /dist/app/preload.js.map

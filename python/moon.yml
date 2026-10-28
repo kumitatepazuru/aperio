@@ -1,0 +1,45 @@
+﻿# Python 連携まわり(pyo3 で埋め込む libpython のコピー、maturin によるビルド / スタブ生成)。
+tasks:
+  # pyo3 で Python を埋め込んだ .node の実行時に必要な libpython を dist/app/ にコピーする。
+  # `bun moon run python:copy -- --python <実行ファイル>` で uv 環境以外の Python も指定できる。
+  copy:
+    command: uv
+    args: [run, tools/copy_python.py]
+    options:
+      cache: false
+
+  build:
+    command: uvx
+    args: [maturin, build, -m, crates/aperio-napi/Cargo.toml]
+    deps:
+      - vcpkg:install
+    inputs: &maturin-inputs
+      - /crates/**/*
+      - /native/cpp/**/*
+      - /native/overlay-ports/**/*
+      - /native/vcpkg.json
+      - /native/vcpkg-configuration.json
+      - /Cargo.toml
+      - /Cargo.lock
+      - /.cargo/config.toml
+    outputs:
+      - /build/target/wheels
+
+  release:
+    command: uvx
+    args: [maturin, build, -m, crates/aperio-napi/Cargo.toml, --release]
+    deps:
+      - vcpkg:install
+    inputs: *maturin-inputs
+    outputs:
+      - /build/target/wheels
+
+  # Rust (pyo3) 側の Python スタブ(aperio.*)を build/stub/aperio/ に生成する。
+  stubgen:
+    command: uv
+    args: [tool, run, maturin, generate-stubs, --out, build/stub, -m, crates/aperio-napi/Cargo.toml]
+    deps:
+      - vcpkg:install
+    inputs: *maturin-inputs
+    outputs:
+      - /build/stub/aperio
