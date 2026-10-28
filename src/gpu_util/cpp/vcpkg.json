@@ -1,8 +1,0 @@
-{
-  "name": "gpu-util-cpp",
-  "version": "0.1.0",
-  "dependencies": [
-    "shader-slang",
-    "directx-dxc"
-  ]
-}

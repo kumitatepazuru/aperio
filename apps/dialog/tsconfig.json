@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.web.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../build/tsbuildinfo/dialog.tsbuildinfo"
+  },
+  "include": [".", "../../packages/shared/window.d.ts"]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@aperio/app-dialog",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aperio/shared": "workspace:*",
+    "@aperio/ui": "workspace:*",
+    "daisyui": "^5.4.7",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "tailwindcss": "^4.1.16",
+    "zustand": "^5.0.8"
+  }
+}

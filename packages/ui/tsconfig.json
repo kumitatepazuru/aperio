@@ -1,0 +1,7 @@
+{
+  "extends": "../../apps/tsconfig.web.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../build/tsbuildinfo/ui-package.tsbuildinfo"
+  },
+  "include": [".", "../shared/window.d.ts"]
+}

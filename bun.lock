@@ -4,25 +4,12 @@
   "workspaces": {
     "": {
       "name": "aperio",
-      "dependencies": {
-        "@dnd-kit/react": "^0.3.2",
-        "@floating-ui/react": "^0.27.19",
-        "@lumino/default-theme": "^2.1.11",
-        "@lumino/widgets": "^2.7.2",
-        "@tailwindcss/vite": "^4.1.16",
-        "colorjs.io": "^0.6.1",
-        "react": "^19.1.1",
-        "react-dom": "^19.1.1",
-        "react-icons": "^5.5.0",
-        "tailwindcss": "^4.1.16",
-        "uuid": "^13.0.0",
-        "zustand": "^5.0.8",
-      },
       "devDependencies": {
         "@emnapi/core": "^1.5.0",
         "@emnapi/runtime": "^1.5.0",
         "@eslint/js": "^9.36.0",
         "@napi-rs/cli": "^3.5.1",
+        "@tailwindcss/vite": "^4.1.16",
         "@types/node": "^24.6.0",
         "@types/react": "^19.1.16",
         "@types/react-dom": "^19.1.9",
@@ -30,7 +17,6 @@
         "@webgpu/types": "^0.1.68",
         "babel-plugin-react-compiler": "^19.1.0-rc.3",
         "cross-env": "^10.1.0",
-        "daisyui": "^5.4.7",
         "electron": "40.0.0-beta.6",
         "electron-builder": "^26.0.12",
         "eslint": "^9.36.0",
@@ -46,9 +32,94 @@
         "wait-on": "^9.0.1",
       },
     },
+    "apps/dialog": {
+      "name": "@aperio/app-dialog",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aperio/shared": "workspace:*",
+        "@aperio/ui": "workspace:*",
+        "daisyui": "^5.4.7",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1",
+        "tailwindcss": "^4.1.16",
+        "zustand": "^5.0.8",
+      },
+    },
+    "apps/main": {
+      "name": "@aperio/app-main",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aperio/shared": "workspace:*",
+      },
+    },
+    "apps/osr": {
+      "name": "@aperio/app-osr",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aperio/shared": "workspace:*",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1",
+        "tailwindcss": "^4.1.16",
+      },
+    },
+    "apps/preload": {
+      "name": "@aperio/app-preload",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aperio/shared": "workspace:*",
+      },
+    },
+    "apps/ui": {
+      "name": "@aperio/app-ui",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aperio/shared": "workspace:*",
+        "@aperio/ui": "workspace:*",
+        "@dnd-kit/react": "^0.3.2",
+        "@floating-ui/react": "^0.27.19",
+        "@lumino/default-theme": "^2.1.11",
+        "@lumino/widgets": "^2.7.2",
+        "colorjs.io": "^0.6.1",
+        "daisyui": "^5.4.7",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1",
+        "react-icons": "^5.5.0",
+        "tailwindcss": "^4.1.16",
+        "uuid": "^13.0.0",
+        "zustand": "^5.0.8",
+      },
+    },
+    "packages/shared": {
+      "name": "@aperio/shared",
+      "version": "0.0.0",
+    },
+    "packages/ui": {
+      "name": "@aperio/ui",
+      "version": "0.0.0",
+      "dependencies": {
+        "@floating-ui/react": "^0.27.19",
+        "react": "^19.1.1",
+        "react-icons": "^5.5.0",
+        "zustand": "^5.0.8",
+      },
+    },
   },
   "packages": {
     "7zip-bin": ["7zip-bin@5.2.0", "", {}, "sha512-ukTPVhqG4jNzMro2qA9HSCSSVJN3aN7tlb+hfqYCt3ER0yWroeA2VR38MNrOHLQ/cVj+DaIMad0kFCtWWowh/A=="],
+
+    "@aperio/app-dialog": ["@aperio/app-dialog@workspace:apps/dialog"],
+
+    "@aperio/app-main": ["@aperio/app-main@workspace:apps/main"],
+
+    "@aperio/app-osr": ["@aperio/app-osr@workspace:apps/osr"],
+
+    "@aperio/app-preload": ["@aperio/app-preload@workspace:apps/preload"],
+
+    "@aperio/app-ui": ["@aperio/app-ui@workspace:apps/ui"],
+
+    "@aperio/shared": ["@aperio/shared@workspace:packages/shared"],
+
+    "@aperio/ui": ["@aperio/ui@workspace:packages/ui"],
 
     "@babel/code-frame": ["@babel/code-frame@7.27.1", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.27.1", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg=="],
 

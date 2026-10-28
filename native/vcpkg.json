@@ -1,0 +1,24 @@
+{
+  "name": "aperio-native",
+  "version": "0.1.0",
+  "dependencies": [
+    "shader-slang",
+    "directx-dxc",
+    {
+      "name": "ffmpeg",
+      "features": [
+        "avcodec",
+        "avformat",
+        "swscale",
+        "x264",
+        "x265",
+        "dav1d",
+        "vpx",
+        "vorbis",
+        "vulkan",
+        "swresample",
+        "zlib"
+      ]
+    }
+  ]
+}

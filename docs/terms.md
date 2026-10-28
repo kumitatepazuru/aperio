@@ -63,9 +63,9 @@
 
 **型定義:**
 
-- Rust: `src/native/src/structs/item_structures.rs` → `pub enum ItemStructure { Video { ... }, Audio { ... } }`
-- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）
-- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class ItemStructure.Video` / `class ItemStructure.Audio`
+- Rust: `crates/aperio-napi/src/structs/item_structures.rs` → `pub enum ItemStructure { Video { ... }, Audio { ... } }`
+- TypeScript: `dist/app/native/index.d.ts`（napi-rs による自動生成）
+- Python: `crates/aperio-napi/src/structs/item_structures.rs`（pyo3 で定義、スタブは `build/stub/aperio/item_structures.pyi`）→ `class ItemStructure.Video` / `class ItemStructure.Audio`
 
 ---
 
@@ -103,7 +103,7 @@
 
 **注意:**
 
-- Rust構造体での定義: `pub object: GenerateStructure`（`src/native/src/structs/item_structures.rs`）
+- Rust構造体での定義: `pub object: GenerateStructure`（`crates/aperio-napi/src/structs/item_structures.rs`）
 - Pythonプラグインへ渡る際もフィールド名は `object` になる。
 
 ---
@@ -159,9 +159,9 @@
 
 **型定義:**
 
-- Rust: `src/native/src/structs/item_structures.rs` → `pub struct GenerateStructure`
-- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface GenerateStructure`
-- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class GenerateStructure(dict)`
+- Rust: `crates/aperio-napi/src/structs/item_structures.rs` → `pub struct GenerateStructure`
+- TypeScript: `dist/app/native/index.d.ts`（napi-rs による自動生成）→ `interface GenerateStructure`
+- Python: `crates/aperio-napi/src/structs/item_structures.rs`（pyo3 で定義、スタブは `build/stub/aperio/item_structures.pyi`）→ `class GenerateStructure(dict)`
 
 **用法:**
 
@@ -176,9 +176,9 @@
 
 **型定義:**
 
-- Rust: `src/native/src/structs/item_structures.rs` → `pub struct ItemResult`
-- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemResult`
-- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class ItemResult`
+- Rust: `crates/aperio-napi/src/structs/item_structures.rs` → `pub struct ItemResult`
+- TypeScript: `dist/app/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemResult`
+- Python: `crates/aperio-napi/src/structs/item_structures.rs`（pyo3 で定義、スタブは `build/stub/aperio/item_structures.pyi`）→ `class ItemResult`
 
 **フィールド:** `width: number`, `height: number`
 
@@ -202,7 +202,7 @@
 
 **注意:**
 
-- `Frame` クラス（`src/renderer/bridge.ts`）はフレームバッファの送受信を担うネットワーク層のクラス。映像フレームの概念とは別物。
+- `Frame` クラス（`apps/ui/bridge.ts`）はフレームバッファの送受信を担うネットワーク層のクラス。映像フレームの概念とは別物。
 
 ---
 
@@ -283,8 +283,8 @@
 
 **型定義:**
 
-- Rust: `src/native/src/managers/audio_manager.rs` → `pub struct AudioManager`
-- Python スタブ: `src-python/out/aperio/audio.pyi` → `class AudioManager`
+- Rust: `crates/aperio-napi/src/managers/audio_manager.rs` → `pub struct AudioManager`
+- Python スタブ: `build/stub/aperio/audio.pyi` → `class AudioManager`
 
 **API:**
 
@@ -315,8 +315,8 @@
 
 **型定義:**
 
-- Rust: `src/native/src/managers/store_manager.rs` → `pub struct AudioState`
-- TypeScript: `dist/native/index.d.ts` → `interface AudioState`
+- Rust: `crates/aperio-napi/src/managers/store_manager.rs` → `pub struct AudioState`
+- TypeScript: `dist/app/native/index.d.ts` → `interface AudioState`
 
 **フィールド:**
 
@@ -330,7 +330,7 @@
 
 ---
 
-## Managers（src/native/src/managers/）
+## Managers（crates/aperio-napi/src/managers/）
 
 **定義:** ネイティブ層のステート管理を集約したモジュール群。
 
@@ -353,8 +353,8 @@
 
 **型定義:**
 
-- Rust: `src/native/src/python/modules/avloader.rs`
-- Python スタブ: `src-python/out/aperio/avloader.pyi` → `class PyAudioLoader`
+- Rust: `crates/aperio-napi/src/python/modules/avloader.rs`
+- Python スタブ: `build/stub/aperio/avloader.pyi` → `class PyAudioLoader`
 
 **API:**
 
@@ -373,7 +373,7 @@
 
 **定義:** レンダラプロセスから音声再生を制御するための IPC ブリッジ。`window.audio` 経由でアクセスする。
 
-**型定義:** `src/renderer/types.d.ts`
+**型定義:** `packages/shared/window.d.ts`
 
 | メソッド                                                                       | 意味                             |
 | ------------------------------------------------------------------------------ | -------------------------------- |
@@ -391,8 +391,8 @@
 
 **型定義:**
 
-- Rust: `src/native/src/structs/item_structures.rs` → `pub enum GeneratorEvent`
-- Python: `aperio.item_structures.GeneratorEvent`（PyO3経由、スタブは `src-python/out/aperio/item_structures.pyi`）
+- Rust: `crates/aperio-napi/src/structs/item_structures.rs` → `pub enum GeneratorEvent`
+- Python: `aperio.item_structures.GeneratorEvent`（PyO3経由、スタブは `build/stub/aperio/item_structures.pyi`）
 
 | バリアント                        | 意味                                     |
 | --------------------------------- | ---------------------------------------- |
@@ -413,9 +413,9 @@
 
 **型定義:**
 
-- Rust: `src/native/src/structs/item_structures.rs` → `pub struct GeneratorInformation`
-- TypeScript: `dist/native/index.d.ts`（napi-rs による自動生成）→ `interface GeneratorInformation`
-- Python: `src/native/src/structs/item_structures.rs`（pyo3 で定義、スタブは `src-python/out/aperio/item_structures.pyi`）→ `class GeneratorInformation`
+- Rust: `crates/aperio-napi/src/structs/item_structures.rs` → `pub struct GeneratorInformation`
+- TypeScript: `dist/app/native/index.d.ts`（napi-rs による自動生成）→ `interface GeneratorInformation`
+- Python: `crates/aperio-napi/src/structs/item_structures.rs`（pyo3 で定義、スタブは `build/stub/aperio/item_structures.pyi`）→ `class GeneratorInformation`
 
 | TypeScript フィールド | Python フィールド | TypeScript 型                 | Python 型                         | 意味                                                            |
 | --------------------- | ----------------- | ----------------------------- | --------------------------------- | --------------------------------------------------------------- |
@@ -501,7 +501,7 @@
 **注意:**
 
 - パラメータ ID はプラグインをまたいで重複してもよい（スコープがプラグイン単位のため）。
-- プラグイン内での重複は TODO としてチェックが必要（`src/renderer/parameterEditor/BaseParameter.tsx` のコメント参照）。
+- プラグイン内での重複は TODO としてチェックが必要（`apps/ui/parameterEditor/BaseParameter.tsx` のコメント参照）。
 
 ---
 

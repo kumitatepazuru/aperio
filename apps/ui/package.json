@@ -1,0 +1,22 @@
+{
+  "name": "@aperio/app-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aperio/shared": "workspace:*",
+    "@aperio/ui": "workspace:*",
+    "@dnd-kit/react": "^0.3.2",
+    "@floating-ui/react": "^0.27.19",
+    "@lumino/default-theme": "^2.1.11",
+    "@lumino/widgets": "^2.7.2",
+    "colorjs.io": "^0.6.1",
+    "daisyui": "^5.4.7",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-icons": "^5.5.0",
+    "tailwindcss": "^4.1.16",
+    "uuid": "^13.0.0",
+    "zustand": "^5.0.8"
+  }
+}
