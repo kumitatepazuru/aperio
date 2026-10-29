@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@aperio/plugin-sdk": "workspace:*",
     "@aperio/shared": "workspace:*",
     "@aperio/ui": "workspace:*",
     "@dnd-kit/react": "^0.3.2",

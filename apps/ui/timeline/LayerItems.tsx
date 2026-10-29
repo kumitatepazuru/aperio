@@ -6,6 +6,7 @@ import {
   clampLayerDelta,
   resolveGroupMoveDelta,
 } from "@aperio/ui/utils/layerUtils";
+import PluginComponent from "@/plugin/PluginComponent";
 import type { ItemStructure } from "native";
 
 type DragMode = "move" | "resize-start" | "resize-end";
@@ -238,86 +239,99 @@ const LayerItems = ({
     const isActiveDrag = isDragging && isSelected;
 
     return (
-      <div
+      <PluginComponent
         key={item.id}
-        className="absolute py-0.5"
-        style={{
+        type="item"
+        args={{
+          item,
           left,
           width,
           top,
-          height: layerHeight,
+          isSelected,
+          isDragging: isActiveDrag,
+          layerHeight,
         }}
       >
         <div
-          className={`w-full h-full border-dotted border-base-100 rounded relative flex items-center ${
-            isActiveDrag
-              ? "bg-primary/70 cursor-grabbing"
-              : "bg-primary cursor-grab"
-          }`}
-          onMouseDown={(event) => {
-            if (event.ctrlKey) {
-              // Ctrl+クリック: 単体の選択/非選択トグル（伝播停止で親の選択クリアを防ぐ）
-              event.stopPropagation();
-              if (isSelected) {
-                const next = selectedItemIds.filter((id) => id !== item.id);
-                setSelectedItems(next, next[0] ?? null);
-              } else {
-                addSelectedItemId(item.id);
-              }
-            } else if (event.shiftKey) {
-              event.stopPropagation();
-              addSelectedItemId(item.id);
-            } else if (isSelected) {
-              // 複数選択中のアイテムをドラッグ → 選択維持のまま全体を移動
-              setIsDragging(true);
-              beginItemDrag(
-                event,
-                item.id,
-                "move",
-                selectedItemIds,
-                timelineItems,
-              );
-            } else {
-              setSelectedItemId(item.id);
-              setIsDragging(true);
-              beginItemDrag(event, item.id, "move", [item.id], timelineItems);
-            }
-          }}
+          className="absolute py-0.5"
           style={{
-            borderWidth: isSelected ? 2 : 0,
+            left,
+            width,
+            top,
+            height: layerHeight,
           }}
         >
           <div
-            className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize"
+            className={`w-full h-full border-dotted border-base-100 rounded relative flex items-center ${
+              isActiveDrag
+                ? "bg-primary/70 cursor-grabbing"
+                : "bg-primary cursor-grab"
+            }`}
             onMouseDown={(event) => {
-              setIsDragging(true);
-              beginItemDrag(
-                event,
-                item.id,
-                "resize-start",
-                [item.id],
-                timelineItems,
-              );
+              if (event.ctrlKey) {
+                // Ctrl+クリック: 単体の選択/非選択トグル（伝播停止で親の選択クリアを防ぐ）
+                event.stopPropagation();
+                if (isSelected) {
+                  const next = selectedItemIds.filter((id) => id !== item.id);
+                  setSelectedItems(next, next[0] ?? null);
+                } else {
+                  addSelectedItemId(item.id);
+                }
+              } else if (event.shiftKey) {
+                event.stopPropagation();
+                addSelectedItemId(item.id);
+              } else if (isSelected) {
+                // 複数選択中のアイテムをドラッグ → 選択維持のまま全体を移動
+                setIsDragging(true);
+                beginItemDrag(
+                  event,
+                  item.id,
+                  "move",
+                  selectedItemIds,
+                  timelineItems,
+                );
+              } else {
+                setSelectedItemId(item.id);
+                setIsDragging(true);
+                beginItemDrag(event, item.id, "move", [item.id], timelineItems);
+              }
             }}
-          />
-          <div
-            className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize"
-            onMouseDown={(event) => {
-              setIsDragging(true);
-              beginItemDrag(
-                event,
-                item.id,
-                "resize-end",
-                [item.id],
-                timelineItems,
-              );
+            style={{
+              borderWidth: isSelected ? 2 : 0,
             }}
-          />
-          <span className="text-primary-content p-2 text-xs">
-            {item.object.displayName}
-          </span>
+          >
+            <div
+              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize"
+              onMouseDown={(event) => {
+                setIsDragging(true);
+                beginItemDrag(
+                  event,
+                  item.id,
+                  "resize-start",
+                  [item.id],
+                  timelineItems,
+                );
+              }}
+            />
+            <div
+              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize"
+              onMouseDown={(event) => {
+                setIsDragging(true);
+                beginItemDrag(
+                  event,
+                  item.id,
+                  "resize-end",
+                  [item.id],
+                  timelineItems,
+                );
+              }}
+            />
+            <span className="text-primary-content p-2 text-xs">
+              {item.object.displayName}
+            </span>
+          </div>
         </div>
-      </div>
+      </PluginComponent>
     );
   });
 };
