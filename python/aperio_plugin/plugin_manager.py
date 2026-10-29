@@ -71,11 +71,11 @@ class PluginManager:
             PluginNameInfo: プラグイン名と表示名の辞書
         """
         return PluginNameInfo(
-            base_plugin={plugin.name: plugin.display_name for plugin in self.plugins.values()},
-            video_object_plugins=self.generators.display_names(GeneratorKind.VIDEO_OBJECT),
-            video_effect_plugins=self.generators.display_names(GeneratorKind.VIDEO_EFFECT),
-            audio_object_plugins=self.generators.display_names(GeneratorKind.AUDIO_OBJECT),
-            audio_effect_plugins=self.generators.display_names(GeneratorKind.AUDIO_EFFECT),
+            {plugin.name: plugin.display_name for plugin in self.plugins.values()},
+            self.generators.display_names(GeneratorKind.VIDEO_OBJECT),
+            self.generators.display_names(GeneratorKind.VIDEO_EFFECT),
+            self.generators.display_names(GeneratorKind.AUDIO_OBJECT),
+            self.generators.display_names(GeneratorKind.AUDIO_EFFECT),
         )
 
     # --- イベント ---

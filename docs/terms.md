@@ -235,7 +235,7 @@
 - `aperio_plugin.plugin_manager` — `PluginManager`。`add_generator` / `add_component` など
 - `aperio_plugin.context` — `AperioContext`。`store_manager` / `config_manager` / `audio_manager` / `image_generator` / `text_renderer`
 
-**参照:** `PluginNameInfo.basePlugin`, `PluginNameInfo.videoObjectPlugins`, `PluginNameInfo.videoEffectPlugins`, `PluginNameInfo.audioObjectPlugins`, `PluginNameInfo.audioEffectPlugins`
+**参照:** `PluginNameInfo.basePlugin`, `PluginNameInfo.videoObjectGenerators`, `PluginNameInfo.videoEffectGenerators`, `PluginNameInfo.audioObjectGenerators`, `PluginNameInfo.audioEffectGenerators`
 
 **イベントシステム:**
 
@@ -508,7 +508,7 @@
 
 - `item.object.name` — ジェネレーターレジストリの検索キー（`generators.get(name, GeneratorKind.VIDEO_OBJECT)` などで引く）
 - `effect.name` — エフェクトの検索キー（`generators.get(name, GeneratorKind.VIDEO_EFFECT)` などで引く）
-- TS側では `getPluginNames()` の戻り値 `basePlugin`・`videoObjectPlugins`・`videoEffectPlugins` のキーとして使われる
+- TS側では `getPluginNames()` の戻り値 `basePlugin`・`videoObjectGenerators`・`videoEffectGenerators` のキーとして使われる
 - エフェクトメニューでは `effectId.startsWith(baseId + ".")` でフィルタリングしている
 
 **注意:**
@@ -578,5 +578,5 @@
 | native ブリッジ型（TS/Rust/Python）     | `ItemStructure`                                            | —                                          |
 | フレームレンダリング結果                | `ItemResult`                                               | `frameResults: Record<string, ItemResult>` |
 | 音声設定                                | `audioState: AudioState`                                   | —                                          |
-| 映像プラグイン一覧                      | `PluginNameInfo.videoObjectPlugins` / `videoEffectPlugins` | —                                          |
-| 音声プラグイン一覧                      | `PluginNameInfo.audioObjectPlugins` / `audioEffectPlugins` | —                                          |
+| 映像プラグイン一覧                      | `PluginNameInfo.videoObjectGenerators` / `videoEffectGenerators` | —                                          |
+| 音声プラグイン一覧                      | `PluginNameInfo.audioObjectGenerators` / `audioEffectGenerators` | —                                          |

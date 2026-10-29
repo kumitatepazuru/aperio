@@ -60,8 +60,8 @@ const ParameterEditor = () => {
       value,
       submenu: Object.entries(
         selectedItem?.type === "Video"
-          ? pluginNames.videoEffectPlugins
-          : pluginNames.audioEffectPlugins,
+          ? pluginNames.videoEffectGenerators
+          : pluginNames.audioEffectGenerators,
       )
         .filter(([effectId]) => effectId.startsWith(`${id}.`))
         .map(([effectId, effectValue]) => ({
