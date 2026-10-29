@@ -49,6 +49,19 @@ pub struct AudioState {
     pub bit_depth: u32,
 }
 
+/// プラグインが登録した React コンポーネント。
+#[napi(object)]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, PyDataclass, Debug)]
+pub struct PluginComponent {
+    /// 登録したプラグインのID
+    pub plugin_id: String,
+    /// コンポーネントタイプ
+    pub component_type: String,
+    /// index.jsがあるディレクトリの絶対パス
+    pub dir: String,
+}
+
 generate_partial! {
     /// renderer 間で同期する直列化可能なアプリケーション状態。
     #[napi(object)]
@@ -63,6 +76,7 @@ generate_partial! {
         #[napi(ts_type = "string | null")]
         pub main_selected_item_id: NullOr<String>,
         pub color_picker: ColorPickerState,
+        pub plugin_components: Vec<PluginComponent>,
     }
 
     /// SyncableState の部分更新用。各フィールドが None の場合はその項目を更新しない。
@@ -106,6 +120,7 @@ fn default_state() -> SyncableState {
             display_mode: "0-255".to_string(),
             history: vec![],
         },
+        plugin_components: vec![],
     }
 }
 

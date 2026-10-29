@@ -94,6 +94,8 @@ pub mod store {
     #[pymodule_export]
     use crate::managers::store_manager::FrameState;
     #[pymodule_export]
+    use crate::managers::store_manager::PluginComponent;
+    #[pymodule_export]
     use crate::managers::store_manager::SyncableState;
     #[pymodule_export]
     use crate::managers::store_manager::SyncableStatePartial;

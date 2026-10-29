@@ -8,12 +8,13 @@ from typing import Callable, ClassVar
 
 from aperio import logger
 from aperio.item_structures import PluginNameInfo
+from aperio.store import PluginComponent, SyncableStatePartial
 
-from .plugin_base import MainPluginBase, SubPluginBase
+from .plugin_base import MainPluginBase, PluginBase, SubPluginBase
 from .plugin_base.generator_base import *
 from .plugin_load_progress import PluginLoadProgressWindow
 
-# TODO: PluginLoaderに改名、ファイル名も改名
+# TODO: PluginLoaderに改名、ファイル名も改名。もうちょっとましなOOPの実装を検討。
 class PluginManager:
     """
     プラグインの登録・読み込み・追加を管理するクラス。
@@ -198,6 +199,33 @@ class PluginManager:
                 self._progress.start_bar3(master.num_sub_plugins, plugin.display_name)
                 self._bar3_master = master
             self._progress.step_bar3(plugin.display_name)
+
+    def add_component(self, plugin: PluginBase, dir: str, type: str) -> None:
+        """
+        UI のPluginComponentに差し込む React コンポーネントを登録する。
+        登録情報はstoreのplugin_componentsに保存され、UIはplugin://{plugin.name}/{type}/として読み込む。
+        同じ(plugin.name, type)を再登録した場合は警告を出して無視する
+
+        Args:
+            plugin: コンポーネントを登録するプラグインのインスタンス (``plugin.name`` が pluginId になる)
+            dir: ビルド済みの ``index.js`` があるディレクトリのパス (絶対パスに変換される)
+            type: 差し込み先の type (例: ``"item"``)
+        """
+        # aperio_plugin は自身の初期化中にこのモジュールを import するため、循環 import を避けてここで import する
+        import aperio_plugin
+
+        dir = os.path.abspath(dir)
+        if not os.path.isfile(os.path.join(dir, "index.js")):
+            logger.warning(f"Plugin {plugin.name}: index.js not found in '{dir}'. Component '{type}' is not registered.")
+            return
+
+        current = aperio_plugin.store_manager.get_state().plugin_components
+        for c in current:
+            if c.plugin_id == plugin.name and c.component_type == type:
+                logger.warning(f"Plugin {plugin.name}: Component '{type}' is already registered. Skipping.")
+                return
+        current.append(PluginComponent(plugin.name, type, dir))
+        aperio_plugin.store_manager.set_partial(SyncableStatePartial(plugin_components=current))
 
     def check_plugin_exists(self, plugin_name: str) -> bool:
         """
