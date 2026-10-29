@@ -52,7 +52,7 @@ function getPluginManager() {
 
 function getDefaultPlugins() {
   return isDev
-    ? path.join(app.getAppPath(), "plugins")
+    ? path.join(app.getAppPath(), "build", "plugins")
     : path.join(process.resourcesPath, "default-plugins");
 }
 

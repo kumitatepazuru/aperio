@@ -1,14 +1,12 @@
 use crate::managers::config_manager::AperioConfig;
 use crate::python::modules::PyManagers;
 use crate::python::{self, modules};
-use crate::utils::{get_data_dir, get_local_data_dir};
+use crate::utils::get_local_data_dir;
 use crate::Dirs;
 use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyDict;
 use pyo3::{Py, PyAny, PyErr, Python};
-use std::path::PathBuf;
-use std::str::FromStr;
 
 #[cfg(target_os = "linux")]
 fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
@@ -57,6 +55,9 @@ pub fn initialize_python(dirs: &Dirs, config: &AperioConfig) -> Result<()> {
 
     println!("Installed python version: {:?}", result.version);
 
+    // 同梱のプラグイン(wheel)をaperio-envに追加する。既に同じものが入っていればuv側で差分なしになる
+    install_default_plugins(dirs)?;
+
     println!("syncing packages...");
     let sync_result = python::utils::sync_packages(dirs);
     println!("Package sync result: {:?}", sync_result);
@@ -81,13 +82,32 @@ pub fn initialize_python(dirs: &Dirs, config: &AperioConfig) -> Result<()> {
     Ok(())
 }
 
-pub fn initialize_pl_manager(dirs: &Dirs, py_managers: PyManagers) -> Result<Py<PyAny>> {
-    let base_plugin_dir = PathBuf::from_str(&dirs.default_plugins_dir)?.join("base");
-    let appdata_dir = get_data_dir(dirs)?;
-    let appdata_dir = appdata_dir
-        .to_str()
-        .context("Failed to convert from pathbuf to str")?;
+/// `default_plugins_dir`にある同梱プラグインのwheelをすべてaperio-envに追加する。
+fn install_default_plugins(dirs: &Dirs) -> Result<()> {
+    let mut wheels = Vec::new();
+    for entry in std::fs::read_dir(&dirs.default_plugins_dir)
+        .with_context(|| format!("Failed to read default plugins dir: {}", dirs.default_plugins_dir))?
+    {
+        let path = entry?.path();
+        if path.extension().is_some_and(|ext| ext == "whl") {
+            wheels.push(
+                path.to_str()
+                    .context("Failed to convert wheel path to str")?
+                    .to_string(),
+            );
+        }
+    }
 
+    if wheels.is_empty() {
+        println!("No default plugin wheels found in {}", dirs.default_plugins_dir);
+        return Ok(());
+    }
+
+    println!("Installing default plugins: {:?}", wheels);
+    python::utils::install_packages(dirs, wheels.iter().map(String::as_str).collect(), false)
+}
+
+pub fn initialize_pl_manager(dirs: &Dirs, py_managers: PyManagers) -> Result<Py<PyAny>> {
     let pl_manager = Python::attach(|py| {
         let sys = py.import("sys")?;
 
@@ -96,28 +116,18 @@ pub fn initialize_pl_manager(dirs: &Dirs, py_managers: PyManagers) -> Result<Py<
         let modules = modules.cast::<PyDict>()?;
         modules::register_all(py, modules)?;
 
-        // プラグインマネージャーのパスをsys.pathに追加
+        // プラグインマネージャー(aperio_plugin)のパスをsys.pathに追加する。
+        // プラグイン自体はuvでaperio-envにインストールされ、entry pointから読み込まれる
         let sys_path = sys.getattr("path")?;
         sys_path.call_method1("append", (&dirs.plugin_manager_dir,))?;
-        sys_path.call_method1("append", (&appdata_dir,))?;
 
         let sys_path: Vec<String> = sys.getattr("path")?.extract()?;
         println!("sys.path: {:?}", sys_path);
 
-        // plmanagerのPluginManagerを初期化
-        let pl_manager = py.import("aperio_plugin")?;
-        let init_func = pl_manager.getattr("AperioManager")?;
-        let pl_manager = init_func.call1((appdata_dir, py_managers))?;
-
-        // pluginsにbaseがなければ追加する
-        if !pl_manager
-            .getattr("check_plugin_exists")?
-            .call1(("AperioBasePlugin",))?
-            .extract::<bool>()?
-        {
-            let add_plugin_func = pl_manager.getattr("add_plugin")?;
-            add_plugin_func.call1((base_plugin_dir.to_str(),))?;
-        }
+        // aperio_pluginのPluginManagerを初期化し、プラグインを読み込む
+        let pl_manager = py
+            .import("aperio_plugin")?
+            .call_method1("initialize", (py_managers,))?;
 
         Ok::<Py<PyAny>, PyErr>(pl_manager.unbind())
     })?;

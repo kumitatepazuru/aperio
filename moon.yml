@@ -9,7 +9,7 @@ tasks:
     deps:
       - napi:debug
       - main:build
-      - group-item:build
+      - base-plugin:wheel
       - ui:start
     preset: server
     options:
@@ -24,7 +24,7 @@ tasks:
       - ui:build
       - napi:build
       - main:build
-      - group-item:build
+      - base-plugin:wheel
     options:
       runDepsInParallel: false
 
@@ -38,7 +38,7 @@ tasks:
       - /dist/app/**/*
       - /dist/resources/**/*
       - /python/aperio_plugin/**/*
-      - /plugins/**/*
+      - /build/plugins/**/*
       - /package.json
     outputs:
       - /build/release

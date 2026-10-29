@@ -152,16 +152,26 @@ pub fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
     })
 }
 
-pub fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
+/// `uv add`でパッケージをaperio-envに追加する。
+/// `copy`がtrueの場合、ローカルパスで指定されたパッケージ(wheelなどのファイル)は`appdata_dir/plugin_wheels/`に
+/// コピーし、コピー先のパスからaddする(元ファイルが移動・削除されても環境が壊れないように)。
+/// falseの場合は与えられた文字列(パッケージ名またはパス)をそのままaddする。
+pub fn install_packages(dir: &Dirs, packages: Vec<&str>, copy: bool) -> Result<()> {
     // appdataのdir pathを取得
     let appdata_path = get_local_data_dir(dir)?;
     let appdata_dir = appdata_path
         .to_str()
         .context("Failed to convert appdata path to str")?;
 
+    let packages = if copy {
+        copy_local_packages(&appdata_path.join("plugin_wheels"), packages)?
+    } else {
+        packages.into_iter().map(String::from).collect()
+    };
+
     let python_dir = appdata_path.join("python");
     let mut args = vec!["add"];
-    args.extend(packages);
+    args.extend(packages.iter().map(String::as_str));
     args.extend([
         "--no-python-downloads",
         "--python",
@@ -174,6 +184,31 @@ pub fn install_packages(dir: &Dirs, packages: Vec<&str>) -> Result<()> {
 
     run_uv(dir, args)?;
     Ok(())
+}
+
+/// `packages`のうちローカルに存在するファイルを`dest_dir`にコピーし、コピー先のパスに置き換えたリストを返す。
+/// ローカルパスでないもの(パッケージ名など)はそのまま返す。
+fn copy_local_packages(dest_dir: &Path, packages: Vec<&str>) -> Result<Vec<String>> {
+    packages
+        .into_iter()
+        .map(|package| {
+            let path = Path::new(package);
+            if path.is_dir() {
+                bail!("Copying a directory package is not supported: {}", package);
+            }
+            if !path.is_file() {
+                return Ok(package.to_string());
+            }
+
+            fs::create_dir_all(dest_dir)?;
+            let dest = dest_dir.join(path.file_name().context("Package path has no file name")?);
+            fs::copy(path, &dest)?;
+            Ok(dest
+                .to_str()
+                .context("Failed to convert copied package path to str")?
+                .to_string())
+        })
+        .collect()
 }
 
 pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Result<()> {
@@ -264,9 +299,7 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
 
     fs::rename(cpython_dir, appdata_path.join("python")).ok();
 
-    // uv addコマンドを実行してnumpyをインストール
-    install_packages(dir, vec!["numpy"])?;
-    println!("Successfully installed Python and required packages");
+    println!("Successfully installed Python");
 
     Ok(())
 }

@@ -120,8 +120,11 @@
         ]
       },
       {
-        "from": "plugins/",
-        "to": "default-plugins/"
+        "from": "build/plugins/",
+        "to": "default-plugins/",
+        "filter": [
+          "*.whl"
+        ]
       },
       {
         "from": "dist/app/",
