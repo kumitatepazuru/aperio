@@ -210,28 +210,44 @@
 
 **定義:** Pythonで実装されたオブジェクト・エフェクトの処理単位。映像系（Video）と音声系（Audio）の2系統がある。
 
-**種別:**
+**構成:** パッケージ → メインプラグイン → ジェネレーター の3階層。
 
-| 種別                | 基底クラス                 | 意味                                               |
-| ------------------- | -------------------------- | -------------------------------------------------- |
-| Video Object Plugin | `VideoObjectGeneratorBase` | アイテムの映像コンテンツを生成するプラグイン       |
-| Video Effect Plugin | `VideoEffectGeneratorBase` | アイテムに映像効果を適用するプラグイン             |
-| Audio Object Plugin | `AudioObjectGeneratorBase` | オーディオサンプルを生成するプラグイン             |
-| Audio Effect Plugin | `AudioEffectGeneratorBase` | オーディオサンプルにエフェクトを適用するプラグイン |
+| 階層             | 実体                                   | 意味                                                                                                   |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| パッケージ       | wheel (例: `aperio-base-plugin`)       | uv で aperio-env にインストールされる配布単位。`[project.entry-points."aperio.plugins"]` でメインプラグインを公開する |
+| メインプラグイン | `MainPluginBase` のサブクラス          | entry point から読み込まれ、`__init__` でジェネレーターを登録する。entry point 名は `name` と一致させる |
+| ジェネレーター   | `GeneratorBase` の種別ごとのサブクラス | 実際に映像・音声を生成する。`aperio_plugin.plugin_manager.add_generator(gen)` で登録する              |
+
+**ジェネレーターの種別 (`GeneratorKind`):**
+
+| 種別                | 基底クラス                 | `kind`                        | 意味                                               |
+| ------------------- | -------------------------- | ----------------------------- | -------------------------------------------------- |
+| Video Object Plugin | `VideoObjectGeneratorBase` | `GeneratorKind.VIDEO_OBJECT`  | アイテムの映像コンテンツを生成するプラグイン       |
+| Video Effect Plugin | `VideoEffectGeneratorBase` | `GeneratorKind.VIDEO_EFFECT`  | アイテムに映像効果を適用するプラグイン             |
+| Audio Object Plugin | `AudioObjectGeneratorBase` | `GeneratorKind.AUDIO_OBJECT`  | オーディオサンプルを生成するプラグイン             |
+| Audio Effect Plugin | `AudioEffectGeneratorBase` | `GeneratorKind.AUDIO_EFFECT`  | オーディオサンプルにエフェクトを適用するプラグイン |
+
+- 全種別のジェネレーターは `GeneratorRegistry`(`plugin_manager.generators`)で名前をキーに一元管理される。名前は種別をまたいで一意である必要がある。
+- 取得は `generators.get(name, GeneratorKind.VIDEO_OBJECT)` のように種別を指定する(戻り値は種別ごとの基底クラスに型付けされる)。
+
+**プラグインから参照するグローバル:**
+
+- `aperio_plugin.plugin_manager` — `PluginManager`。`add_generator` / `add_component` など
+- `aperio_plugin.context` — `AperioContext`。`store_manager` / `config_manager` / `audio_manager` / `image_generator` / `text_renderer`
 
 **参照:** `PluginNameInfo.basePlugin`, `PluginNameInfo.videoObjectPlugins`, `PluginNameInfo.videoEffectPlugins`, `PluginNameInfo.audioObjectPlugins`, `PluginNameInfo.audioEffectPlugins`
 
 **イベントシステム:**
 
 - プラグインのイベントハンドラーは `@event(type=GeneratorEvent.New)` 等のデコレーターで登録する。
-- `EventManager.call_event(plugin_name, type, params)` で統一的に呼び出す。
+- `PluginManager.call_event(plugin_name, type, params)`(実体は `EventDispatcher`)で統一的に呼び出す。
 - `params` 引数は常に `dict`。Effect の `New` イベントでも空の dict を渡す。
 
 ---
 
 ## PluginComponent（プラグインコンポーネント）
 
-**定義:** プラグインが UI に差し込む React コンポーネント。ビルド済みの `index.js` を `PluginManager.add_component(plugin, dir, type)`(`aperio_plugin.manager.add_component`)で登録する。作り方は [plugin_frontend.md](plugin_frontend.md)。
+**定義:** プラグインが UI に差し込む React コンポーネント。ビルド済みの `index.js` を `aperio_plugin.plugin_manager.add_component(plugin, dir, type)` で登録する。作り方は [plugin_frontend.md](plugin_frontend.md)。
 
 | 用語                        | 意味                                                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -365,7 +381,7 @@
 | `managers/audio_manager.rs`  | 音声バッファ・CPAL ストリーム管理       |
 | `managers/wrappers/`         | Python向けラッパー（`PyManagers` など） |
 
-**`PyManagers`:** Python側へ渡すマネージャー群のコンテナ。`AperioManager.__init__` の引数 `managers: PyManagers` として受け取る。`aperio_plugin.manager`（`AperioManager` インスタンス）を通じて各マネージャーにアクセスできる。
+**`PyManagers`:** Python側へ渡すマネージャー群のコンテナ。`aperio_plugin.initialize(managers)` の引数として受け取り、`AperioContext` にまとめられる。プラグインからは `aperio_plugin.context` を通じて各マネージャーにアクセスできる。
 
 ---
 
@@ -403,7 +419,7 @@
 | `window.audio.stop()`                                                          | 再生を停止する                   |
 | `window.audio.getPendingSamples()`                                             | バッファ済みサンプル数を取得する |
 
-**対応する Python メソッド:** `AperioManager.play_audio(audio_structure, sample_rate, channels, start_time, duration)`
+**対応する Python メソッド:** `PluginManager.play_audio(audio_structure, sample_rate, channels, start_time, duration)`
 
 ---
 
@@ -424,7 +440,7 @@
 **用法:**
 
 - `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定
-- `call_event(plugin_name, GeneratorEvent.New, params)` — EventManagerから呼び出す
+- `call_event(plugin_name, GeneratorEvent.New, params)` — PluginManager(EventDispatcher)から呼び出す
 - Rust側: `GeneratorEvent::New` として `call_method1` の引数に渡す
 
 ---
@@ -490,15 +506,15 @@
 
 **用途:**
 
-- `item.object.name` — プラグインレジストリの検索キー（`object_plugins[name]` で引く）
-- `effect.name` — エフェクトプラグインの検索キー（`effect_plugins[name]` で引く）
+- `item.object.name` — ジェネレーターレジストリの検索キー（`generators.get(name, GeneratorKind.VIDEO_OBJECT)` などで引く）
+- `effect.name` — エフェクトの検索キー（`generators.get(name, GeneratorKind.VIDEO_EFFECT)` などで引く）
 - TS側では `getPluginNames()` の戻り値 `basePlugin`・`videoObjectPlugins`・`videoEffectPlugins` のキーとして使われる
 - エフェクトメニューでは `effectId.startsWith(baseId + ".")` でフィルタリングしている
 
 **注意:**
 
 - `GenerateStructure.name` は UUID ではない。インスタンスを一意に識別するには `id` を使うこと。
-- Python プラグインでは `self.name = "base_effect.blur_effect"` のように設定し、`register_sub_plugin()` で登録される。
+- Python プラグインでは `self.name = "base_effect.blur_effect"` のように設定し、`add_generator()` で登録される。`{basePlugin}` はメインプラグインの entry point 名で、一致しないと登録時にエラーになる。
 
 ---
 

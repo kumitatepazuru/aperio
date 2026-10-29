@@ -5,7 +5,7 @@ Pythonプラグインは、ビルド済みのReactコンポーネントをUIの�
 
 ## 仕組み
 
-1. Pythonプラグインが `aperio_plugin.manager.add_component(plugin, dir, type)` で `index.js` のあるディレクトリを登録する。登録情報は store の `pluginComponents` に入る
+1. Pythonプラグインが `aperio_plugin.plugin_manager.add_component(plugin, dir, type)` で `index.js` のあるディレクトリを登録する。登録情報は store の `pluginComponents` に入る
 2. UI は起動時(最初の描画前)に、登録されたコンポーネントを `plugin://{pluginId}/{type}/index.js` から動的 `import()` する
 3. ホストの `<PluginComponent type="..." args={...}>デフォルト表示</PluginComponent>` が、`type` が一致するコンポーネントを登録順に children の外側へ重ねて描画する
    - コンポーネントが `children` を描画すれば「拡張」、描画しなければ「上書き」になる
@@ -13,26 +13,26 @@ Pythonプラグインは、ビルド済みのReactコンポーネントをUIの�
    - 読込に失敗したプラグインや、描画中に例外を出したプラグインはスキップされ、デフォルト表示のままになる
 4. `plugin://` が配信するのは、`add_component` で登録されたディレクトリの中のファイルだけ
 
-起動後に登録された(`add_plugin` で追加された)コンポーネントは、再起動するまで反映されない。
+プラグインの読み込みは起動時だけなので、パッケージを追加・更新したら再起動するまで反映されない。
 
 ## Python側
 
 ```python
-@PluginManager.plugin
 class MyPlugin(MainPluginBase):
     def __init__(self):
         super().__init__()
         self.name = "my_plugin"
         ...
         obj = MyObject()
-        aperio_plugin.manager.register_sub_plugin(self, obj)
+        aperio_plugin.plugin_manager.add_generator(obj)
         # 登録するプラグイン、index.js があるディレクトリ(相対パスは絶対パスに変換される)、差し込み先の type
-        aperio_plugin.manager.add_component(
-            obj, os.path.join(os.path.dirname(__file__), "frontend", "dist"), "item"
+        aperio_plugin.plugin_manager.add_component(
+            obj, os.path.join(os.path.dirname(__file__), "frontend", "my_item"), "item"
         )
 ```
 
-- `add_component` は `PluginManager`(`aperio_plugin.manager`)のメソッドで、メイン・サブどちらのプラグインのインスタンスも渡せる
+- `add_component` は `PluginManager`(`aperio_plugin.plugin_manager`)のメソッドで、メインプラグイン・ジェネレーターどちらのインスタンスも渡せる
+- プラグインは wheel で配布されるので、ビルド済みの `dist/` を wheel に含める必要がある。base では `plugins/base/pyproject.toml` の `force-include` で `frontend/group_item/dist` を `aperio_base/frontend/group_item` に取り込んでいる
 - `index.js` が無いときは警告を出して登録しない
 - `pluginId` は渡したプラグインの `name`。同じ `(pluginId, type)` を再登録すると上書きされる
 
