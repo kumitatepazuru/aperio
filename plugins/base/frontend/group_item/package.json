@@ -1,0 +1,14 @@
+{
+  "name": "@aperio/plugin-base-group-item",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@aperio/plugin-sdk": "workspace:*",
+    "@tailwindcss/vite": "^4.1.16",
+    "tailwindcss": "^4.1.16"
+  }
+}

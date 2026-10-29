@@ -9,6 +9,7 @@ projects:
   plugin: "python/aperio_plugin"
   uv: "tools"
   vcpkg: "native"
+  group-item: "plugins/base/frontend/group_item"
 
 vcs:
   client: "git"

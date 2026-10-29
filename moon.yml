@@ -9,6 +9,7 @@ tasks:
     deps:
       - napi:debug
       - main:build
+      - group-item:build
       - ui:start
     preset: server
     options:
@@ -23,6 +24,7 @@ tasks:
       - ui:build
       - napi:build
       - main:build
+      - group-item:build
     options:
       runDepsInParallel: false
 

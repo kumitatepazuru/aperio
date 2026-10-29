@@ -74,6 +74,7 @@
       "name": "@aperio/app-ui",
       "version": "0.0.0",
       "dependencies": {
+        "@aperio/plugin-sdk": "workspace:*",
         "@aperio/shared": "workspace:*",
         "@aperio/ui": "workspace:*",
         "@dnd-kit/react": "^0.3.2",
@@ -90,6 +91,17 @@
         "zustand": "^5.0.8",
       },
     },
+    "packages/plugin-sdk": {
+      "name": "@aperio/plugin-sdk",
+      "version": "0.0.0",
+      "dependencies": {
+        "@vitejs/plugin-react": "^5.0.4",
+      },
+      "peerDependencies": {
+        "react": "^19.1.1",
+        "vite": "^8.0.0-beta.7",
+      },
+    },
     "packages/shared": {
       "name": "@aperio/shared",
       "version": "0.0.0",
@@ -102,6 +114,15 @@
         "react": "^19.1.1",
         "react-icons": "^5.5.0",
         "zustand": "^5.0.8",
+      },
+    },
+    "plugins/base/frontend/group_item": {
+      "name": "@aperio/plugin-base-group-item",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@aperio/plugin-sdk": "workspace:*",
+        "@tailwindcss/vite": "^4.1.16",
+        "tailwindcss": "^4.1.16",
       },
     },
   },
@@ -117,6 +138,10 @@
     "@aperio/app-preload": ["@aperio/app-preload@workspace:apps/preload"],
 
     "@aperio/app-ui": ["@aperio/app-ui@workspace:apps/ui"],
+
+    "@aperio/plugin-base-group-item": ["@aperio/plugin-base-group-item@workspace:plugins/base/frontend/group_item"],
+
+    "@aperio/plugin-sdk": ["@aperio/plugin-sdk@workspace:packages/plugin-sdk"],
 
     "@aperio/shared": ["@aperio/shared@workspace:packages/shared"],
 
