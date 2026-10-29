@@ -229,6 +229,28 @@
 
 ---
 
+## PluginComponent（プラグインコンポーネント）
+
+**定義:** プラグインが UI に差し込む React コンポーネント。ビルド済みの `index.js` を `PluginManager.add_component(plugin, dir, type)`(`aperio_plugin.manager.add_component`)で登録する。作り方は [plugin_frontend.md](plugin_frontend.md)。
+
+| 用語                        | 意味                                                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `PluginComponent`（ホスト） | `apps/ui/plugin/PluginComponent.tsx`。`<PluginComponent type="item" args={...}>デフォルト表示</PluginComponent>` |
+| `pluginId`                  | `add_component` に渡したプラグインの `name`(例: `base_object.group_object`)                                       |
+| `type`                      | 差し込み先の種類。ホストの `<PluginComponent type>` と一致したものだけが描画される                                |
+| `args`                      | ホストがプラグインに渡すデータ。型は type ごとに `@aperio/plugin-sdk/types` の `PluginComponentArgsMap` で定義    |
+| `plugin://`                 | `plugin://{pluginId}/{type}/index.js` で登録ディレクトリ内のファイルを配信する Electron のカスタムスキーム       |
+
+**参照:** `SyncableState.pluginComponents`(`PluginComponent { pluginId, componentType, dir }`)
+
+**type と args:**
+
+| type   | 差し込み先                         | args                                                                               |
+| ------ | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `item` | タイムライン上の 1 アイテム(`LayerItems`) | `item`, `left`, `width`, `top`, `isSelected`, `isDragging`, `layerHeight` |
+
+---
+
 ## VideoGeneratorBase / AudioGeneratorBase
 
 **定義:** プラグインがフレーム・サンプルを生成するための基底クラス群。映像系と音声系で分かれている。
