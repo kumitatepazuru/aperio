@@ -56,7 +56,7 @@ class RasterEffect(VideoEffectGeneratorBase):
             return None
 
         w, h = params.width, params.height
-        fps = aperio_plugin.store_manager.get_state().frame_state.fps
+        fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
         elapsed_seconds = (params.frame_number - params.layer.start) / fps
         dimension = w if vertical else h
         phase = elapsed_seconds * speed * wavelength_px - dimension / 2.0
@@ -86,7 +86,7 @@ class RasterEffect(VideoEffectGeneratorBase):
 
     def _grow_1d(self, dim: int, range_px: int) -> tuple[int, int]:
         lo, hi = -range_px, dim + range_px
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         lim = min(max_dim, dim + 2 * range_px)
         trim_lo = True
         while hi - lo > lim:

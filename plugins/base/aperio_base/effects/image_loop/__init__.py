@@ -55,7 +55,7 @@ class ImageLoopEffect(VideoEffectGeneratorBase):
         if tiles_x == 1 and tiles_y == 1 and speed_x == 0.0 and speed_y == 0.0:
             return None
 
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         fit_w = max_dim / tiles_x
         fit_h = max_dim / tiles_y
         scale = min(1.0, fit_w / w, fit_h / h)

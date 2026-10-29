@@ -105,7 +105,7 @@ class LightEffect(VideoEffectGeneratorBase):
             B_frac = strength_frac
 
         w, h = params.width, params.height
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
 
         # クランプ#1(陰影パスが使う半径。README §2)。
         r = max(0, round(diffusion_ui))

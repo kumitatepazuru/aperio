@@ -70,7 +70,7 @@ class ExpandEffect(VideoEffectGeneratorBase):
         fill = bool(args.get("fill", False))
 
         # wgpu上の確保済み最大キャンバスへのクランプ。テクスチャエラーによるpanic防止。
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         room_w = max(0, max_dim - params.width)
         left = min(left, room_w)
         right = min(right, room_w - left)

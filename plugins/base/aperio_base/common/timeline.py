@@ -18,7 +18,7 @@ def in_out_ramp(params: VideoGenerateParameters, in_seconds: float, out_seconds:
     あるが、分子・分母の両方に +1 が付くこのランプでは t/u >= 0 である限り g は
     必ず正になるため到達しない(fade README §5)。
     """
-    fps = aperio_plugin.store_manager.get_state().frame_state.fps
+    fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
     in_frames = round(in_seconds * fps)
     out_frames = round(out_seconds * fps)
 

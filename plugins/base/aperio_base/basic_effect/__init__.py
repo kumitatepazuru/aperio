@@ -1,6 +1,5 @@
 import aperio_plugin
 from aperio_plugin.plugin_base import MainPluginBase
-from aperio_plugin.plugin_manager import PluginManager
 
 from .expand import ExpandEffect
 from .flip import FlipEffect
@@ -12,7 +11,6 @@ from .transparency import TransparencyEffect
 from .zoom import ZoomEffect
 
 
-@PluginManager.plugin
 class AperioBaseBasicEffectPlugin(MainPluginBase):
     def __init__(self) -> None:
         super().__init__()
@@ -21,13 +19,12 @@ class AperioBaseBasicEffectPlugin(MainPluginBase):
         self.description = "This plugin provides basic effects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
-        self.num_sub_plugins = 8
 
-        aperio_plugin.manager.register_sub_plugin(self, PositionEffect())
-        aperio_plugin.manager.register_sub_plugin(self, ZoomEffect())
-        aperio_plugin.manager.register_sub_plugin(self, TransparencyEffect())
-        aperio_plugin.manager.register_sub_plugin(self, RotationEffect())
-        aperio_plugin.manager.register_sub_plugin(self, ExpandEffect())
-        aperio_plugin.manager.register_sub_plugin(self, ResizeEffect())
-        aperio_plugin.manager.register_sub_plugin(self, Rotation90Effect())
-        aperio_plugin.manager.register_sub_plugin(self, FlipEffect())
+        aperio_plugin.plugin_manager.add_generator(PositionEffect())
+        aperio_plugin.plugin_manager.add_generator(ZoomEffect())
+        aperio_plugin.plugin_manager.add_generator(TransparencyEffect())
+        aperio_plugin.plugin_manager.add_generator(RotationEffect())
+        aperio_plugin.plugin_manager.add_generator(ExpandEffect())
+        aperio_plugin.plugin_manager.add_generator(ResizeEffect())
+        aperio_plugin.plugin_manager.add_generator(Rotation90Effect())
+        aperio_plugin.plugin_manager.add_generator(FlipEffect())

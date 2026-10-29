@@ -78,7 +78,7 @@ class ResizeEffect(VideoEffectGeneratorBase):
 
         # wgpu上の確保済み最大キャンバスへのクランプ。テクスチャ最大辺長は縦横で
         # 同じなので max_w/max_h は同値だが、実機の比較式の形を残しておく。
-        max_w = max_h = aperio_plugin.image_generator.maximum_texture_size
+        max_w = max_h = aperio_plugin.context.image_generator.maximum_texture_size
 
         if pixel_size:
             # `ドット数でサイズ指定`: X/Y は百分率ではなくそのまま目標ピクセル数。

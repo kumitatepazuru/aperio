@@ -1,10 +1,26 @@
 from dataclasses import dataclass
+from enum import Enum
+from typing import ClassVar
 from aperio.item_structures import AdditionalItem, ItemResult, ItemStructure
 from aperio.gpu_util import PyCompiledFunc, PyCompiledTextureFunc, PyCompiledShader, PyImageGenerateBuilder
 import numpy as np
 import numpy.typing as npt
 
-from . import SubPluginBase
+from . import GeneratorBase
+
+
+class GeneratorKind(Enum):
+    """ジェネレーターの種別。各ジェネレーター基底クラスの ``kind`` に設定されている。"""
+
+    VIDEO_OBJECT = "video_object"
+    VIDEO_EFFECT = "video_effect"
+    AUDIO_OBJECT = "audio_object"
+    AUDIO_EFFECT = "audio_effect"
+
+    @property
+    def display_name(self) -> str:
+        """ログ表示用の名前 (例: ``Video Object``)"""
+        return self.value.replace("_", " ").title()
 
 
 @dataclass
@@ -81,7 +97,7 @@ class AudioGenerateParameters:
     input_samples: "npt.NDArray[np.float32] | None" = None
     """エフェクト適用時に渡される前段のサンプル。オブジェクトプラグインにはNoneが渡される"""
 
-class VideoGeneratorBase(SubPluginBase):
+class VideoGeneratorBase(GeneratorBase):
     """
     フレームを生成するための基底クラス。サブクラスでオーバーライドして使用することを想定している。
     イベントハンドラーは @event デコレーターで登録する。
@@ -105,7 +121,7 @@ class VideoGeneratorBase(SubPluginBase):
         """
         raise NotImplementedError("Subclasses must implement this method")
     
-class AudioGeneratorBase(SubPluginBase):
+class AudioGeneratorBase(GeneratorBase):
     """
     オーディオサンプルを生成するための基底クラス。サブクラスでオーバーライドして使用することを想定している。
     イベントハンドラーは @event デコレーターで登録する。
@@ -132,7 +148,7 @@ class VideoObjectGeneratorBase(VideoGeneratorBase):
     ビデオオブジェクトを生成するための基底クラス。
     """
 
-    pass
+    kind: ClassVar[GeneratorKind] = GeneratorKind.VIDEO_OBJECT
 
 
 class VideoEffectGeneratorBase(VideoGeneratorBase):
@@ -140,7 +156,7 @@ class VideoEffectGeneratorBase(VideoGeneratorBase):
     ビデオエフェクトを適用してフレームを生成するための基底クラス。
     """
 
-    pass
+    kind: ClassVar[GeneratorKind] = GeneratorKind.VIDEO_EFFECT
 
 
 class AudioObjectGeneratorBase(AudioGeneratorBase):
@@ -148,11 +164,11 @@ class AudioObjectGeneratorBase(AudioGeneratorBase):
     オーディオオブジェクトを生成するための基底クラス。
     """
 
-    pass
+    kind: ClassVar[GeneratorKind] = GeneratorKind.AUDIO_OBJECT
 
 class AudioEffectGeneratorBase(AudioGeneratorBase):
     """
     オーディオエフェクトを適用してサンプルを生成するための基底クラス。
     """
 
-    pass
+    kind: ClassVar[GeneratorKind] = GeneratorKind.AUDIO_EFFECT

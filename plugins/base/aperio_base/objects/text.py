@@ -18,7 +18,7 @@ class TextObject(VideoObjectGeneratorBase):
         self.display_name = "テキスト"
         self.description = "テキストを表示できます。テキストの内容、色、フォント、字間を指定できます。"
 
-        text_renderer: PyTextRenderer = aperio_plugin.text_renderer
+        text_renderer: PyTextRenderer = aperio_plugin.context.text_renderer
         self.compiled_func = PyCompiledTextureFunc("text_render", text_renderer.render_text_for_pipeline)
         self.text_renderer = text_renderer
 

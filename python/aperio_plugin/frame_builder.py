@@ -2,19 +2,15 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import TYPE_CHECKING
 
-from aperio import gpu_util, logger
-from aperio.item_structures import AdditionalItem, ItemResult, ItemStructure
+from aperio import gpu_util
+from aperio.item_structures import ItemResult, ItemStructure
 from .plugin_base.generator_base import (
     GeneratorBuilderReturn,
     GeneratorFuncReturn,
     GeneratorTextureReturn,
     GeneratorShaderReturn,
 )
-
-if TYPE_CHECKING:
-    from . import AperioManager
 
 
 # 合成に使う固定カメラの焦点距離 = キャンバス高さ * この値 (垂直画角 ≒ 28度)。
@@ -60,7 +56,7 @@ def apply_generate_result(
     generate_result: "GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn",
 ) -> gpu_util.PyImageGenerateBuilder:
     """GeneratorShaderReturn/FuncReturn/TextureReturn/BuilderReturn のいずれかを builder に適用する。
-    _process_video_item のオブジェクト生成・エフェクトチェーンの両方から使う共通ヘルパー。"""
+    video_renderer の object/effect チェーンから使う共通ヘルパー。"""
     item_result = generate_result.item_result
     if isinstance(generate_result, GeneratorShaderReturn):
         return builder.add_shader(generate_result.compiled, generate_result.params, item_result.width, item_result.height)
@@ -96,23 +92,8 @@ def last_leaf_id(id_tree_list: list) -> str:
     return node
 
 
-def collect_additional_item(
-    item_result: ItemResult, behind_items: list[AdditionalItem], ahead_items: list[AdditionalItem]
-) -> None:
-    additional = item_result.additional_item
-    if additional is not None:
-        (behind_items if additional.behind else ahead_items).append(additional)
-
-
-def append_frame_entry(
-    item_builder: gpu_util.PyImageGenerateBuilder,
-    item: "ItemStructure.Video",
-    result: ItemResult,
-    layer_builders: list[gpu_util.PyImageGenerateBuilder],
-    generator_params: list[bytes],
-    canvas_height: int,
-) -> None:
-    """1レイヤーぶんの `LayerParams` を組み立てて `generator_params` に積む。
+def layer_params(item: "ItemStructure.Video", result: ItemResult, canvas_height: int) -> bytes:
+    """1レイヤーぶんの、compose.slang に渡す `LayerParams` を組み立てる。
 
     レイヤーを「ローカル z=0 平面上にある、基点(ピボット)中心のテクスチャ矩形」とみなし、
     拡大率 -> 3D回転 -> 平行移動(X/Y/Z) -> 透視投影 の順で画面へ送る。平面なので
@@ -169,30 +150,10 @@ def append_frame_entry(
 
     # Slangのcompose.slangも列ごとにfloat4で受けるため、列優先で、各列は16バイトにパディングされる。
     # struct LayerParams: inv_transform (mat3x3), center_x, center_y, alpha, _pad -> 64バイト
-    params_bytes = struct.pack(
+    return struct.pack(
         "<16f",
         inv[0][0], inv[1][0], inv[2][0], 0.0,
         inv[0][1], inv[1][1], inv[2][1], 0.0,
         inv[0][2], inv[1][2], inv[2][2], 0.0,
         eff_center_x, eff_center_y, alpha, 0.0,
     )
-    layer_builders.append(item_builder)
-    generator_params.append(params_bytes)
-
-
-def resolve_additional_entry(
-    manager: "AperioManager",
-    additional: AdditionalItem,
-    layer_id: str,
-    frame_number: int,
-    width: int,
-    height: int,
-    structure_id_map: dict[str, tuple[str, int, int]],
-) -> tuple[gpu_util.PyImageGenerateBuilder, "ItemStructure.Video", ItemResult] | None:
-    if not isinstance(additional.item, ItemStructure.Video):
-        logger.warning(f"additional_item of layer {layer_id} is not a video item. Skipping.")
-        return None
-    processed = manager._process_video_item(additional.item, frame_number, width, height, structure_id_map)
-    if processed is None:
-        return None
-    return processed[0], additional.item, processed[1]

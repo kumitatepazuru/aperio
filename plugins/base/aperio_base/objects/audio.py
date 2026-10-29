@@ -36,7 +36,7 @@ class AudioObject(AudioObjectGeneratorBase):
                 if os.path.exists(path):
                     self.audio_loaders[path] = PyAudioLoader(path=path)
 
-            fps = aperio_plugin.store_manager.get_state().frame_state.fps
+            fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
             loader = self.audio_loaders.get(path)
             max_frame = math.ceil(loader.duration * fps) if loader else None
             structure.append(
@@ -109,7 +109,7 @@ class AudioObject(AudioObjectGeneratorBase):
         link_video = params.args.get("link_video", False)
 
         if link_video:
-            state = aperio_plugin.store_manager.get_state()
+            state = aperio_plugin.context.store_manager.get_state()
             video_item = self._find_linked_video(params.layer, state)
             if video_item is None:
                 return None
@@ -140,7 +140,7 @@ class AudioObject(AudioObjectGeneratorBase):
             if loader is None:
                 return None
 
-            fps = aperio_plugin.store_manager.get_state().frame_state.fps
+            fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
             audio_time = params.start_time - params.layer.start / fps
             if audio_time >= loader.duration:
                 logger.error(f"audio_time >= duration, returning None")

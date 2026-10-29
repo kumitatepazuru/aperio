@@ -106,7 +106,7 @@ class CompositeVideoEffect(VideoEffectGeneratorBase):
             write_video_sync_frame(params.frame_number, video_frame)
 
         w, h = params.width, params.height
-        fps = aperio_plugin.store_manager.get_state().frame_state.fps
+        fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
 
         if loader.frame_count > 0:
             # avloaderのフレーム番号は「project fps基準」で解釈される

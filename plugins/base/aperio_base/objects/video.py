@@ -41,9 +41,9 @@ class VideoObject(VideoObjectGeneratorBase):
         if path not in self._metadata_loaders:
             # TODO: 開けなかったときにUIで通知する
             if os.path.exists(path):
-                self._metadata_loaders[path] = PyVideoLoader(path=path, image_generator=aperio_plugin.image_generator)
+                self._metadata_loaders[path] = PyVideoLoader(path=path, image_generator=aperio_plugin.context.image_generator)
 
-        fps = aperio_plugin.store_manager.get_state().frame_state.fps
+        fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
         return GeneratorInformation(
             display_name=self.display_name,
             duration_frames=300,
@@ -80,6 +80,6 @@ class VideoObject(VideoObjectGeneratorBase):
 
         return GeneratorTextureReturn(
             compiled=compiled_func,
-            params=(video_frame_number, aperio_plugin.store_manager.get_state().frame_state.fps),
+            params=(video_frame_number, aperio_plugin.context.store_manager.get_state().frame_state.fps),
             item_result=ItemResult(video_loader.width, video_loader.height),
         )

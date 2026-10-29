@@ -131,8 +131,8 @@ class DirectionalBlurEffect(VideoEffectGeneratorBase):
         x0, y0 = -range_px, -range_px
         x1, y1 = w + range_px, h + range_px
 
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
-        frame_state = aperio_plugin.store_manager.get_state().frame_state
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
+        frame_state = aperio_plugin.context.store_manager.get_state().frame_state
         lim_w = min(max_dim, frame_state.width + 2 * w)
         lim_h = min(max_dim, frame_state.height + 2 * h)
 

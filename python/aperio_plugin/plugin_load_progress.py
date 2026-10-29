@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 
+from .plugin_base import GeneratorBase
+
 
 class PluginLoadProgressWindow:
     """
@@ -27,8 +29,9 @@ class PluginLoadProgressWindow:
             self.root, maximum=1, length=self.BAR_LENGTH, mode="determinate"
         )
         self._label3 = ttk.Label(self.root, text="")
+        # bar3 はメインプラグインごとのジェネレーター登録の進捗。総数が事前に分からないので不確定表示にする
         self._bar3 = ttk.Progressbar(
-            self.root, maximum=1, length=self.BAR_LENGTH, mode="determinate"
+            self.root, length=self.BAR_LENGTH, mode="indeterminate"
         )
 
         self._label1.grid(row=0, column=0, sticky="w", padx=12, pady=(12, 0))
@@ -64,16 +67,15 @@ class PluginLoadProgressWindow:
         self._label2["text"] = message
         self._refresh()
 
-    def start_bar3(self, maximum: int, message: str) -> None:
-        self._bar3["maximum"] = max(maximum, 1)
+    def show_bar3(self) -> None:
         self._bar3["value"] = 0
-        self._label3["text"] = message
+        self._label3["text"] = ""
         self._label3.grid()
         self._bar3.grid()
         self._refresh()
 
     def step_bar3(self, message: str) -> None:
-        self._bar3["value"] += 1
+        self._bar3.step(10)
         self._label3["text"] = message
         self._refresh()
 
@@ -84,3 +86,46 @@ class PluginLoadProgressWindow:
 
     def close(self) -> None:
         self.root.destroy()
+
+
+class LoadProgressReporter:
+    """
+    プラグイン読み込みの各段階を PluginLoadProgressWindow の表示に変換する。
+    with 文で使い、抜けるとウィンドウを閉じる。
+
+    - bar1: 全体の段階 (entry point の import → メインプラグインのインスタンス化)
+    - bar2: 段階内のメインプラグイン単位の進捗
+    - bar3: インスタンス化中のメインプラグインが登録したジェネレーター
+    """
+
+    def __init__(self) -> None:
+        self._window = PluginLoadProgressWindow()
+        self._generator_count = 0
+
+    def __enter__(self) -> "LoadProgressReporter":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._window.close()
+
+    def begin_import(self, total: int) -> None:
+        self._window.set_bar1(50, "プラグインを読み込み中")
+        self._window.start_bar2(total, "")
+
+    def step_import(self, name: str) -> None:
+        self._window.step_bar2(name)
+
+    def begin_instantiate(self, total: int) -> None:
+        self._window.set_bar1(100, "ジェネレーターを登録中")
+        self._window.start_bar2(total, "")
+
+    def begin_plugin(self, name: str) -> None:
+        self._window.step_bar2(name)
+        self._window.hide_bar3()
+        self._generator_count = 0
+
+    def generator_added(self, generator: GeneratorBase) -> None:
+        if self._generator_count == 0:
+            self._window.show_bar3()
+        self._generator_count += 1
+        self._window.step_bar3(f"({self._generator_count}) {generator.display_name}")

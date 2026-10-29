@@ -20,7 +20,7 @@ class VideoLoaderCache:
             return
         if not os.path.exists(path):
             return
-        loader = PyVideoLoader(path=path, image_generator=aperio_plugin.image_generator)
+        loader = PyVideoLoader(path=path, image_generator=aperio_plugin.context.image_generator)
         func = PyCompiledTextureFunc(self._func_id, loader.get_frame_for_pipeline)
         self._entries[id] = (path, loader, func)
 

@@ -19,7 +19,7 @@ class PatternImageCache:
 
     def ensure_loaded(self, path: str) -> None:
         if path and path not in self._loaders and os.path.exists(path):
-            loader = PyImageLoader(path=path, image_generator=aperio_plugin.image_generator)
+            loader = PyImageLoader(path=path, image_generator=aperio_plugin.context.image_generator)
             self._loaders[path] = loader
             self._funcs[path] = PyCompiledTextureFunc(self._func_id, loader.get_frame_for_pipeline)
 

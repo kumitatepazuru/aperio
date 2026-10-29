@@ -213,7 +213,7 @@ class LuminousEffect(VideoEffectGeneratorBase):
         # 特に拡散速度>0(飽和なしで輝度が4096を平気で超える。README手順5)で
         # 見た目上その差が顕著になり、発光がキャンバス端で見切れていた。
         cascade_reach = sum(radii)
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         # 実機の「確保済み最大キャンバス」制約に相当する安全策(通常は発火しない)。
         max_radius = max(0, min(cascade_reach, (max_dim - width) // 2, (max_dim - height) // 2))
 

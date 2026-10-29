@@ -197,8 +197,8 @@ class GlintEffect(VideoEffectGeneratorBase):
         # 2つの上限で切り詰める。実機はオブジェクトキャンバスの最大幅・最大高と
         # 「フレームサイズ + オブジェクトサイズ*2」の小さいほうを使う。前者にあたるのは
         # aperioでは確保できるテクスチャの最大辺長。
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
-        frame_state = aperio_plugin.store_manager.get_state().frame_state
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
+        frame_state = aperio_plugin.context.store_manager.get_state().frame_state
         lim_w = min(max_dim, frame_state.width + 2 * w)
         lim_h = min(max_dim, frame_state.height + 2 * h)
 

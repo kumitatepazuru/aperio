@@ -1,15 +1,16 @@
 import os.path
 
 import aperio_plugin
-from aperio_plugin.plugin_manager import PluginManager
 from aperio_plugin.plugin_base import MainPluginBase
 from .audio import AudioObject
 from .group import GroupObject
 from .text import TextObject
 from .video import VideoObject
 
+# wheel のビルド時に frontend/group_item/dist が aperio_base/frontend/group_item に同梱される (pyproject.toml)
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 
-@PluginManager.plugin
+
 class AperioBaseObjectPlugin(MainPluginBase):
     def __init__(self):
         super().__init__()
@@ -18,15 +19,11 @@ class AperioBaseObjectPlugin(MainPluginBase):
         self.description = "This is a plugin that provides basic objects for Aperio."
         self.version = "1.0.0"
         self.author = "Aperio"
-        self.num_sub_plugins = 4
 
-        aperio_plugin.manager.register_sub_plugin(self, AudioObject())
+        plugin_manager = aperio_plugin.plugin_manager
+        plugin_manager.add_generator(AudioObject())
         group = GroupObject()
-        aperio_plugin.manager.register_sub_plugin(self, group)
-        aperio_plugin.manager.add_component(
-            group,
-            os.path.join(os.path.dirname(__file__), "..", "frontend", "group_item", "dist"),
-            "item",
-        )
-        aperio_plugin.manager.register_sub_plugin(self, TextObject())
-        aperio_plugin.manager.register_sub_plugin(self, VideoObject())
+        plugin_manager.add_generator(group)
+        plugin_manager.add_component(group, os.path.join(FRONTEND_DIR, "group_item"), "item")
+        plugin_manager.add_generator(TextObject())
+        plugin_manager.add_generator(VideoObject())

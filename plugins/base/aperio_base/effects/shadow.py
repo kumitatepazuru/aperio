@@ -250,7 +250,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | GeneratorBuilderReturn | None:
         args = params.args
         w, h = params.width, params.height
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
 
         # 濃さ=0は実機と同じく即return(README §2、画像にもキャンバスにも一切触れない)。
         shadow_params = _derive_shadow_params(args, w, h, max_dim)
@@ -295,7 +295,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
         背面に挿入する。影のシルエット元データは、オーナーの`object`+このシャドー自身より
         前の`effects`を`link_id`経由の軽量スタブとして切り出し(`build_link_prefix`)、
         その末尾に非表示の`_shadow_layer_effect`を足した構造として組み立てる。
-        フレーム内での使い回し(`PluginManager._process_video_item`のlink_id処理)により、
+        フレーム内での使い回し(`video_renderer._VideoChain.link`のlink_id処理)により、
         オーナーの再デコード・再生成は発生しない。
         """
         owner = params.layer
@@ -356,7 +356,7 @@ class ShadowLayerEffect(VideoEffectGeneratorBase):
     def generate(self, params: VideoGenerateParameters) -> GeneratorBuilderReturn | None:
         args = params.args
         w, h = params.width, params.height
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
 
         shadow_params = _derive_shadow_params(args, w, h, max_dim)
         if shadow_params is None:

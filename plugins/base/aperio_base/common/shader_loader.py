@@ -48,7 +48,7 @@ def shared_slang_shader(
     return PyCompiledShader.from_slang(
         name,
         load_text(os.path.join(directory, filename)),
-        aperio_plugin.image_generator,
+        aperio_plugin.context.image_generator,
         search_paths=resolved_search_dirs,
         defines=defines,
         min_output_format=min_output_format,

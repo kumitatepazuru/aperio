@@ -164,7 +164,7 @@ class GlowEffect(VideoEffectGeneratorBase):
         # 拡散はrx・ryの両方に生値のまま使われる(README §2)ので実質1本の半径。
         # キャンバスが確保できるテクスチャの最大辺長を超えないよう安全にクランプする
         # (この再クランプがdiffusion_uiに対する唯一かつ十分な構造的ガード)。
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         diffusion = max(0, min(diffusion_ui, (max_dim - w) // 2, (max_dim - h) // 2))
         if diffusion == 0:
             return None

@@ -65,7 +65,7 @@ class RippleEffect(VideoEffectGeneratorBase):
         ramp_count = int(args.get("ramp_count", 0))
 
         w, h = params.width, params.height
-        fps = aperio_plugin.store_manager.get_state().frame_state.fps
+        fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
         elapsed_seconds = (params.frame_number - params.layer.start) / fps
         wavefront = speed * elapsed_seconds
 

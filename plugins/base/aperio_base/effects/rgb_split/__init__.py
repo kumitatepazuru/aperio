@@ -81,7 +81,7 @@ class RgbSplitEffect(VideoEffectGeneratorBase):
         if dx == 0 and dy == 0:
             return None
 
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         x0, x1 = self._grow_axis(w, abs(dx), max_dim)
         y0, y1 = self._grow_axis(h, abs(dy), max_dim)
         ow, oh = x1 - x0, y1 - y0

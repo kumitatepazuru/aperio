@@ -50,7 +50,7 @@ class PolarCoordinateTransformEffect(VideoEffectGeneratorBase):
 
         w, h = params.width, params.height
         r_base = (w + h) / math.pi * (scale_percent / 100.0)
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         r = min(r_base + center_hole, max_dim / 2.0)
         if center_hole >= r or r <= 0:
             return None

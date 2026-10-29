@@ -95,7 +95,7 @@ class BorderEffect(VideoEffectGeneratorBase):
         pattern_path = pattern_paths[0] if pattern_paths else ""
 
         w, h = params.width, params.height
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
 
         # クランプ(README §2「サイズのクランプ」)。オブジェクト自身の大きさに対する
         # クランプは無く、確保済みキャンバス(max_dim)に対してだけ効く。

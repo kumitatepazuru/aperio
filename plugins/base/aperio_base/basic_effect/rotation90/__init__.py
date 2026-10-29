@@ -49,7 +49,7 @@ class Rotation90Effect(VideoEffectGeneratorBase):
         if swap:
             # 入れ替えた新しい軸を wgpu上の確保済み最大キャンバスへクランプする
             # 実機の処理に相当する安全策(入力自体が上限内なので通常は発火しない)。
-            max_dim = aperio_plugin.image_generator.maximum_texture_size
+            max_dim = aperio_plugin.context.image_generator.maximum_texture_size
             new_width = min(new_width, max_dim)
             new_height = min(new_height, max_dim)
 

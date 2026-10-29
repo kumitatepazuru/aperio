@@ -65,7 +65,7 @@ class MirrorEffect(VideoEffectGeneratorBase):
 
         w, h = params.width, params.height
         dim = h if axis == 0 else w
-        max_dim = aperio_plugin.image_generator.maximum_texture_size
+        max_dim = aperio_plugin.context.image_generator.maximum_texture_size
         if 2 * dim > max_dim:
             return None
 
@@ -87,7 +87,7 @@ class MirrorEffect(VideoEffectGeneratorBase):
 
         ow, oh = (w, total_axis_dim) if axis == 0 else (total_axis_dim, h)
         base_opacity = 1.0 - transparency / 100.0
-        frame_state = aperio_plugin.store_manager.get_state().frame_state
+        frame_state = aperio_plugin.context.store_manager.get_state().frame_state
         frame_dim = frame_state.height if axis == 0 else frame_state.width
         falloff_coef = (falloff / 100.0) / max(1, frame_dim)
 

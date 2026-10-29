@@ -3,6 +3,9 @@ from typing import Any, Callable, Literal, cast, overload
 from aperio.item_structures import GeneratorEvent, GeneratorInformation
 from aperio_plugin.plugin_base.generator_base import *
 
+from .generator_registry import GeneratorNotFoundError, GeneratorRegistry
+from .plugin_base import GeneratorBase
+
 type EventCallable[T, U] = Callable[[Callable[[Any, T], U]], Callable[[Any, T], U]]
 
 
@@ -29,28 +32,15 @@ def event(*, type: GeneratorEvent) -> EventCallable:
     return decorator
 
 
-class EventManager:
+class EventDispatcher:
     """
-    プラグインイベントを統一的に呼び出すミックスイン。
-    PluginManager と多重継承して使用することを想定している。
-    self.video_object_plugins / self.audio_object_plugins / self.video_effect_plugins / self.audio_effect_plugins は PluginManager から MRO 経由で取得する。
+    ジェネレーターの @event デコレーター付きメソッドを、イベント種別から探して呼び出す。
     """
 
-    @overload
-    def call_event(
-        self,
-        plugin_name: str,
-        type: Literal[GeneratorEvent.New],
-        params: dict,
-    ) -> GeneratorInformation: ...
-    @overload
-    def call_event(
-        self,
-        plugin_name: str,
-        type: Literal[GeneratorEvent.RequestStructure],
-        params: dict,
-    ) -> GeneratorInformation: ...
-    def call_event(self, plugin_name: str, type: GeneratorEvent, params: dict):
+    def __init__(self, registry: GeneratorRegistry) -> None:
+        self._registry = registry
+
+    def call_event(self, plugin_name: str, type: GeneratorEvent, params: dict) -> GeneratorInformation:
         """
         指定プラグインの、指定イベント種別に対応するデコレーター付きメソッドを呼び出す。
 
@@ -62,17 +52,21 @@ class EventManager:
         Returns:
             イベント種別に応じた戻り値
         """
-        plugin = self.video_object_plugins.get(plugin_name) or self.audio_object_plugins.get(plugin_name) or self.video_effect_plugins.get(plugin_name) or self.audio_effect_plugins.get(plugin_name) # type: ignore
-        if plugin is None:
-            raise ValueError(
-                f"Plugin '{plugin_name}' is not registered as object or effect plugin"
+        generator = self._registry.find(plugin_name)
+        if generator is None:
+            raise GeneratorNotFoundError(plugin_name)
+
+        handler = self._find_handler(generator, type)
+        if handler is None:
+            raise NotImplementedError(
+                f"Plugin '{plugin_name}' has no method decorated with @event(type={type!r})"
             )
+        return handler(params)
 
-        for attr_name in dir(plugin):
-            method = getattr(plugin, attr_name, None)
+    @staticmethod
+    def _find_handler(generator: GeneratorBase, type: GeneratorEvent) -> Callable[[dict], Any] | None:
+        for attr_name in dir(generator):
+            method = getattr(generator, attr_name, None)
             if callable(method) and type in getattr(method, "_event_type", []):
-                return method(params)
-
-        raise NotImplementedError(
-            f"Plugin '{plugin_name}' has no method decorated with @event(type={type!r})"
-        )
+                return method
+        return None

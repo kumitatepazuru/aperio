@@ -104,7 +104,7 @@ class LensBlurEffect(VideoEffectGeneratorBase):
         if fixed_size:
             gw, gh = width, height
         else:
-            max_dim = aperio_plugin.image_generator.maximum_texture_size
+            max_dim = aperio_plugin.context.image_generator.maximum_texture_size
             grow_x = clamp(range_px, 0, max(0, (max_dim - width) // 2))
             grow_y = clamp(range_px, 0, max(0, (max_dim - height) // 2))
             gw, gh = width + 2 * grow_x, height + 2 * grow_y
