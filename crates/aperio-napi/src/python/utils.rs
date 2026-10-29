@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
 use std::{env, fs};
-use toml_edit::DocumentMut;
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 pub struct PythonStatus {
     pub installed: bool,
@@ -152,26 +152,33 @@ pub fn check_python_installed(dir: &Dirs) -> Result<PythonStatus> {
     })
 }
 
-/// `uv add`でパッケージをaperio-envに追加する。
-/// `copy`がtrueの場合、ローカルパスで指定されたパッケージ(wheelなどのファイル)は`appdata_dir/plugin_wheels/`に
-/// コピーし、コピー先のパスからaddする(元ファイルが移動・削除されても環境が壊れないように)。
-/// falseの場合は与えられた文字列(パッケージ名またはパス)をそのままaddする。
-pub fn install_packages(dir: &Dirs, packages: Vec<&str>, copy: bool) -> Result<()> {
+/// plugin_wheels_dirのindex名
+pub const PLUGIN_WHEELS_INDEX: &str = "aperio-plugin-wheels";
+/// default_plugins_dirのindex名
+pub const DEFAULT_PLUGINS_INDEX: &str = "aperio-default-plugins";
+
+pub fn install_packages(dir: &Dirs, packages: Vec<&str>, index: Option<&str>) -> Result<()> {
     // appdataのdir pathを取得
     let appdata_path = get_local_data_dir(dir)?;
     let appdata_dir = appdata_path
         .to_str()
         .context("Failed to convert appdata path to str")?;
 
-    let packages = if copy {
-        copy_local_packages(&appdata_path.join("plugin_wheels"), packages)?
-    } else {
-        packages.into_iter().map(String::from).collect()
-    };
+    if let Some(index) = index {
+        edit_env_pyproject(dir, |pj_data| {
+            let sources = child_table(uv_table(pj_data)?, "sources")?;
+            for package in &packages {
+                let mut source = toml_edit::InlineTable::new();
+                source.insert("index", index.into());
+                sources[*package] = toml_edit::value(source);
+            }
+            Ok(())
+        })?;
+    }
 
     let python_dir = appdata_path.join("python");
     let mut args = vec!["add"];
-    args.extend(packages.iter().map(String::as_str));
+    args.extend(packages);
     args.extend([
         "--no-python-downloads",
         "--python",
@@ -186,9 +193,80 @@ pub fn install_packages(dir: &Dirs, packages: Vec<&str>, copy: bool) -> Result<(
     Ok(())
 }
 
-/// `packages`のうちローカルに存在するファイルを`dest_dir`にコピーし、コピー先のパスに置き換えたリストを返す。
+/// ユーザーが追加したプラグインのwheelを置くディレクトリを取得
+pub fn plugin_wheels_dir(dir: &Dirs) -> Result<PathBuf> {
+    Ok(get_local_data_dir(dir)?.join("plugin_wheels"))
+}
+
+pub fn set_plugin_indexes(dir: &Dirs, indexes: &[(&str, &Path)]) -> Result<()> {
+    edit_env_pyproject(dir, |pj_data| {
+        let index_tables = uv_table(pj_data)?
+            .entry("index")
+            .or_insert(Item::ArrayOfTables(ArrayOfTables::new()))
+            .as_array_of_tables_mut()
+            .context("tool.uv.index is not an array of tables")?;
+        index_tables.retain(|table| {
+            let name = table.get("name").and_then(|name| name.as_str());
+            !indexes
+                .iter()
+                .any(|(index_name, _)| name == Some(index_name))
+        });
+
+        for (name, path) in indexes {
+            let mut table = Table::new();
+            table["name"] = toml_edit::value(*name);
+            table["url"] = toml_edit::value(
+                path.to_str()
+                    .context("Failed to convert index path to str")?,
+            );
+            table["format"] = toml_edit::value("flat");
+            table["explicit"] = toml_edit::value(true);
+            index_tables.push(table);
+        }
+        Ok(())
+    })
+}
+
+/// aperio-envのpyproject.tomlを読み込んでeditで編集し書き戻す
+fn edit_env_pyproject(dir: &Dirs, edit: impl FnOnce(&mut DocumentMut) -> Result<()>) -> Result<()> {
+    let appdata_toml = get_local_data_dir(dir)?.join("pyproject.toml");
+    let mut pj_data = fs::read_to_string(&appdata_toml)?.parse::<DocumentMut>()?;
+
+    edit(&mut pj_data)?;
+    fs::write(&appdata_toml, pj_data.to_string())?;
+    Ok(())
+}
+
+/// [tool.uv]のテーブルを取得する。無ければ作る。
+fn uv_table(pj_data: &mut DocumentMut) -> Result<&mut Table> {
+    child_table(child_table(pj_data.as_table_mut(), "tool")?, "uv")
+}
+
+/// parentのkeyのテーブルを取得する。無ければ作る。
+fn child_table<'a>(parent: &'a mut Table, key: &str) -> Result<&'a mut Table> {
+    parent
+        .entry(key)
+        .or_insert_with(|| {
+            // 子テーブルしか持たないときに空のヘッダー([tool]など)を出力しない
+            let mut table = Table::new();
+            table.set_implicit(true);
+            Item::Table(table)
+        })
+        .as_table_mut()
+        .with_context(|| format!("`{}` in pyproject.toml is not a table", key))
+}
+
+/// wheelのファイル名({name}-{version}-...whl)からパッケージ名を取り出す。
+pub fn wheel_package_name(path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_str()?;
+    // TODO: PEP508準拠 https://packaging.python.org/en/latest/specifications/name-normalization/
+    Some(file_name.split('-').next()?.replace('_', "-"))
+}
+
+/// packagesのうちローカルに存在するファイルをdest_dirにコピーし、コピー先のパスに置き換えたリストを返す。
 /// ローカルパスでないもの(パッケージ名など)はそのまま返す。
-fn copy_local_packages(dest_dir: &Path, packages: Vec<&str>) -> Result<Vec<String>> {
+#[allow(dead_code)] // ユーザーがwheelを追加する機能(未実装)から使う
+pub fn copy_local_packages(dest_dir: &Path, packages: Vec<&str>) -> Result<Vec<String>> {
     packages
         .into_iter()
         .map(|package| {
@@ -299,12 +377,14 @@ pub fn install_python(dir: &Dirs, python_version: &str, is_vague: bool) -> Resul
 
     fs::rename(cpython_dir, appdata_path.join("python")).ok();
 
-    println!("Successfully installed Python");
+    // uv addコマンドを実行してnumpyをインストール
+    install_packages(dir, vec!["numpy"], None)?;
+    println!("Successfully installed Python and required packages");
 
     Ok(())
 }
 
-pub fn sync_packages(dir: &Dirs) -> Result<String> {
+pub fn sync_packages(dir: &Dirs, reinstall: bool) -> Result<String> {
     let appdata_dir = get_local_data_dir(dir)?;
     let python_dir = appdata_dir.join("python");
     let lock_file = appdata_dir.join("pylock.toml");
@@ -321,6 +401,7 @@ pub fn sync_packages(dir: &Dirs) -> Result<String> {
     // pylock.tomlを生成
     let mut args = vec![
         "export",
+        "--frozen",
         "--python",
         python_dir,
         "--format",
@@ -343,6 +424,9 @@ pub fn sync_packages(dir: &Dirs) -> Result<String> {
         python_dir,
         "--break-system-packages",
     ];
+    if reinstall {
+        args.push("--reinstall");
+    }
     args.extend(get_base_args(appdata_dir));
     args.extend([lock_file]);
 

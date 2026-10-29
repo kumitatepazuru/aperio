@@ -61,7 +61,7 @@ pub struct AperioManager {
 #[napi]
 impl AperioManager {
     #[napi(constructor)]
-    pub fn new(env: Env, dirs: Dirs) -> napi::Result<Self> {
+    pub fn new(env: Env, dirs: Dirs, is_dev: bool) -> napi::Result<Self> {
         match env_logger::try_init() {
             Ok(()) => {}
             Err(e) => {
@@ -94,7 +94,7 @@ impl AperioManager {
         let store_ref = NapiStoreManager::new(Arc::clone(&store_arc)).into_reference(env)?;
 
         // Python 環境初期化
-        python::initialize::initialize_python(&dirs, &config).map_err(|e| {
+        python::initialize::initialize_python(&dirs, &config, is_dev).map_err(|e| {
             napi::Error::from_reason(format!("Failed to initialize Python environment: {:?}", e))
         })?;
 

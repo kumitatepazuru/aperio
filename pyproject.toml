@@ -18,9 +18,10 @@ package = false
 
 # aperio.* / aperio_plugin.* のstubをインストールする
 [tool.uv.workspace]
-members = ["python/stubs"]
+members = ["python/stubs", "plugins/*"]
 
 [tool.uv.sources]
+aperio-base-plugin = { workspace = true }
 aperio-plugin-stubs = { workspace = true }
 
 # mypy は editable インストールの .pth を辿らないので、スタブの場所を明示する。

@@ -33,7 +33,7 @@ export class NativeModule {
   private _sharedBuf: ArrayBuffer | null = null;
   private _sharedBufSize = 0;
 
-  constructor(dirs: Dirs) {
+  constructor(dirs: Dirs, isDev: boolean) {
     const { port1, port2 } = new MessageChannelMain();
     this.p1 = port1;
     this.p2 = port2;
@@ -46,7 +46,7 @@ export class NativeModule {
     console.log("Plugin Manager Path:", dirs.pluginManagerDir);
     console.log("Default Plugins Path:", dirs.defaultPluginsDir);
     console.log("Dist Path:", dirs.distDir);
-    this.aperioManager = new AperioManager(dirs);
+    this.aperioManager = new AperioManager(dirs, isDev);
     this.configManager = this.aperioManager.configManager;
     this.storeManager = this.aperioManager.storeManager;
   }

@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::PyDict;
 use pyo3::{Py, PyAny, PyErr, Python};
+use std::collections::BTreeSet;
+use std::path::Path;
 
 #[cfg(target_os = "linux")]
 fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
@@ -25,7 +27,8 @@ fn ensure_libpython_global(name: &str) -> anyhow::Result<()> {
     }
 }
 
-pub fn initialize_python(dirs: &Dirs, config: &AperioConfig) -> Result<()> {
+// TODO: 関連funcをstructにまとめてdirsの管理とかをもうちょい楽にする
+pub fn initialize_python(dirs: &Dirs, config: &AperioConfig, is_dev: bool) -> Result<()> {
     let default_version = &config.python.default_version;
     let local_data_dir = get_local_data_dir(dirs)?;
     let python_path = local_data_dir.join("python"); // pythonがある
@@ -55,11 +58,14 @@ pub fn initialize_python(dirs: &Dirs, config: &AperioConfig) -> Result<()> {
 
     println!("Installed python version: {:?}", result.version);
 
+    // ローカルのプラグインwheelを名前で解決できるよう、置き場所をindexとして登録する。
+    // default_plugins_dirはインストール先によって変わるので毎回書き直す
+    register_plugin_indexes(dirs)?;
     // 同梱のプラグイン(wheel)をaperio-envに追加する。既に同じものが入っていればuv側で差分なしになる
     install_default_plugins(dirs)?;
 
     println!("syncing packages...");
-    let sync_result = python::utils::sync_packages(dirs);
+    let sync_result = python::utils::sync_packages(dirs, is_dev);
     println!("Package sync result: {:?}", sync_result);
 
     // Linuxの場合、libpythonをRTLD_GLOBALで読み込む
@@ -82,29 +88,47 @@ pub fn initialize_python(dirs: &Dirs, config: &AperioConfig) -> Result<()> {
     Ok(())
 }
 
-/// `default_plugins_dir`にある同梱プラグインのwheelをすべてaperio-envに追加する。
+/// plugin_wheels(ユーザーが追加したwheel)と`default_plugins_dir`(同梱のwheel)をflat indexとして登録する。
+fn register_plugin_indexes(dirs: &Dirs) -> Result<()> {
+    let plugin_wheels_dir = python::utils::plugin_wheels_dir(dirs)?;
+    // 存在しないディレクトリがindexにあるとuvが失敗するので作っておく
+    std::fs::create_dir_all(&plugin_wheels_dir)?;
+    python::utils::set_plugin_indexes(
+        dirs,
+        &[
+            (python::utils::PLUGIN_WHEELS_INDEX, &plugin_wheels_dir),
+            (python::utils::DEFAULT_PLUGINS_INDEX, Path::new(&dirs.default_plugins_dir)),
+        ],
+    )
+}
+
+/// default_plugins_dirにある同梱プラグインのwheelをすべてaperio-envに追加する。
 fn install_default_plugins(dirs: &Dirs) -> Result<()> {
-    let mut wheels = Vec::new();
+    // 同じパッケージの別バージョンのwheelが並んでいても1回だけaddする
+    let mut packages = BTreeSet::new();
     for entry in std::fs::read_dir(&dirs.default_plugins_dir)
         .with_context(|| format!("Failed to read default plugins dir: {}", dirs.default_plugins_dir))?
     {
         let path = entry?.path();
         if path.extension().is_some_and(|ext| ext == "whl") {
-            wheels.push(
-                path.to_str()
-                    .context("Failed to convert wheel path to str")?
-                    .to_string(),
+            packages.insert(
+                python::utils::wheel_package_name(&path)
+                    .with_context(|| format!("Invalid wheel file name: {:?}", path))?,
             );
         }
     }
 
-    if wheels.is_empty() {
+    if packages.is_empty() {
         println!("No default plugin wheels found in {}", dirs.default_plugins_dir);
         return Ok(());
     }
 
-    println!("Installing default plugins: {:?}", wheels);
-    python::utils::install_packages(dirs, wheels.iter().map(String::as_str).collect(), false)
+    println!("Installing default plugins: {:?}", packages);
+    python::utils::install_packages(
+        dirs,
+        packages.iter().map(String::as_str).collect(),
+        Some(python::utils::DEFAULT_PLUGINS_INDEX),
+    )
 }
 
 pub fn initialize_pl_manager(dirs: &Dirs, py_managers: PyManagers) -> Result<Py<PyAny>> {

@@ -69,7 +69,7 @@ const nativeModule = new NativeModule({
   pluginManagerDir: getPluginManager(),
   defaultPluginsDir: getDefaultPlugins(),
   distDir: getDistDir(),
-});
+}, isDev);
 
 const showDialog = async (id: string) => {
   if (isDev) {
