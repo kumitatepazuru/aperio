@@ -1,8 +1,12 @@
 {
   "files": [],
   "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.main.json" }
+    { "path": "./apps/main" },
+    { "path": "./apps/preload" },
+    { "path": "./apps/ui" },
+    { "path": "./apps/osr" },
+    { "path": "./apps/dialog" },
+    { "path": "./packages/shared" },
+    { "path": "./packages/ui" }
   ]
 }

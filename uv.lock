@@ -1,11 +1,6 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.14.*"
-resolution-markers = [
-    "sys_platform == 'darwin'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 
 [manifest]
 members = [
@@ -26,7 +21,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aperio-plugin-stubs", editable = "src-python" },
+    { name = "aperio-plugin-stubs", editable = "python/stubs" },
     { name = "mypy", specifier = ">=1.18.2" },
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "requests", specifier = ">=2.32.5" },
@@ -35,7 +30,7 @@ requires-dist = [
 [[package]]
 name = "aperio-plugin-stubs"
 version = "0.1.0"
-source = { editable = "src-python" }
+source = { editable = "python/stubs" }
 dependencies = [
     { name = "numpy" },
 ]

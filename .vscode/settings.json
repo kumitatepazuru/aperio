@@ -1,3 +1,4 @@
 {
-  "slang.predefinedMacros": ["APERIO_IMAGE_FORMAT=\"rgba32f\""]
+  "slang.predefinedMacros": ["APERIO_IMAGE_FORMAT=\"rgba32f\""],
+  "python.analysis.extraPaths": ["build/stub"]
 }

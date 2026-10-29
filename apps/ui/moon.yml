@@ -1,0 +1,29 @@
+# vite で ui / osr / dialog の3アプリをまとめてビルドする(設定は apps/vite.config.ts)。
+# 実コマンドはルート package.json の scripts (ui:start / ui:build) に残している。
+# 出力先 dist/app/ は napi / rolldown と共有するため、vite 側は自分の出力だけを消す(apps/vite.config.ts)。
+tasks:
+  start:
+    command: bun
+    args: [run, ui:start]
+    preset: server
+
+  build:
+    command: bun
+    args: [run, ui:build]
+    inputs:
+      - /apps/vite.config.ts
+      - /apps/tsconfig.*.json
+      - /apps/public/**/*
+      - /apps/ui/**/*
+      - /apps/osr/**/*
+      - /apps/dialog/**/*
+      - /packages/**/*
+      - /bun.lock
+      - /package.json
+      - /tsconfig.json
+    outputs:
+      - /dist/app/ui
+      - /dist/app/osr
+      - /dist/app/dialog
+      - /dist/app/assets
+      - /dist/app/vite.svg

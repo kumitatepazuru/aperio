@@ -1,0 +1,42 @@
+# ルートプロジェクト: アプリ全体の dev / build / dist をまとめる。
+# 実体は各プロジェクトのタスク(ui / napi / main)で、ここでは実行順だけを決める。
+tasks:
+  # 旧 `npm-run-all napi:debug main:build --parallel ui:start electron:dev`。
+  # napi -> main を順に済ませてから、vite の dev server と Electron を起動する。
+  dev:
+    command: bun
+    args: [run, electron:dev]
+    deps:
+      - napi:debug
+      - main:build
+      - ui:start
+    preset: server
+    options:
+      runDepsInParallel: false
+
+  # 旧 `uv run tools/build.py all --release`。
+  # vite の出力は dist/app/ に napi / rolldown と同居し、main は napi が生成する
+  # dist/app/native/index.js を取り込むため、ui -> napi -> main の順に実行する。
+  build:
+    command: noop
+    deps:
+      - ui:build
+      - napi:build
+      - main:build
+    options:
+      runDepsInParallel: false
+
+  # 旧 `run-s build && electron-builder`。
+  dist:
+    command: bun
+    args: [x, electron-builder]
+    deps:
+      - build
+    inputs:
+      - /dist/app/**/*
+      - /dist/resources/**/*
+      - /python/aperio_plugin/**/*
+      - /plugins/**/*
+      - /package.json
+    outputs:
+      - /build/release

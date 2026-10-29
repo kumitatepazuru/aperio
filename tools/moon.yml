@@ -1,0 +1,11 @@
+# 同梱用の uv バイナリを GitHub Releases から取得し dist/resources/<os>-<arch>/bin/ に配置する。
+# 全プラットフォーム分: `bun moon run uv:update -- -a`
+tasks:
+  update:
+    command: uv
+    args: [run, tools/update_uv.py]
+    outputs:
+      - /dist/resources
+    options:
+      cache: false
+      runInCI: false

@@ -1,0 +1,575 @@
+use anyhow::Result;
+use napi_derive::napi;
+use numpy::{PyReadonlyArray1, ToPyArray};
+use pyo3::{exceptions::PyValueError, prelude::*, types::*};
+use serde::{Deserialize, Serialize};
+use tokio::runtime::Runtime;
+
+// aperio_gpu crate の純粋 Rust 型をインポート（ローカルモジュール名と衝突しないよう明示的に)
+use aperio_gpu::compiled_func::{
+    self, CpuFunction, CpuInputImage, CpuOutput, GpuInputTexture, GpuTextureOutput, TextureFunction,
+};
+use aperio_gpu::compiled_hlsl::compile_hlsl_compute;
+use aperio_gpu::compiled_shader::CompiledShader;
+use aperio_gpu::image_generate_builder::{IdTree, ImageGenerateBuilder};
+use aperio_gpu::image_generator;
+use aperio_gpu::image_generator::layout::InputArity;
+use aperio_gpu::rhi::{self, AddressMode, FilterMode};
+use aperio_gpu::{image_generate_builder, SharedTextureFormat};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+#[cfg(target_os = "linux")]
+use aperio_gpu::texture_to_native::linux::SharedTextureHandle;
+#[cfg(target_os = "windows")]
+use aperio_gpu::texture_to_native::windows::SharedTextureHandle;
+
+// texture formatをenumで定義
+#[napi]
+#[pyclass(from_py_object, eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum WrappedSharedTextureFormat {
+    Rgba16Float,
+    Bgra8Unorm,
+}
+
+/// ImageGenerator の内部ワーキングテクスチャのフォーマットをPython/JSに公開するためのenum。
+/// `aperio_gpu::ImagePixelFormat`のラッパー。
+#[napi]
+#[pyclass(from_py_object, eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+pub enum WrappedImagePixelFormat {
+    Rgba8Unorm,
+    Rgba16Float,
+    Rgba32Float,
+}
+
+impl WrappedImagePixelFormat {
+    fn to_native(self) -> aperio_gpu::ImagePixelFormat {
+        match self {
+            WrappedImagePixelFormat::Rgba8Unorm => aperio_gpu::ImagePixelFormat::Rgba8Unorm,
+            WrappedImagePixelFormat::Rgba16Float => aperio_gpu::ImagePixelFormat::Rgba16Float,
+            WrappedImagePixelFormat::Rgba32Float => aperio_gpu::ImagePixelFormat::Rgba32Float,
+        }
+    }
+}
+
+// Pythonで動かすためのライブラリのラッパーを作る
+#[pyclass]
+pub struct PySamplerOptions {
+    pub inner: rhi::SamplerOptions,
+}
+
+/// コンパイル済みシェーダー(SPIR-V)のPythonラッパー。
+/// `from_slang`(Slang)または`from_hlsl`(HLSL、DXC経由)で生成し、
+/// どちらから作ったものでも`add_shader`で同じように実行できる。
+#[pyclass]
+pub struct PyCompiledShader {
+    pub inner: Arc<CompiledShader>,
+}
+
+#[pyclass]
+pub struct PyCompiledFunc {
+    _id: String,
+    py_callback: Py<PyAny>,
+}
+
+/// `rhi::Texture` のPythonラッパー。
+/// Pythonから直接生成することはできず、TextureFunc の引数・戻り値として使用する。
+#[pyclass]
+pub struct PyTexture {
+    pub inner: rhi::Texture,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[pyclass]
+pub struct PyCompiledTextureFunc {
+    _id: String,
+    py_callback: Py<PyAny>,
+}
+
+#[pyclass]
+pub struct PySharedTextureHandle {
+    pub inner: SharedTextureHandle,
+}
+
+#[pyclass(from_py_object)]
+#[derive(Clone)]
+pub struct PyImageGenerateBuilder {
+    pub inner: image_generate_builder::ImageGenerateBuilder,
+}
+
+#[pyclass]
+pub struct PyImageGenerator {
+    pub inner: image_generator::ImageGenerator,
+    rt: Runtime,
+}
+
+fn parse_input_arity(input_texture_layout: &str) -> PyResult<InputArity> {
+    match input_texture_layout {
+        "fixed" => Ok(InputArity::Fixed),
+        "variable" => Ok(InputArity::Variable),
+        _ => Err(PyValueError::new_err(
+            "Invalid input_texture_layout. Must be one of: fixed, variable",
+        )),
+    }
+}
+
+fn make_cpu_func(
+    py_callback: Py<PyAny>,
+    py_params: Option<Py<PyAny>>,
+) -> compiled_func::CompiledFunc {
+    let func: Box<CpuFunction> = Box::new(move |data: &[CpuInputImage], _: Option<&[u8]>| {
+        Python::attach(|py| {
+            let py_data = data
+                .iter()
+                .map(|n| {
+                    let py_data = PyDict::new(py);
+                    py_data.set_item("data", n.data.to_pyarray(py))?;
+                    py_data.set_item("width", n.width)?;
+                    py_data.set_item("height", n.height)?;
+                    Ok(py_data)
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            let py_data = PyList::new(py, py_data)?;
+
+            let py_p = py_params.as_ref().map(|p| p.bind(py));
+
+            // ndarray (f32) を直接返す
+            let output = py_callback.call1(py, (py_data, py_p))?;
+            let out_data: PyReadonlyArray1<f32> = output
+                .bind(py)
+                .extract()
+                .map_err(|e: pyo3::CastError<'_, '_>| anyhow::anyhow!(e.to_string()))?;
+
+            Ok(CpuOutput {
+                data: out_data.as_slice()?.to_vec(),
+            })
+        })
+    });
+    compiled_func::CompiledFunc::new(func)
+}
+
+fn make_texture_func(
+    py_callback: Py<PyAny>,
+    py_params: Option<Py<PyAny>>,
+) -> compiled_func::CompiledTextureFunc {
+    let func: Box<TextureFunction> =
+        Box::new(move |inputs: Vec<GpuInputTexture>, _: Option<&[u8]>| {
+            Python::attach(|py| {
+                // Vec<GpuInputTexture> を PyTexture のリストに変換
+                let py_inputs = inputs
+                    .into_iter()
+                    .map(|input| {
+                        Py::new(
+                            py,
+                            PyTexture {
+                                inner: input.texture,
+                                width: input.width,
+                                height: input.height,
+                            },
+                        )
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))
+                    })
+                    .collect::<anyhow::Result<Vec<Py<PyTexture>>>>()?;
+
+                let py_p = py_params.as_ref().map(|p| p.bind(py));
+
+                // PyTexture を直接返す
+                let output = py_callback.call1(py, (py_inputs, py_p))?;
+                let py_texture = output
+                    .bind(py)
+                    .cast::<PyTexture>()
+                    .map_err(|e| anyhow::anyhow!("Expected PyTexture: {}", e))?;
+                let inner_texture = py_texture.borrow().inner.clone();
+
+                Ok(GpuTextureOutput {
+                    texture: inner_texture,
+                })
+            })
+        });
+    compiled_func::CompiledTextureFunc::new(func)
+}
+
+#[pymethods]
+impl PySamplerOptions {
+    #[new]
+    pub fn new(address_mode: &str, filter: &str) -> PyResult<Self> {
+        let address_mode = match address_mode {
+            "clamp_to_edge" => AddressMode::ClampToEdge,
+            "repeat" => AddressMode::Repeat,
+            "mirror_repeat" => AddressMode::MirrorRepeat,
+            "clamp_to_border" => AddressMode::ClampToBorder,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "Invalid address_mode. Must be one of: clamp_to_edge, repeat, mirror_repeat, clamp_to_border",
+                ));
+            }
+        };
+
+        let filter = match filter {
+            "nearest" => FilterMode::Nearest,
+            "linear" => FilterMode::Linear,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "Invalid filter. Must be one of: nearest, linear",
+                ));
+            }
+        };
+
+        Ok(Self {
+            inner: rhi::SamplerOptions {
+                address_mode,
+                filter,
+            },
+        })
+    }
+}
+
+#[pymethods]
+impl PyCompiledShader {
+    /// `source`をSlangでSPIR-Vへコンパイルする。エントリポイントは`main`固定。
+    ///
+    /// `name`はパイプラインキャッシュのキーにもなるため、同じソースを異なる`defines`で
+    /// コンパイルする場合は必ず別の`name`を渡すこと。
+    ///
+    /// 出力フォーマットは`max(generatorのimage_format, min_output_format)`(精度の高い方)。
+    /// `min_output_format`は「これより下げてはいけない」というフロアで、省略した場合は
+    /// フロア無し(常にgeneratorの設定に従う)。`input_texture_layout`は入力テクスチャ配列
+    /// (set 0)が固定長("fixed")か可変長("variable")か。
+    #[staticmethod]
+    #[pyo3(signature = (name, source, generator, search_paths=None, defines=None, min_output_format=None, input_texture_layout="fixed", sampler_options=None))]
+    pub fn from_slang(
+        name: &str,
+        source: &str,
+        generator: &PyImageGenerator,
+        search_paths: Option<Vec<String>>,
+        defines: Option<HashMap<String, String>>,
+        min_output_format: Option<WrappedImagePixelFormat>,
+        input_texture_layout: &str,
+        sampler_options: Option<&PySamplerOptions>,
+    ) -> PyResult<Self> {
+        let input_arity = parse_input_arity(input_texture_layout)?;
+        let floor = min_output_format
+            .map(|f| f.to_native())
+            .unwrap_or(aperio_gpu::ImagePixelFormat::Rgba8Unorm);
+        let output_format = generator.inner.image_format().max(floor);
+
+        let search_paths = search_paths.unwrap_or_default();
+        let search_paths: Vec<&str> = search_paths.iter().map(String::as_str).collect();
+        let defines = defines.unwrap_or_default();
+        let defines: Vec<(&str, &str)> = defines
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let inner = CompiledShader::from_slang(
+            name,
+            source,
+            "main",
+            &generator.inner,
+            output_format,
+            input_arity,
+            &search_paths,
+            &defines,
+            sampler_options.map(|s| &s.inner),
+        )?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    /// HLSLのコンピュートシェーダー`source`を、エントリポイント`entry_point`(既定は`main`)で
+    /// DXC経由でSPIR-Vへコンパイルする。引数の意味は`from_slang`と同じ
+    /// (`include_dirs`は`#include`の検索パス、`search_paths`に相当)。
+    /// リソースは`[[vk::binding(binding, set)]]`で入力=set 0、出力・サンプラー・params=set 1に束縛すること。
+    #[staticmethod]
+    #[pyo3(signature = (name, source, generator, entry_point="main", include_dirs=None, defines=None, min_output_format=None, input_texture_layout="fixed", sampler_options=None))]
+    pub fn from_hlsl(
+        name: &str,
+        source: &str,
+        generator: &PyImageGenerator,
+        entry_point: &str,
+        include_dirs: Option<Vec<String>>,
+        defines: Option<HashMap<String, String>>,
+        min_output_format: Option<WrappedImagePixelFormat>,
+        input_texture_layout: &str,
+        sampler_options: Option<&PySamplerOptions>,
+    ) -> PyResult<Self> {
+        let input_arity = parse_input_arity(input_texture_layout)?;
+        let floor = min_output_format
+            .map(|f| f.to_native())
+            .unwrap_or(aperio_gpu::ImagePixelFormat::Rgba8Unorm);
+        let output_format = generator.inner.image_format().max(floor);
+
+        let include_dirs = include_dirs.unwrap_or_default();
+        let include_dirs: Vec<&str> = include_dirs.iter().map(String::as_str).collect();
+        let defines = defines.unwrap_or_default();
+        let defines: Vec<(&str, &str)> = defines
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let inner = compile_hlsl_compute(
+            name,
+            source,
+            entry_point,
+            &generator.inner,
+            output_format,
+            input_arity,
+            &include_dirs,
+            &defines,
+            sampler_options.map(|s| &s.inner),
+        )?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+}
+
+#[pymethods]
+impl PyCompiledFunc {
+    #[new]
+    pub fn new(id: &str, func: Py<PyAny>) -> PyResult<Self> {
+        Ok(Self {
+            _id: id.to_string(),
+            py_callback: func,
+        })
+    }
+}
+
+#[pymethods]
+impl PyTexture {
+    #[getter]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    #[getter]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+#[pymethods]
+impl PyCompiledTextureFunc {
+    #[new]
+    pub fn new(id: &str, func: Py<PyAny>) -> PyResult<Self> {
+        Ok(Self {
+            _id: id.to_string(),
+            py_callback: func,
+        })
+    }
+}
+
+impl PySharedTextureHandle {
+    pub fn new(handle: SharedTextureHandle) -> Self {
+        Self { inner: handle }
+    }
+}
+
+/// `IdTree`を対応するPythonオブジェクトに変換する。leafは`str`、`Parallel`は
+/// `{parallelのid: [各ブランチの全ステップidリスト...]}`という1要素の`dict`になる。
+fn id_tree_to_py(py: Python<'_>, tree: &IdTree) -> PyResult<Py<PyAny>> {
+    Ok(match tree {
+        IdTree::Single(s) => PyString::new(py, s).into_any().unbind(),
+        IdTree::Parallel { id, branches } => {
+            // branchesは`Vec<Vec<IdTree>>`(各ブランチの全ステップ列)なので、
+            // 1段(ブランチのリスト)→さらに1段(各ブランチ自身のステップリスト)変換する。
+            let branch_lists: PyResult<Vec<Py<PyAny>>> = branches
+                .iter()
+                .map(|branch| id_trees_to_py(py, branch))
+                .collect();
+            let list = PyList::new(py, branch_lists?)?;
+            let dict = PyDict::new(py);
+            dict.set_item(id, list)?;
+            dict.into_any().unbind()
+        }
+    })
+}
+
+fn id_trees_to_py(py: Python<'_>, trees: &[IdTree]) -> PyResult<Py<PyAny>> {
+    let converted: PyResult<Vec<Py<PyAny>>> = trees.iter().map(|t| id_tree_to_py(py, t)).collect();
+    Ok(PyList::new(py, converted?)?.into_any().unbind())
+}
+
+#[pymethods]
+impl PyImageGenerateBuilder {
+    #[new]
+    pub fn new() -> Self {
+        let inner = ImageGenerateBuilder::new();
+
+        Self { inner }
+    }
+
+    /// このビルダーが持つ全ステップの自動採番idを、追加順のリストとして返す
+    /// (空のビルダーなら空リスト)。leafは文字列、`Parallel`は`{parallelのid:
+    /// [各ブランチの全ステップidリスト...]}`という1要素の辞書になる(再帰的にネストしうる)。
+    /// 最後に追加したステップのidだけ欲しい場合は、リストの`[-1]`を取り、それが`dict`なら
+    /// その唯一の値(ブランチのリスト)の`[-1]`(=最後のブランチ、これも1つのリスト)の
+    /// `[-1]`を、というように再帰的にたどればよい。
+    pub fn get_id_tree(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
+        self.inner
+            .id_tree()
+            .iter()
+            .map(|t| id_tree_to_py(py, t))
+            .collect()
+    }
+
+    /// 実際には計算を行わず、同じフレーム内で`linked_id`(`get_id_tree`で取得したもの)が指す
+    /// 既存ステップの出力をそのまま使い回すステップを追加する。
+    pub fn add_linked(&self, linked_id: String, output_width: u32, output_height: u32) -> Self {
+        let new_inner = self
+            .inner
+            .clone()
+            .add_linked(linked_id, output_width, output_height);
+        Self { inner: new_inner }
+    }
+
+    pub fn add_shader<'py>(
+        &self,
+        shader: &PyCompiledShader,
+        params: Option<&Bound<'py, PyBytes>>,
+        output_width: u32,
+        output_height: u32,
+    ) -> Self {
+        let params = params.map(|p| p.as_bytes().to_vec());
+        let new_inner = self.inner.clone().add_shader(
+            Arc::clone(&shader.inner),
+            params,
+            output_width,
+            output_height,
+        );
+        Self { inner: new_inner }
+    }
+
+    pub fn add_parallel<'py>(
+        &self,
+        py: Python<'py>,
+        pipelines: Vec<Py<PyImageGenerateBuilder>>,
+    ) -> PyResult<Self> {
+        let pipelines: Result<Vec<ImageGenerateBuilder>, PyErr> = pipelines
+            .into_iter()
+            .map(|n| {
+                let builder = n.borrow(py);
+                Ok(builder.inner.clone())
+            })
+            .collect();
+        let pipelines = pipelines?;
+        let new_inner = self.inner.clone().add_parallel(pipelines);
+
+        Ok(Self { inner: new_inner })
+    }
+
+    pub fn add_func<'py>(
+        &self,
+        py: Python<'py>,
+        func: &PyCompiledFunc,
+        params: Option<Py<PyAny>>,
+        output_width: u32,
+        output_height: u32,
+    ) -> PyResult<Self> {
+        let compiled = make_cpu_func(func.py_callback.clone_ref(py), params);
+        let new_inner = self
+            .inner
+            .clone()
+            .add_func(compiled, None, output_width, output_height);
+        Ok(Self { inner: new_inner })
+    }
+
+    pub fn add_texture_func<'py>(
+        &self,
+        py: Python<'py>,
+        func: &PyCompiledTextureFunc,
+        params: Option<Py<PyAny>>,
+        output_width: u32,
+        output_height: u32,
+    ) -> PyResult<Self> {
+        let compiled = make_texture_func(func.py_callback.clone_ref(py), params);
+        let new_inner =
+            self.inner
+                .clone()
+                .add_texture_func(compiled, None, output_width, output_height);
+        Ok(Self { inner: new_inner })
+    }
+}
+
+#[pymethods]
+// TODO: experimental-asyncを使った非同期処理
+impl PyImageGenerator {
+    #[new]
+    pub fn new(format: WrappedImagePixelFormat) -> Result<Self> {
+        let rt = Runtime::new()?;
+        let inner = image_generator::ImageGenerator::new(format.to_native())?;
+        Ok(Self { inner, rt })
+    }
+
+    /// このデバイスで確保できる2Dテクスチャの最大辺長（px）。
+    /// キャンバスを広げるエフェクトが拡張量を切り詰める上限として使う。
+    #[getter]
+    pub fn maximum_texture_size(&self) -> u32 {
+        self.inner.maximum_texture_size
+    }
+
+    pub fn generate_buf(
+        &self,
+        builder: &PyImageGenerateBuilder,
+        buffer_ptr: usize,
+    ) -> PyResult<()> {
+        let result = self
+            .rt
+            .block_on(async { self.inner.generate_buf(builder.inner.clone()).await })?;
+
+        // 直接メモリコピー
+        unsafe {
+            std::ptr::copy_nonoverlapping(result.as_ptr(), buffer_ptr as *mut u8, result.len());
+        }
+
+        Ok(())
+    }
+
+    pub fn generate_shared_texture(
+        &self,
+        builder: &PyImageGenerateBuilder,
+        texture_handle: &PySharedTextureHandle,
+        format: &WrappedSharedTextureFormat,
+    ) -> PyResult<()> {
+        let format = match format {
+            WrappedSharedTextureFormat::Rgba16Float => SharedTextureFormat::Rgba16Float,
+            WrappedSharedTextureFormat::Bgra8Unorm => SharedTextureFormat::Bgra8Unorm,
+        };
+
+        self.rt.block_on(async {
+            self.inner
+                .generate_shared_texture(builder.inner.clone(), &texture_handle.inner, &format)
+                .await
+        })?;
+
+        Ok(())
+    }
+}
+
+#[pymodule(name = "gpu_util")]
+pub mod gpu_util_register {
+    #[pymodule_export]
+    use super::PyCompiledFunc;
+    #[pymodule_export]
+    use super::PyCompiledShader;
+    #[pymodule_export]
+    use super::PyCompiledTextureFunc;
+    #[pymodule_export]
+    use super::PyImageGenerateBuilder;
+    #[pymodule_export]
+    use super::PyImageGenerator;
+    #[pymodule_export]
+    use super::PySamplerOptions;
+    #[pymodule_export]
+    use super::PySharedTextureHandle;
+    #[pymodule_export]
+    use super::PyTexture;
+    #[pymodule_export]
+    use super::WrappedImagePixelFormat;
+    #[pymodule_export]
+    use super::WrappedSharedTextureFormat;
+}

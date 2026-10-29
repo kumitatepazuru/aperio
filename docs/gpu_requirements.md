@@ -1,6 +1,6 @@
 # GPU・OS の動作要件
 
-aperio の GPU 処理は、自前の RHI (`src/gpu_util/src/rhi/`) を介して **Vulkan だけ** で動く。
+aperio の GPU 処理は、自前の RHI (`crates/aperio-gpu/src/rhi/`) を介して **Vulkan だけ** で動く。
 シェーダーは Slang (または HLSL) から SPIR-V にコンパイルし、wgpu / naga / WGSL は使わない。
 このドキュメントは「コードが実際に要求していること」をまとめたもので、動作確認済みの環境は末尾に分けて書く。
 

@@ -1,0 +1,4 @@
+[install]
+# 依存をルートの node_modules に集約する。
+# vite は apps/ を root にして動くため、apps/<name>/node_modules にだけ置かれる isolated では react などを解決できない。
+linker = "hoisted"

@@ -1,0 +1,18 @@
+[package]
+name = "aperio-media"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+aperio-gpu = { path = "../aperio-gpu" }
+anyhow = { workspace = true }
+bytemuck = { workspace = true }
+half = "2"
+
+[build-dependencies]
+cc = "1"
+bindgen = "0.71"

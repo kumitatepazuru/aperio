@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/avloader","src/gpu_util", "src/macros", "src/native", "src/text_rendering"]
+members = ["crates/aperio-gpu", "crates/aperio-macros", "crates/aperio-media", "crates/aperio-napi", "crates/aperio-text"]
 resolver = "2"
 
 [workspace.package]

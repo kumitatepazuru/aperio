@@ -1,0 +1,9 @@
+{
+  "name": "@aperio/app-preload",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aperio/shared": "workspace:*"
+  }
+}

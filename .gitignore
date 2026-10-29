@@ -24,11 +24,10 @@ dist-ssr
 *.sln
 *.sw?
 
-target
-release
-resources/
-
-src-python/out/aperio_plugin_stubs.egg-info
+build/
 __pycache__
 .venv
 vcpkg_installed
+# moon
+.moon/cache
+.moon/docker

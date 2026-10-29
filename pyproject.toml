@@ -11,10 +11,18 @@ dependencies = [
     "requests>=2.32.5",
 ]
 
+# 開発用環境(tools/ のスクリプトや moon タスクの実行、プラグイン開発時の型チェック)のためのプロジェクトで、
+# それ自体はパッケージとしてビルド・配布しない。
+[tool.uv]
+package = false
+
+# aperio.* / aperio_plugin.* のstubをインストールする
 [tool.uv.workspace]
-members = [
-    "src-python",
-]
+members = ["python/stubs"]
 
 [tool.uv.sources]
 aperio-plugin-stubs = { workspace = true }
+
+# mypy は editable インストールの .pth を辿らないので、スタブの場所を明示する。
+[tool.mypy]
+mypy_path = ["build/stub"]

@@ -108,15 +108,57 @@ dependencies = [
 ]
 
 [[package]]
-name = "aperio"
+name = "aperio-gpu"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aperio_derive",
- "avloader",
+ "ash",
+ "bindgen",
+ "bytemuck",
+ "cc",
+ "futures",
+ "gpu-allocator",
+ "half",
+ "libc",
+ "log",
+ "rayon",
+ "tokio",
+ "uuid",
+ "windows",
+]
+
+[[package]]
+name = "aperio-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "aperio-media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aperio-gpu",
+ "bindgen",
+ "bytemuck",
+ "cc",
+ "half",
+]
+
+[[package]]
+name = "aperio-napi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aperio-gpu",
+ "aperio-macros",
+ "aperio-media",
+ "aperio-text",
  "cpal",
  "env_logger",
- "gpu_util",
  "half",
  "libc",
  "log",
@@ -127,7 +169,6 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
- "text_rendering",
  "thiserror 2.0.17",
  "tokio",
  "tokio-tungstenite",
@@ -135,12 +176,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "aperio_derive"
+name = "aperio-text"
 version = "0.1.0"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "anyhow",
+ "aperio-gpu",
+ "bytemuck",
+ "cosmic-text",
+ "half",
 ]
 
 [[package]]
@@ -157,18 +200,6 @@ name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
-
-[[package]]
-name = "avloader"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bindgen",
- "bytemuck",
- "cc",
- "gpu_util",
- "half",
-]
 
 [[package]]
 name = "backtrace"
@@ -741,26 +772,6 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "gpu_util"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ash",
- "bindgen",
- "bytemuck",
- "cc",
- "futures",
- "gpu-allocator",
- "half",
- "libc",
- "log",
- "rayon",
- "tokio",
- "uuid",
- "windows",
 ]
 
 [[package]]
@@ -1756,17 +1767,6 @@ name = "target-lexicon"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df7f62577c25e07834649fc3b39fafdc597c0a3527dc1c60129201ccfcbaa50c"
-
-[[package]]
-name = "text_rendering"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytemuck",
- "cosmic-text",
- "gpu_util",
- "half",
-]
 
 [[package]]
 name = "thiserror"

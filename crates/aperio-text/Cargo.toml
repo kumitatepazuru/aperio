@@ -1,0 +1,17 @@
+[package]
+name = "aperio-text"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+cosmic-text = "0.18.2"
+aperio-gpu = { path = "../aperio-gpu" }
+anyhow = { workspace = true }
+bytemuck = { workspace = true }
+
+[dev-dependencies]
+half = "2"

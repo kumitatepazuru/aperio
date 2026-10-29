@@ -1,0 +1,37 @@
+[package]
+name = "aperio-napi"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "aperio"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+aperio-macros = { path = "../aperio-macros" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio-tungstenite = "0.28.0"
+toml_edit = "0.23.7"
+thiserror = "2.0.17"
+aperio-gpu = { path = "../aperio-gpu" }
+aperio-text = { path = "../aperio-text" }
+aperio-media = { path = "../aperio-media" }
+numpy = { version = "0.28.0", features = ["half"] }
+half = "2"
+tokio = { workspace = true, features = ["macros", "sync"] }
+pyo3 = { workspace = true, features = ["experimental-inspect", "anyhow"]}
+anyhow = { workspace = true }
+env_logger = "0.11.8"
+log = { workspace = true }
+cpal = "0.17.3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.178"
+
+[build-dependencies]
+napi-build = "2"
