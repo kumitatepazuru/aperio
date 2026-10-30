@@ -21,6 +21,7 @@ import {
 } from "native";
 import setMenu from "./menu";
 import { registerContextMenuIpc } from "./contextMenu";
+import { registerPluginProtocol, registerPluginScheme } from "./pluginProtocol";
 
 const fileName = fileURLToPath(import.meta.url);
 const dirName = path.dirname(fileName);
@@ -29,6 +30,8 @@ const isDev = !app.isPackaged;
 // TODO: 環境によってフラグを調整するように
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
+// カスタムスキームの特権登録は app の ready 前に行う必要がある
+registerPluginScheme();
 
 let osrWin: BrowserWindow | null = null;
 let win: BrowserWindow | null = null;
@@ -49,7 +52,7 @@ function getPluginManager() {
 
 function getDefaultPlugins() {
   return isDev
-    ? path.join(app.getAppPath(), "plugins")
+    ? path.join(app.getAppPath(), "build", "plugins")
     : path.join(process.resourcesPath, "default-plugins");
 }
 
@@ -66,7 +69,7 @@ const nativeModule = new NativeModule({
   pluginManagerDir: getPluginManager(),
   defaultPluginsDir: getDefaultPlugins(),
   distDir: getDistDir(),
-});
+}, isDev);
 
 const showDialog = async (id: string) => {
   if (isDev) {
@@ -293,7 +296,10 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  registerPluginProtocol(nativeModule);
+  return createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

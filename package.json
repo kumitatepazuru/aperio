@@ -11,7 +11,8 @@
     "apps/ui",
     "apps/osr",
     "apps/dialog",
-    "packages/*"
+    "packages/*",
+    "plugins/base/frontend/*"
   ],
   "scripts": {
     "ui:start": "vite --config apps/vite.config.ts",
@@ -119,8 +120,11 @@
         ]
       },
       {
-        "from": "plugins/",
-        "to": "default-plugins/"
+        "from": "build/plugins/",
+        "to": "default-plugins/",
+        "filter": [
+          "*.whl"
+        ]
       },
       {
         "from": "dist/app/",

@@ -38,11 +38,11 @@ export const contextMenus: Record<
         submenu: [
           {
             label: "動画",
-            submenu: getSubMenu(pluginNameInfo.videoObjectPlugins, "Video"),
+            submenu: getSubMenu(pluginNameInfo.videoObjectGenerators, "Video"),
           },
           {
             label: "音声",
-            submenu: getSubMenu(pluginNameInfo.audioObjectPlugins, "Audio"),
+            submenu: getSubMenu(pluginNameInfo.audioObjectGenerators, "Audio"),
           },
         ]
       },

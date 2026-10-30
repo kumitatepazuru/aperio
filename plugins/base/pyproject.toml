@@ -1,0 +1,32 @@
+[project]
+name = "aperio-base-plugin"
+version = "1.0.0"
+description = "Basic objects and effects for Aperio"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy",
+]
+
+[dependency-groups]
+dev = ["aperio-plugin-stubs"]
+
+[tool.uv.sources]
+aperio-plugin-stubs = { workspace = true }
+
+# Aperio はこのグループの entry point から MainPluginBase のサブクラスを読み込む。
+# entry point 名は各メインプラグインの name と一致させる(ジェネレーター名のプレフィックス検証に使われる)。
+[project.entry-points."aperio.plugins"]
+base_object = "aperio_base.objects:AperioBaseObjectPlugin"
+base_effect = "aperio_base.effects:AperioBaseEffectPlugin"
+basic_effect = "aperio_base.basic_effect:AperioBaseBasicEffectPlugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aperio_base"]
+
+# UI 用のビルド済みフロントエンド(group-item:build の出力)をパッケージ内に取り込む
+[tool.hatch.build.targets.wheel.force-include]
+"frontend/group_item/dist" = "aperio_base/frontend/group_item"

@@ -7,7 +7,7 @@
 use aperio_gpu::compiled_shader::compile_slang_to_spirv;
 use std::path::{Path, PathBuf};
 
-const APERIO_LIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/base/common/lib");
+const APERIO_LIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/base/aperio_base/common/lib");
 const PLUGINS_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins");
 /// プラグイン本体(aperio_plugin)が使うcompose / fill_blackなどのシェーダー。
 const FRAMEWORK_SHADERS_ROOT: &str = concat!(

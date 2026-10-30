@@ -8,7 +8,7 @@
 
 それを管理するpython側も同様に、共通化できる部分はcommon/に移して共通参照させる。
 
-処理軽量化とメモリ節約のため、shaderは出力ストレージテクスチャ（plugins/base/common/lib/aperio-bindings.slang の `[vk::image_format(APERIO_IMAGE_FORMAT)]`）にて設定されているように、ユーザーがテクスチャフォーマットを設定することができる。
+処理軽量化とメモリ節約のため、shaderは出力ストレージテクスチャ（plugins/base/aperio_base/common/lib/aperio-bindings.slang の `[vk::image_format(APERIO_IMAGE_FORMAT)]`）にて設定されているように、ユーザーがテクスチャフォーマットを設定することができる。
 一方で、それによってオーバーフローや8unormに関しては符号がつけられないなどの制約があるため、それによるバグを防ぐためにmin_output_format引数がshader設定時に用意されている。これを設定することで、最低限必要なfloorを設定することができる。
 むやみにRgba32floatを使わず精度よりもバグが起こらない最低限なフォーマットを設定する。
 

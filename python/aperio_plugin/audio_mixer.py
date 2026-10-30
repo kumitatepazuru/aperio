@@ -31,24 +31,44 @@ def _compute_pan_gains(pan: float, channels: int) -> npt.NDArray[np.float32]:
     return np.array(gains, dtype=np.float32)
 
 
-def mix(
-    output: npt.NDArray[np.float32],
-    channels: int,
-    sample_count: int,
-    obj_name: str,
-    expected_count: int,
-    samples: npt.NDArray[np.float32],
-    volume: float,
-    pan: float,
-    sample_offset: int,
-) -> None:
-    """`samples`にボリューム・パンを適用し、`output`(呼び出し元が保持する出力バッファ)に
-    in-placeで加算ミックスする。"""
-    if samples.ndim != 2 or samples.shape[0] != channels:
-        raise ValueError(
-            f"Audio plugin {obj_name} returned samples with invalid shape {samples.shape}, expected ({channels}, {expected_count})"
-        )
-    pan_gains = _compute_pan_gains(pan / 100.0, channels)
-    mixed = samples * (volume / 100.0 * pan_gains[:, np.newaxis])
-    write_count = min(expected_count, sample_count - sample_offset)
-    output[:, sample_offset:sample_offset + write_count] += mixed[:, :write_count]
+class AudioMixBuffer:
+    """1回のオーディオ生成リクエスト分(チャンネル数 x サンプル数)の出力バッファ。
+    各アイテムのサンプルにボリューム・パンを適用して加算ミックスしていく。"""
+
+    def __init__(self, channels: int, sample_count: int) -> None:
+        self.channels = channels
+        self.sample_count = sample_count
+        self._output = np.zeros((channels, sample_count), dtype=np.float32)
+
+    def add(
+        self,
+        source_name: str,
+        samples: npt.NDArray[np.float32],
+        expected_count: int,
+        volume: float,
+        pan: float,
+        sample_offset: int,
+    ) -> None:
+        """`samples`にボリューム・パンを適用し、バッファの`sample_offset`以降にin-placeで加算ミックスする。
+
+        Args:
+            source_name: サンプルを生成したジェネレーター名 (エラーメッセージ用)
+            samples: (channels, expected_count) のサンプル
+            expected_count: 書き込むサンプル数
+            volume: ボリューム (0-100)
+            pan: パン (-100 - 100)
+            sample_offset: バッファ内の書き込み開始位置
+        """
+        if samples.ndim != 2 or samples.shape[0] != self.channels:
+            raise ValueError(
+                f"Audio plugin {source_name} returned samples with invalid shape {samples.shape}, expected ({self.channels}, {expected_count})"
+            )
+        pan_gains = _compute_pan_gains(pan / 100.0, self.channels)
+        mixed = samples * (volume / 100.0 * pan_gains[:, np.newaxis])
+        write_count = min(expected_count, self.sample_count - sample_offset)
+        self._output[:, sample_offset:sample_offset + write_count] += mixed[:, :write_count]
+
+    def finish(self) -> npt.NDArray[np.float32]:
+        """浮動小数点丸め誤差などによる境界超過を[-1, 1]にクリップしてバッファを返す。"""
+        np.clip(self._output, -1.0, 1.0, out=self._output)
+        return self._output

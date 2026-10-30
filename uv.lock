@@ -5,6 +5,7 @@ requires-python = "==3.14.*"
 [manifest]
 members = [
     "aperio",
+    "aperio-base-plugin",
     "aperio-plugin-stubs",
 ]
 
@@ -26,6 +27,25 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "requests", specifier = ">=2.32.5" },
 ]
+
+[[package]]
+name = "aperio-base-plugin"
+version = "1.0.0"
+source = { editable = "plugins/base" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "aperio-plugin-stubs" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "aperio-plugin-stubs", editable = "python/stubs" }]
 
 [[package]]
 name = "aperio-plugin-stubs"

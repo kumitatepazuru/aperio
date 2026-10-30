@@ -70,6 +70,9 @@ pub fn generate_partial(input: TokenStream) -> TokenStream {
 
     let mut all_partial_fields: Vec<TokenStream2> = vec![];
     let mut apply_stmts: Vec<TokenStream2> = vec![];
+    // Python からキーワード引数で構築するための `#[new]` 用に、partial 側の (名前, 型) を集める
+    let mut py_new_params: Vec<TokenStream2> = vec![];
+    let mut py_new_names: Vec<TokenStream2> = vec![];
 
     // source のフィールド順に処理
     for field in source_fields {
@@ -80,6 +83,8 @@ pub fn generate_partial(input: TokenStream) -> TokenStream {
         if let Some(override_field) = partial_overrides.get(&name_str) {
             // 手動定義をそのまま使用
             all_partial_fields.push(quote! { #override_field , });
+            let override_ty = &override_field.ty;
+            py_new_params.push(quote! { #name: #override_ty });
         } else {
             // source のアトリビュートをそのまま引き継ぎ Option<T> で自動生成
             let field_attrs = &field.attrs;
@@ -87,8 +92,10 @@ pub fn generate_partial(input: TokenStream) -> TokenStream {
                 #(#field_attrs)*
                 pub #name: Option<#ty>,
             });
+            py_new_params.push(quote! { #name: Option<#ty> });
         }
 
+        py_new_names.push(quote! { #name });
         apply_stmts.push(quote! {
             if let Some(v) = self.#name.take() { s.#name = v; }
         });
@@ -108,6 +115,16 @@ pub fn generate_partial(input: TokenStream) -> TokenStream {
         impl #partial_name {
             pub fn apply_to(&mut self, s: &mut #source_name) {
                 #(#apply_stmts)*
+            }
+        }
+
+        // Python からは更新したいフィールドだけをキーワード引数で渡して構築する
+        #[pyo3::pymethods]
+        impl #partial_name {
+            #[new]
+            #[pyo3(signature = (*, #(#py_new_names = None),*))]
+            fn py_new(#(#py_new_params),*) -> Self {
+                Self { #(#py_new_names),* }
             }
         }
     }

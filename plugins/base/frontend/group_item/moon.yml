@@ -1,0 +1,14 @@
+tasks:
+  build:
+    command: bun
+    args: [run, build]
+    options:
+      runFromWorkspaceRoot: false
+    inputs:
+      - src/**/*
+      - vite.config.ts
+      - tsconfig.json
+      - package.json
+      - /packages/plugin-sdk/**/*
+    outputs:
+      - dist

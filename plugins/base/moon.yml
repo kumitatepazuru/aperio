@@ -1,0 +1,13 @@
+# 同梱の base プラグイン(aperio-base-plugin)の wheel ビルド。
+tasks:
+  wheel:
+    command: uv
+    args: [build, --wheel, plugins/base, -o, build/plugins]
+    deps:
+      - group-item:build
+    inputs:
+      - aperio_base/**/*
+      - pyproject.toml
+      - frontend/group_item/dist/**/*
+    outputs:
+      - /build/plugins

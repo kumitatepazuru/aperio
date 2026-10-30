@@ -7,6 +7,8 @@
     { "path": "./apps/osr" },
     { "path": "./apps/dialog" },
     { "path": "./packages/shared" },
-    { "path": "./packages/ui" }
+    { "path": "./packages/ui" },
+    { "path": "./packages/plugin-sdk" },
+    { "path": "./plugins/base/frontend/group_item" }
   ]
 }

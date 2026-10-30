@@ -1,31 +1,14 @@
 import type {
-  ItemResult,
-  ItemStructure,
   SyncableState,
   SyncableStatePartial,
   FrameState,
   ColorPickerState,
 } from "native";
 import { create } from "zustand";
+import type { Store } from "@aperio/plugin-sdk/store";
 
 export type ColorSpace = "HSV" | "LCH" | "okLCH" | "LAB" | "okLAB";
 export type DisplayMode = "0-1" | "0-255";
-
-// ─── Store 型 ─────────────────────────────────────────────────────────────────
-
-type Store = SyncableState & {
-  frameResults: Record<string, ItemResult>;
-  play: (beginFrame: number) => void;
-  pause: (beginFrame?: number) => void;
-  setFrameState: (frameState: FrameState) => void;
-  setFrameResults: (frameResults: Record<string, ItemResult>) => void;
-  setFrameCount: (frame: number) => void;
-  setTimelineItems: (items: ItemStructure[]) => void;
-  setSelectedItemId: (id: string | null) => void;
-  addSelectedItemId: (id: string) => void;
-  setSelectedItems: (ids: string[], mainId: string | null) => void;
-  setColorPicker: (colorPicker: ColorPickerState) => void;
-};
 
 // ─── 初回同期フラグ ───────────────────────────────────────────────────────────
 //
@@ -89,6 +72,7 @@ const _useStore = create<Store>()((set, get) => {
     mainSelectedItemId: null,
     colorPicker: { colorSpace: "HSV", displayMode: "0-255", history: [] },
     audioState: { channels: 2, sampleRate: 44100, bitDepth: 16 },
+    pluginComponents: [],
     frameResults: {},
     play: (beginFrame: number) =>
       syncSet({

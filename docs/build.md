@@ -10,7 +10,7 @@
   - clang(bindgenのビルドに必要) [詳細](https://rust-lang.github.io/rust-bindgen/requirements.html)
   - Linuxのみ：cpal用の追加パッケージ(libpulse-dev libpipewire-0.3-dev libasound2-dev)
 2. `bun install` もしくは `npm install` を実行して、Node.jsの依存関係をインストール
-  - `apps/*` と `packages/*` はworkspaceになっているので、ルートで1回実行すればよい
+  - `apps/*` と `packages/*` と `plugins/base/frontend/*` はworkspaceになっているので、ルートで1回実行すればよい
   - bunは `bunfig.toml` でhoisted linkerを指定している
 3. `uv sync` を実行して、Pythonの依存関係をインストール
   - `tools/` 配下のPythonスクリプトや、moonのタスクのうちPython系のものはこのuv環境で実行される
@@ -32,6 +32,9 @@ TypeScript/React のビルド・bundle 系(`ui:start`, `ui:build`, `main:build`,
 - `bun moon run napi:debug` または `napi:build` で、ネイティブ(Rust)のみをビルドして `dist/app/` に出力することも可能。
   - typescriptの型(`dist/app/native/index.d.ts`)も生成されるため、単に型の更新をするときはこれを利用する
 - `bun moon run ui:build` / `main:build` で、UI(vite) / main・preload(rolldown) だけをビルドできる。`ui:start` はviteのdev server
+- `bun moon run group-item:build` で、組み込みプラグイン(base)のフロントエンド(`plugins/base/frontend/group_item/`)をビルドして `dist/index.js` を生成する
+  - 作り方は [plugin_frontend.md](plugin_frontend.md)
+- `bun moon run base-plugin:wheel` で、組み込みプラグイン(`plugins/base/`、パッケージ名 `aperio-base-plugin`)の wheel を `build/plugins/` に生成する(フロントエンドも自動でビルドされ wheel に同梱される)。`root:dev` / `root:build` からも自動で実行される
 - `bun moon run python:copy` で、libpython(`python314.dll` 等)だけを `dist/app/` にコピーできる(`napi:*` でも自動で行われる)
   - `bun moon run python:copy -- --python <実行ファイル>` で、uv環境以外のPythonを指定することもできる
 - `bun moon run python:stubgen` で、RustのコードからPythonのstubファイルを `build/stub/aperio/` に生成することが可能
@@ -55,10 +58,10 @@ packages/    JS/TSの共有パッケージ。shared(IPCのチャンネル名・W
 crates/      Rustのworkspace。aperio-napi(napi/pyo3の公開層), aperio-macros, aperio-gpu, aperio-media, aperio-text
 native/      FFI対象のC++(cpp/)とvcpkgの設定
 python/      プラグインマネージャ(aperio_plugin)のPythonコード
-plugins/     組み込みプラグイン(PythonとSlangシェーダー)
+plugins/     組み込みプラグイン。base/ は wheel パッケージ(Python と Slang シェーダーは base/aperio_base/、フロントエンドは base/frontend/)
 tools/       moonのタスクから呼ばれるPythonスクリプト(update_uv.py, copy_python.py, vcpkg.py)
 .moon/       moonのワークスペース設定。各タスクの定義は各プロジェクトの moon.yml (ルート, apps/ui, apps/main, crates/aperio-napi, python, python/aperio_plugin, native, tools)
 docs/        ドキュメント
-build/       (生成物) cargoのtarget/, Pythonのstub/, electron-builderのrelease/
+build/       (生成物) cargoのtarget/, Pythonのstub/, 組み込みプラグインのwheel(plugins/), electron-builderのrelease/
 dist/        (生成物) app/(アプリ本体), resources/(同梱するuv等)
 ```

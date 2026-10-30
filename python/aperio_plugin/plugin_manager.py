@@ -1,275 +1,70 @@
-import glob
-import hashlib
-import os.path
-import shutil
-import time
-import traceback
-from typing import Callable, ClassVar
+from collections.abc import Mapping
 
-from aperio import logger
-from aperio.item_structures import PluginNameInfo
+from aperio import gpu_util
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, ItemStructure, PluginNameInfo
 
-from .plugin_base import MainPluginBase, SubPluginBase
-from .plugin_base.generator_base import *
-from .plugin_load_progress import PluginLoadProgressWindow
+from .audio_renderer import AudioRenderer
+from .component_registry import ComponentRegistry
+from .context import AperioContext
+from .event_manager import EventDispatcher
+from .generator_registry import GeneratorRegistry
+from .plugin_base import GeneratorBase, MainPluginBase
+from .plugin_base.generator_base import GeneratorKind
+from .plugin_loader import PluginLoader
+from .video_renderer import VideoRenderer
 
-# TODO: PluginLoaderに改名、ファイル名も改名
+
 class PluginManager:
     """
-    プラグインの登録・読み込み・追加を管理するクラス。
-    プラグインディレクトリのスキャン、クラスのインスタンス化、サブプラグインの登録を担う。
+    Aperioのプラグイン実行環境のファサード。Rust 側とプラグインの両方からaperio_plugin.plugin_managerとして参照される。
+    実際の処理はプラグインの読み込み(PluginLoader)・イベント(EventDispatcher)・描画(VideoRenderer/AudioRenderer)などに委譲する。
     """
 
-    __plugins: ClassVar[dict[str, type[MainPluginBase]]] = {}
-    plugins: dict[str, MainPluginBase]
-    video_object_plugins: dict[str, VideoObjectGeneratorBase]
-    video_effect_plugins: dict[str, VideoEffectGeneratorBase]
-    audio_object_plugins: dict[str, AudioObjectGeneratorBase]
-    audio_effect_plugins: dict[str, AudioEffectGeneratorBase]
+    def __init__(self, context: AperioContext) -> None:
+        self.context = context
+        self.generators = GeneratorRegistry()
+        self.components = ComponentRegistry(context.store_manager)
+        self._loader = PluginLoader(self.generators, self.components)
+        self._events = EventDispatcher(self.generators)
+        self._video = VideoRenderer(context, self.generators)
+        self._audio = AudioRenderer(context, self.generators)
 
-    def __init__(self, data_dir: str, plugin_dir_name: str = "plugins"):
-        self.data_dir = data_dir
-        self.plugin_dir_name = plugin_dir_name
-        self.plugins = {}
-        self.video_object_plugins = {}
-        self.video_effect_plugins = {}
-        self.audio_object_plugins = {}
-        self.audio_effect_plugins = {}
+    # --- プラグイン管理 ---
 
-        self._progress: PluginLoadProgressWindow | None = PluginLoadProgressWindow()
-        self._bar3_master: MainPluginBase | None = None
+    @property
+    def plugins(self) -> Mapping[str, MainPluginBase]:
+        """読み込み済みのメインプラグイン (名前 → インスタンス)"""
+        return self._loader.plugins
 
-        dirs = glob.glob(f"{self.data_dir}/{self.plugin_dir_name}/*")
+    def load_plugins(self) -> None:
+        """インストール済みのプラグインパッケージを entry point から読み込む。"""
+        self._loader.load_all()
 
-        self._progress.set_bar1(50, "プラグインを登録中")
-        self._progress.start_bar2(len(dirs), "")
-
-        for dir in dirs:
-            plugin_name = os.path.basename(dir)
-            if not os.path.exists(f"{dir}/__init__.py"):
-                logger.warning(
-                    f"Plugin {plugin_name} does not have an __init__.py file. Skipping."
-                )
-                self._progress.step_bar2(plugin_name)
-                continue
-
-            try:
-                __import__(f"{self.plugin_dir_name}.{plugin_name}")
-            except Exception as e:
-                logger.error(traceback.format_exc())
-                logger.error(f"Failed to import plugin {plugin_name}: {e}")
-
-            self._progress.step_bar2(plugin_name)
-
-        self.__load_plugins()
-
-        self._progress.close()
-        self._progress = None
-
-    def __load_plugins(self):
+    def add_generator(self, generator: GeneratorBase) -> None:
         """
-        登録されたプラグインのクラスからインスタンスを生成し self.plugins に格納する。
-        既に同じ名前のプラグインが存在する場合はスキップする。
-        self.generator / self.text_renderer は AperioManager.__init__ で設定済みであること。
-        """
-        logger.info("Beginning to load plugins...")
-        t = time.perf_counter()
-
-        if self._progress:
-            self._progress.set_bar1(100, "サブプラグインを登録中")
-            self._progress.start_bar2(len(self.__plugins), "")
-
-        for name, plugin_cls in self.__plugins.items():
-            if self._progress:
-                self._progress.step_bar2(name)
-            if name in self.plugins:
-                logger.warning(f"Plugin {name} is already registered. Skipping.")
-                continue
-
-            self._bar3_master = None
-            if self._progress:
-                self._progress.hide_bar3()
-
-            try:
-                plugin_instance = plugin_cls()
-                self.plugins[name] = plugin_instance
-                logger.info(f"Registered plugin: {plugin_instance.name}")
-            except Exception as e:
-                logger.error(traceback.format_exc())
-                logger.error(f"Failed to load plugin {name}: {e}")
-        logger.info(f"Total plugins loaded: {len(self.plugins)}, including {len(self.video_object_plugins)} video object plugins, {len(self.video_effect_plugins)} video effect plugins, {len(self.audio_object_plugins)} audio object plugins, and {len(self.audio_effect_plugins)} audio effect plugins.")
-        logger.info(f"it takes {time.perf_counter() - t:.2f} seconds.")
-
-        logger.info("Loaded Plugins ---")
-        logger.info(
-            "\n".join(
-                [
-                    f"{n}(Video Object)- {p.get_display_info()}"
-                    for n, p in self.video_object_plugins.items()
-                ]
-            )
-        )
-        logger.info(
-            "\n".join(
-                [
-                    f"{n}(Video Effect)- {p.get_display_info()}"
-                    for n, p in self.video_effect_plugins.items()
-                ]
-            )
-        )
-        logger.info(
-            "\n".join(
-                [
-                    f"{n}(Audio Object)- {p.get_display_info()}"
-                    for n, p in self.audio_object_plugins.items()
-                ]
-            )
-        )
-        logger.info(
-            "\n".join(
-                [
-                    f"{n}(Audio Effect)- {p.get_display_info()}"
-                    for n, p in self.audio_effect_plugins.items()
-                ]
-            )
-        )
-
-    @classmethod
-    def plugin(cls, func: type[MainPluginBase]) -> Callable:
-        """
-        MainPluginBase サブクラスをプラグインとして登録するデコレーター。
+        ジェネレーターを登録する。メインプラグインの__init__の中から呼ぶ。
+        ジェネレーター名はメインプラグイン名 + . で始まる必要がある。
 
         Args:
-            func: 登録する MainPluginBase のサブクラス
+            generator: 登録するジェネレーターのインスタンス
         """
-        if not issubclass(func, MainPluginBase):
-            raise TypeError("The decorated class must be a subclass of MainPluginBase")
+        self._loader.add_generator(generator)
 
-        if func.__name__ in cls.__plugins:
-            logger.warning(
-                f"A plugin with the name '{func.__name__}' is already registered."
-            )
-            index = 1
-            for name in cls.__plugins.keys():
-                if name.startswith(func.__name__):
-                    index += 1
-
-            cls.__plugins[f"{func.__name__}_{index}"] = func
-        else:
-            cls.__plugins[func.__name__] = func
-
-        def wrapper(*_args, **_kwargs):
-            raise RuntimeError(
-                "This function is a plugin for Aperio and cannot be called directly"
-            )
-
-        return wrapper
-
-    def register_sub_plugin(self, master: MainPluginBase, plugin: SubPluginBase) -> None:
+    def add_component(self, plugin: MainPluginBase, dir: str, type: str) -> None:
         """
-        ObjectGeneratorBase または EffectGeneratorBase のサブプラグインを登録する。
+        UI のPluginComponentに差し込む React コンポーネントを登録する。メインプラグインの__init__の中から呼ぶ。
+        登録情報はstoreのplugin_componentsに保存され、UIはplugin://{plugin.name}/{type}/として読み込む。
+        同じ(plugin.name, type)を再登録した場合は警告を出して無視する
 
         Args:
-            master: マスタープラグインのインスタンス
-            plugin: 登録するサブプラグインのインスタンス
+            plugin: コンポーネントを登録するメインプラグインのインスタンス (plugin.nameがpluginIdになる。ジェネレーターは渡せない)
+            dir: ビルド済みの index.jsがあるディレクトリのパス (絶対パスに変換される)
+            type: 差し込み先の type
+
+        Raises:
+            TypeError: plugin がメインプラグイン(MainPluginBase)ではない場合
         """
-        master_name = master.name
-        if not plugin.name.startswith(master_name + "."):
-            raise ValueError(
-                f"Sub plugin name '{plugin.name}' should start with '{master_name}.'. "
-                "Please rename the plugin or check the master plugin name."
-            )
-
-        if isinstance(plugin, VideoObjectGeneratorBase):
-            self.video_object_plugins[plugin.name] = plugin
-        elif isinstance(plugin, VideoEffectGeneratorBase):
-            self.video_effect_plugins[plugin.name] = plugin
-        elif isinstance(plugin, AudioObjectGeneratorBase):
-            self.audio_object_plugins[plugin.name] = plugin
-        elif isinstance(plugin, AudioEffectGeneratorBase):
-            self.audio_effect_plugins[plugin.name] = plugin
-        else:
-            raise TypeError(
-                "The plugin must be a subclass of ObjectGeneratorBase or EffectGeneratorBase"
-            )
-
-        if self._progress and master.num_sub_plugins >= 1:
-            if self._bar3_master is not master:
-                self._progress.start_bar3(master.num_sub_plugins, plugin.display_name)
-                self._bar3_master = master
-            self._progress.step_bar3(plugin.display_name)
-
-    def check_plugin_exists(self, plugin_name: str) -> bool:
-        """
-        指定された名前のプラグインが存在するかどうかを確認する。
-
-        Args:
-            plugin_name: 確認するプラグインの名前
-
-        Returns:
-            プラグインが存在する場合は True
-        """
-        return plugin_name in self.plugins
-    
-    def add_plugin(self, plugin_dir: str) -> bool:
-        """
-        プラグインを追加するメソッド。
-        指定されたディレクトリからプラグインを追加する。既に同じ名前のプラグインが存在する場合は、__init__.pyのハッシュ値を比較して異なる場合のみ更新する。
-
-        Args:
-            plugin_dir (str): 追加するプラグインのディレクトリのパス
-
-        Returns:
-            bool: プラグインが正常に追加または更新された場合はTrue、それ以外の場合はFalse
-        """
-        # TODO: URLからのダウンロードや、zipファイルの解凍などもここで行う
-
-        self._progress = PluginLoadProgressWindow()
-        self._bar3_master = None
-        try:
-            if not os.path.exists(plugin_dir) or not os.path.isdir(plugin_dir):
-                logger.error(f"Plugin directory {plugin_dir} does not exist.")
-                return False
-
-            plugin_name = os.path.basename(plugin_dir)
-            self._progress.set_bar1(50, "プラグインを登録中")
-            self._progress.start_bar2(1, plugin_name)
-
-            if plugin_name in self.plugins:
-                # 既に登録されている場合は__init__.pyのハッシュ値を比較して、異なる場合のみ更新する
-                # TODO: バージョン確認で新しければアップデート、古ければ確認みたいにしたい
-                logger.info(f"Plugin {plugin_name} is already registered. Trying to update to specified version.")
-                if not os.path.exists(f"{plugin_dir}/__init__.py"):
-                    logger.warning(f"Plugin {plugin_name} does not have an __init__.py file. Skipping.")
-                    return False
-
-                with open(f"{plugin_dir}/__init__.py", "rb") as f:
-                    new_hash = hashlib.sha256(f.read()).hexdigest()
-                    with open(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py", "rb") as ef:
-                        existing_hash = hashlib.sha256(ef.read()).hexdigest()
-                        if new_hash == existing_hash:
-                            logger.info(f"Plugin {plugin_name} is completely same. Skipping.")
-                            return True
-
-            shutil.copytree(plugin_dir, f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}", dirs_exist_ok=True)
-
-            # プラグインを再読み込みして登録する
-            if not os.path.exists(f"{self.data_dir}/{self.plugin_dir_name}/{plugin_name}/__init__.py"):
-                logger.warning(f"Plugin {plugin_name} does not have an __init__.py file after copying. Skipping.")
-                return False
-            try:
-                __import__(f"{self.plugin_dir_name}.{plugin_name}")
-            except Exception as e:
-                logger.error(f"Failed to import plugin {plugin_name}: {e}")
-                return False
-
-            self._progress.step_bar2(plugin_name)
-            logger.info(f"Plugin {plugin_name} has been added/updated.")
-            self.__load_plugins()
-            return True
-        finally:
-            self._progress.close()
-            self._progress = None
+        self.components.add(plugin, dir, type)
 
     def get_plugin_names(self) -> PluginNameInfo:
         """
@@ -279,17 +74,97 @@ class PluginManager:
             PluginNameInfo: プラグイン名と表示名の辞書
         """
         return PluginNameInfo(
-            base_plugin={plugin.name: plugin.display_name for plugin in self.plugins.values()},
-            video_object_plugins={
-                name: plugin.display_name for name, plugin in self.video_object_plugins.items() if not plugin.is_hidden
-            },
-            video_effect_plugins={
-                name: plugin.display_name for name, plugin in self.video_effect_plugins.items() if not plugin.is_hidden
-            },
-            audio_object_plugins={
-                name: plugin.display_name for name, plugin in self.audio_object_plugins.items() if not plugin.is_hidden
-            },
-            audio_effect_plugins={
-                name: plugin.display_name for name, plugin in self.audio_effect_plugins.items() if not plugin.is_hidden
-            },
+            {plugin.name: plugin.display_name for plugin in self.plugins.values()},
+            self.generators.display_names(GeneratorKind.VIDEO_OBJECT),
+            self.generators.display_names(GeneratorKind.VIDEO_EFFECT),
+            self.generators.display_names(GeneratorKind.AUDIO_OBJECT),
+            self.generators.display_names(GeneratorKind.AUDIO_EFFECT),
         )
+
+    # --- イベント ---
+
+    def call_event(self, plugin_name: str, type: GeneratorEvent, params: dict) -> GeneratorInformation:
+        """
+        指定ジェネレーターの、指定イベント種別に対応するデコレーター付きメソッドを呼び出す。
+
+        Args:
+            plugin_name: 対象ジェネレーターの名前
+            type: イベント種別
+            params: イベントハンドラーに渡すパラメータ辞書
+
+        Returns:
+            イベント種別に応じた戻り値
+        """
+        return self._events.call_event(plugin_name, type, params)
+
+    # --- 描画 ---
+
+    def get_fonts_list(self) -> dict[str, list[int]]:
+        """
+        システムにインストールされているフォントの一覧を返す。
+
+        Returns:
+            dict[str, list[int]]: フォントファミリー名, ウェイト値（100/200/…/900）のリスト
+        """
+        return self.context.text_renderer.get_fonts_list()
+
+    def make_frame_buf(
+        self,
+        frame_number: int,
+        frame_structure: list[ItemStructure],
+        width: int,
+        height: int,
+        buffer_ptr: int,
+    ) -> dict[str, ItemResult]:
+        """
+        指定されたフレーム構造に基づいてフレームを生成し、指定されたバッファに書き込むメソッド。
+
+        Args:
+            frame_number (int): 生成するフレームの番号
+            frame_structure (list[ItemStructure]): フレーム構造のリスト
+            width (int): フレームの幅
+            height (int): フレームの高さ
+            buffer_ptr (int): 書き込み先バッファのポインタ
+
+        Returns:
+            dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
+        """
+        return self._video.render_buf(frame_number, frame_structure, width, height, buffer_ptr)
+
+    def make_frame_shared_texture(
+        self,
+        frame_number: int,
+        frame_structure: list[ItemStructure],
+        width: int,
+        height: int,
+        texture_handle: gpu_util.PySharedTextureHandle,
+        format: gpu_util.WrappedSharedTextureFormat,
+    ) -> dict[str, ItemResult]:
+        """
+        指定されたフレーム構造に基づいてフレームを生成し、指定された共有テクスチャに書き込むメソッド。
+
+        Args:
+            frame_number (int): 生成するフレームの番号
+            frame_structure (list[ItemStructure]): フレーム構造のリスト
+            width (int): フレームの幅
+            height (int): フレームの高さ
+            texture_handle (gpu_util.PySharedTextureHandle): 書き込み先の共有テクスチャハンドル
+            format (gpu_util.WrappedSharedTextureFormat): 共有テクスチャのフォーマット
+
+        Returns:
+            dict[str, ItemResult]: 各レイヤーのフレーム生成結果の辞書
+        """
+        return self._video.render_shared_texture(frame_number, frame_structure, width, height, texture_handle, format)
+
+    def play_audio(self, audio_structure: list[ItemStructure], sample_rate: int, channels: int, start_time: float, duration: float) -> None:
+        """
+        指定されたオーディオ構造に基づいてオーディオを生成し、再生するメソッド。
+
+        Args:
+            audio_structure (list[ItemStructure]): オーディオ構造のリスト
+            sample_rate (int): サンプルレート
+            channels (int): チャンネル数
+            start_time (float): 再生を開始する時間（秒）
+            duration (float): 再生する期間（秒）
+        """
+        self._audio.play(audio_structure, sample_rate, channels, start_time, duration)

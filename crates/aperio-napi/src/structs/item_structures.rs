@@ -338,10 +338,10 @@ pub enum GeneratorEvent {
 #[derive(Clone, PartialEq, Debug, PyDataclass)]
 pub struct PluginNameInfo {
     pub base_plugin: HashMap<String, String>,
-    pub video_object_plugins: HashMap<String, String>,
-    pub video_effect_plugins: HashMap<String, String>,
-    pub audio_object_plugins: HashMap<String, String>,
-    pub audio_effect_plugins: HashMap<String, String>,
+    pub video_object_generators: HashMap<String, String>,
+    pub video_effect_generators: HashMap<String, String>,
+    pub audio_object_generators: HashMap<String, String>,
+    pub audio_effect_generators: HashMap<String, String>,
 }
 
 // ---- モジュール登録 -------------------------------------------------------
