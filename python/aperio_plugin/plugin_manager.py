@@ -8,7 +8,7 @@ from .component_registry import ComponentRegistry
 from .context import AperioContext
 from .event_manager import EventDispatcher
 from .generator_registry import GeneratorRegistry
-from .plugin_base import GeneratorBase, MainPluginBase, PluginBase
+from .plugin_base import GeneratorBase, MainPluginBase
 from .plugin_base.generator_base import GeneratorKind
 from .plugin_loader import PluginLoader
 from .video_renderer import VideoRenderer
@@ -24,7 +24,7 @@ class PluginManager:
         self.context = context
         self.generators = GeneratorRegistry()
         self.components = ComponentRegistry(context.store_manager)
-        self._loader = PluginLoader(self.generators)
+        self._loader = PluginLoader(self.generators, self.components)
         self._events = EventDispatcher(self.generators)
         self._video = VideoRenderer(context, self.generators)
         self._audio = AudioRenderer(context, self.generators)
@@ -50,16 +50,19 @@ class PluginManager:
         """
         self._loader.add_generator(generator)
 
-    def add_component(self, plugin: PluginBase, dir: str, type: str) -> None:
+    def add_component(self, plugin: MainPluginBase, dir: str, type: str) -> None:
         """
-        UI のPluginComponentに差し込む React コンポーネントを登録する。
+        UI のPluginComponentに差し込む React コンポーネントを登録する。メインプラグインの__init__の中から呼ぶ。
         登録情報はstoreのplugin_componentsに保存され、UIはplugin://{plugin.name}/{type}/として読み込む。
         同じ(plugin.name, type)を再登録した場合は警告を出して無視する
 
         Args:
-            plugin: コンポーネントを登録するプラグインのインスタンス (plugin.nameがpluginIdになる)
+            plugin: コンポーネントを登録するメインプラグインのインスタンス (plugin.nameがpluginIdになる。ジェネレーターは渡せない)
             dir: ビルド済みの index.jsがあるディレクトリのパス (絶対パスに変換される)
             type: 差し込み先の type
+
+        Raises:
+            TypeError: plugin がメインプラグイン(MainPluginBase)ではない場合
         """
         self.components.add(plugin, dir, type)
 

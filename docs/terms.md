@@ -247,12 +247,12 @@
 
 ## PluginComponent（プラグインコンポーネント）
 
-**定義:** プラグインが UI に差し込む React コンポーネント。ビルド済みの `index.js` を `aperio_plugin.plugin_manager.add_component(plugin, dir, type)` で登録する。作り方は [plugin_frontend.md](plugin_frontend.md)。
+**定義:** プラグインが UI に差し込む React コンポーネント。ビルド済みの `index.js` を `aperio_plugin.plugin_manager.add_component(main_plugin, dir, type)` で登録する。作り方は [plugin_frontend.md](plugin_frontend.md)。
 
 | 用語                        | 意味                                                                                                              |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `PluginComponent`（ホスト） | `apps/ui/plugin/PluginComponent.tsx`。`<PluginComponent type="item" args={...}>デフォルト表示</PluginComponent>` |
-| `pluginId`                  | `add_component` に渡したプラグインの `name`(例: `base_object.group_object`)                                       |
+| `pluginId`                  | `add_component` に渡したメインプラグインの `name`(例: `base_object`)                                               |
 | `type`                      | 差し込み先の種類。ホストの `<PluginComponent type>` と一致したものだけが描画される                                |
 | `args`                      | ホストがプラグインに渡すデータ。型は type ごとに `@aperio/plugin-sdk/types` の `PluginComponentArgsMap` で定義    |
 | `plugin://`                 | `plugin://{pluginId}/{type}/index.js` で登録ディレクトリ内のファイルを配信する Electron のカスタムスキーム       |

@@ -22,8 +22,7 @@ class AperioBaseObjectPlugin(MainPluginBase):
 
         plugin_manager = aperio_plugin.plugin_manager
         plugin_manager.add_generator(AudioObject())
-        group = GroupObject()
-        plugin_manager.add_generator(group)
-        plugin_manager.add_component(group, os.path.join(FRONTEND_DIR, "group_item"), "item")
+        plugin_manager.add_generator(GroupObject())
+        plugin_manager.add_component(self, os.path.join(FRONTEND_DIR, "group_item"), "item")
         plugin_manager.add_generator(TextObject())
         plugin_manager.add_generator(VideoObject())

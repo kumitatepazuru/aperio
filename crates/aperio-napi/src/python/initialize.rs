@@ -65,6 +65,7 @@ pub fn initialize_python(dirs: &Dirs, config: &AperioConfig, is_dev: bool) -> Re
     install_default_plugins(dirs)?;
 
     println!("syncing packages...");
+    // TODO: ローカルパッケージの再インストールのみにする
     let sync_result = python::utils::sync_packages(dirs, is_dev);
     println!("Package sync result: {:?}", sync_result);
 

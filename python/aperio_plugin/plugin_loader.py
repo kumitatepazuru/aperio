@@ -1,3 +1,4 @@
+import re
 import time
 import traceback
 from collections.abc import Mapping
@@ -6,6 +7,7 @@ from types import MappingProxyType
 
 from aperio import logger
 
+from .component_registry import ComponentRegistry
 from .generator_registry import GeneratorRegistry
 from .plugin_base import GeneratorBase, MainPluginBase
 from .plugin_base.generator_base import GeneratorKind
@@ -14,15 +16,20 @@ from .plugin_load_progress import LoadProgressReporter
 ENTRY_POINT_GROUP = "aperio.plugins"
 """プラグインパッケージが MainPluginBase のサブクラスを公開する entry point のグループ名"""
 
+PLUGIN_ID_PATTERN = re.compile(r"[a-z0-9._-]+")
+"""メインプラグイン名(= entry point 名)に使える文字。
+UI は plugin://{name}/ の host として参照し、host は小文字に正規化されるため、大文字などは使えない。"""
+
 
 class PluginLoader:
     """
     uv でインストールされたプラグインパッケージを entry point から発見し、メインプラグインをインスタンス化する。
-    メインプラグインは初期化中に add_generator() でジェネレーターを登録する。
+    メインプラグインは初期化中に add_generator() でジェネレーターを、add_component() でコンポーネントを登録する。
     """
 
-    def __init__(self, registry: GeneratorRegistry) -> None:
+    def __init__(self, registry: GeneratorRegistry, components: ComponentRegistry) -> None:
         self._registry = registry
+        self._components = components
         self._plugins: dict[str, MainPluginBase] = {}
         # 読み込み中だけ値を持つ。_loading はインスタンス化中のメインプラグインの名前(= entry point 名)
         self._loading: str | None = None
@@ -76,6 +83,13 @@ class PluginLoader:
                 logger.warning(f"Plugin {ep.name} ({ep.value}) is already registered. Skipping.")
                 continue
 
+            if not PLUGIN_ID_PATTERN.fullmatch(ep.name):
+                logger.error(
+                    f"Invalid plugin name '{ep.name}' ({ep.value}). "
+                    f"Only characters matching {PLUGIN_ID_PATTERN.pattern} are allowed. Skipping."
+                )
+                continue
+
             try:
                 plugin_cls = ep.load()
             except Exception as e:
@@ -97,15 +111,35 @@ class PluginLoader:
         except Exception as e:
             logger.error(traceback.format_exc())
             logger.error(f"Failed to load plugin {name}: {e}")
-            self._registry.remove_owned_by(name)
+            self._rollback(name)
             return
         finally:
             self._loading = None
+
+        if not PLUGIN_ID_PATTERN.fullmatch(plugin.name):
+            logger.error(
+                f"Invalid plugin name '{plugin.name}' (entry point: {name}). "
+                f"Only characters matching {PLUGIN_ID_PATTERN.pattern} are allowed. Skipping."
+            )
+            self._rollback(name, plugin.name)
+            return
 
         if plugin.name != name:
             logger.warning(f"Plugin name '{plugin.name}' differs from its entry point name '{name}'.")
         self._plugins[name] = plugin
         logger.info(f"Registered plugin: {plugin.name}")
+
+    def _rollback(self, name: str, *component_owners: str) -> None:
+        """
+        初期化に失敗したメインプラグインが登録したジェネレーターとコンポーネントを取り除く。
+
+        Args:
+            name: entry point 名 (ジェネレーターの所有者)
+            component_owners: name のほかに、コンポーネントの pluginId として使われたかもしれない名前 (plugin.name)
+        """
+        self._registry.remove_owned_by(name)
+        for owner in {name, *component_owners}:
+            self._components.remove_owned_by(owner)
 
     def _log_summary(self, elapsed: float) -> None:
         counts = ", ".join(f"{self._registry.count(kind)} {kind.display_name}" for kind in GeneratorKind)

@@ -23,15 +23,15 @@ class MyPlugin(MainPluginBase):
         super().__init__()
         self.name = "my_plugin"
         ...
-        obj = MyObject()
-        aperio_plugin.plugin_manager.add_generator(obj)
-        # 登録するプラグイン、index.js があるディレクトリ(相対パスは絶対パスに変換される)、差し込み先の type
+        aperio_plugin.plugin_manager.add_generator(MyObject())
+        # 登録するメインプラグイン、index.js があるディレクトリ(相対パスは絶対パスに変換される)、差し込み先の type
         aperio_plugin.plugin_manager.add_component(
-            obj, os.path.join(os.path.dirname(__file__), "frontend", "my_item"), "item"
+            self, os.path.join(os.path.dirname(__file__), "frontend", "my_item"), "item"
         )
 ```
 
-- `add_component` は `PluginManager`(`aperio_plugin.plugin_manager`)のメソッドで、メインプラグイン・ジェネレーターどちらのインスタンスも渡せる
+- `add_component` は `PluginManager`(`aperio_plugin.plugin_manager`)のメソッドで、渡せるのはメインプラグイン(`MainPluginBase`)のインスタンスだけ。ジェネレーターを渡すと `TypeError` になる
+- メインプラグイン名(entry point 名)は `plugin://` の host になるため、`[a-z0-9._-]` の文字だけ使える。それ以外は読み込み時にエラーを出してスキップされる
 - プラグインは wheel で配布されるので、ビルド済みの `dist/` を wheel に含める必要がある。base では `plugins/base/pyproject.toml` の `force-include` で `frontend/group_item/dist` を `aperio_base/frontend/group_item` に取り込んでいる
 - `index.js` が無いときは警告を出して登録しない
 - `pluginId` は渡したプラグインの `name`。同じ `(pluginId, type)` を再登録すると上書きされる

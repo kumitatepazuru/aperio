@@ -19,6 +19,7 @@ class PluginErrorBoundary extends Component<
   { pluginId: string; fallback: ReactNode; children: ReactNode },
   { failed: boolean }
 > {
+  // TODO: エラーが出たときにユーザーが再読み込みできるようにポップアップを表示させる
   state = { failed: false };
 
   static getDerivedStateFromError() {
