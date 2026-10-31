@@ -1,11 +1,12 @@
 import os.path
 import traceback
-from typing import Literal
+from typing import Callable, Literal
 
 from aperio import gpu_util, logger
-from aperio.item_structures import AdditionalItem, ItemResult, ItemStructure
+from aperio.item_structures import AdditionalItem, GeneratorEvent, ItemResult, ItemStructure
 
 from .context import AperioContext
+from .event_manager import EventDispatcher
 from .frame_builder import apply_generate_result, last_leaf_id, layer_params
 from .generator_registry import GeneratorRegistry
 from .plugin_base.generator_base import (
@@ -30,9 +31,10 @@ class VideoRenderer:
     compose シェーダーで1枚のフレームに合成する。
     """
 
-    def __init__(self, context: AperioContext, registry: GeneratorRegistry) -> None:
+    def __init__(self, context: AperioContext, registry: GeneratorRegistry, events: EventDispatcher) -> None:
         self._context = context
         self._registry = registry
+        self._events = events
 
         generator = context.image_generator
         with open(os.path.join(SHADER_DIR, "compose.slang"), "r", encoding="utf-8") as f:
@@ -93,6 +95,10 @@ class VideoRenderer:
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
 
+            frame_structure = self._events.reduce_event(
+                GeneratorEvent.BeforeMakeFrame, _apply_before_make_frame, frame_structure
+            )
+
             composition = _FrameComposition(self._registry, frame_number, width, height)
             for layer in frame_structure:
                 if not isinstance(layer, ItemStructure.Video):
@@ -107,6 +113,19 @@ class VideoRenderer:
             raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
         return builder, composition.results
+
+
+def _apply_before_make_frame(
+    frame_structure: list[ItemStructure],
+    handler: Callable[[list[ItemStructure]], list[ItemStructure] | None],
+) -> list[ItemStructure]:
+    """BeforeMakeFrame ハンドラーを呼び、None 以外が返ればその構造に差し替える。"""
+    result = handler(frame_structure)
+    if result is None:
+        return frame_structure
+    if not isinstance(result, list):
+        raise TypeError("BeforeMakeFrame handler must return a list of ItemStructure or None")
+    return result
 
 
 class _FrameComposition:

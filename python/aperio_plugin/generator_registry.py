@@ -97,5 +97,9 @@ class GeneratorRegistry:
         """UI 向けに、指定された種別の (name → display_name) を返す。is_hidden のものは除外する。"""
         return {g.name: g.display_name for g in self.of_kind(kind) if not g.is_hidden}
 
+    def __iter__(self) -> Iterator[GeneratorBase]:
+        """全種別のジェネレーターを登録順に列挙する。"""
+        return iter(self._generators.values())
+
     def __len__(self) -> int:
         return len(self._generators)

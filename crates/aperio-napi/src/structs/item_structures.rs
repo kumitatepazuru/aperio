@@ -331,6 +331,7 @@ pub struct GeneratorInformation {
 pub enum GeneratorEvent {
     New,
     RequestStructure,
+    BeforeMakeFrame,
 }
 
 #[napi(object)]
