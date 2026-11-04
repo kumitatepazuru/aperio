@@ -71,7 +71,16 @@ export default function MyItem({ args, children }: PluginComponentProps<"item">)
 
 次の import はビルド時にバンドルされず、ホストが公開しているインスタンスに置き換わる(react が二重に読み込まれると hooks が動かなくなるため)。
 
-`react`, `react/jsx-runtime`, `react-dom`, `zustand`, `zustand/shallow`, `@aperio/plugin-sdk/store`
+`react`, `react/jsx-runtime`, `react-dom`, `zustand`, `zustand/shallow`, `@aperio/plugin-sdk/store`, `@aperio/plugin-sdk/timeline`
 
 `@aperio/plugin-sdk/store` はホストの store(`useStore`, `getStoreState`)で、型だけの `packages/plugin-sdk/store.d.ts` を置いてある。IDE では型が効き、実行時はホストのものが使われる。
 ホストの `Store` 型(`packages/ui/store.ts`)を変えたら、`store.d.ts` も合わせる。
+
+`@aperio/plugin-sdk/timeline` はタイムラインの表示状態の Context(`TimelineContext`, `useTimeline`)。`item` など `Timeline` の内側に差し込まれるコンポーネントから、`zoomLevelPxPerFrame` / `layerHeight` / `horizontalScroll` / `contentWidth` / `graduationInterval` / `maxVisibleLayers` などを取得できる。
+`Timeline` の外では `useTimeline()` が例外を投げる。ホスト側の型(`apps/ui/timeline/TimelineContext.ts`)を変えたら、`timeline.d.ts` も合わせる。
+
+```tsx
+import { useTimeline } from "@aperio/plugin-sdk/timeline";
+
+const { zoomLevelPxPerFrame, layerHeight } = useTimeline();
+```

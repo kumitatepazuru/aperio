@@ -8,34 +8,25 @@ import {
 import frameToDate from "@aperio/ui/utils/frameToDate";
 import useStore, { getCurrentFrameCount } from "@aperio/ui/store";
 import { useShallow } from "zustand/shallow";
+import { useTimeline } from "./TimelineContext";
 
 type TimelineBaseUIProps = {
-  zoom: number;
-  zoomLevels: number[];
-  horizontalScroll: number;
-  onZoomChange: (nextZoom: number) => void;
-  maxVisibleLayers: number;
-  layerHeight: number;
-  contentWidth: number;
-  graduationInterval: number;
-  visibleGraduationIndices: number[];
-  visibleVerticalLineIndices: number[];
   children: ReactNode;
 };
 
-const TimelineBaseUI = ({
-  zoom,
-  zoomLevels,
-  horizontalScroll,
-  onZoomChange,
-  maxVisibleLayers,
-  layerHeight,
-  contentWidth,
-  graduationInterval,
-  visibleGraduationIndices,
-  visibleVerticalLineIndices,
-  children,
-}: TimelineBaseUIProps) => {
+const TimelineBaseUI = ({ children }: TimelineBaseUIProps) => {
+  const {
+    zoom,
+    zoomLevels,
+    horizontalScroll,
+    setZoom: onZoomChange,
+    maxVisibleLayers,
+    layerHeight,
+    contentWidth,
+    graduationInterval,
+    visibleGraduationIndices,
+    visibleVerticalLineIndices,
+  } = useTimeline();
   const { frameState, viewerState, pause, setSelectedItemId } = useStore(
     useShallow((state) => ({
       frameState: state.frameState,
@@ -106,7 +97,7 @@ const TimelineBaseUI = ({
       style={{ transform: `translateX(-${horizontalScroll}px)` }}
     >
       <div
-        className="w-20 shrink-0 bg-base-100 z-20 border-r"
+        className="w-20 shrink-0 bg-base-100 z-50 border-r"
         style={{ transform: `translateX(${horizontalScroll}px)` }}
       >
         <div className="h-7 border-b sticky top-0 bg-base-100">
@@ -142,7 +133,7 @@ const TimelineBaseUI = ({
       >
         {/* beginFrameの線 */}
         <div
-          className="absolute top-0 bottom-0 border-l border-info z-20"
+          className="absolute top-0 bottom-0 border-l border-info z-45"
           style={{
             left: viewerState.beginFrame * zoomLevels[zoom],
           }}
@@ -150,7 +141,7 @@ const TimelineBaseUI = ({
 
         {/* 再生中のフレームを示す線 */}
         <div
-          className="absolute top-0 bottom-0 border-l border-secondary z-20"
+          className="absolute top-0 bottom-0 border-l border-secondary z-45"
           style={{
             left: currentFrameCount * zoomLevels[zoom],
           }}
@@ -158,7 +149,7 @@ const TimelineBaseUI = ({
 
         {/* 目盛り線 */}
         <div
-          className="w-full h-7 border-b sticky top-0 bg-base-100 z-10"
+          className="w-full h-7 border-b sticky top-0 bg-base-100 z-43"
           ref={graduationRef}
         >
           {visibleGraduationIndices.map((index) => {

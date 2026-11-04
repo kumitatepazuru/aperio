@@ -13,8 +13,10 @@ import useContentSize from "@/hooks/useContentSize";
 import LayerItems from "./LayerItems";
 import MultipleSelect from "./MultipleSelect";
 import TimelineBaseUI from "./TimelineBaseUI";
+import { TimelineContext } from "./TimelineContext";
 import { useMergeRefs } from "@floating-ui/react";
 import type { ItemStructure } from "native";
+import type {TimelineContextValue} from "@aperio/plugin-sdk/timeline";
 
 const ZoomLevels = [20, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02]; // フレームあたりのピクセル数
 
@@ -119,6 +121,31 @@ const Timeline = () => {
 
   const contentWidth = maxVisibleFrames * ZoomLevels[zoom];
   const totalScrollableWidth = LayerColumnWidth + contentWidth;
+
+  const timelineContext = useMemo<TimelineContextValue>(
+    () => ({
+      zoom,
+      zoomLevels: ZoomLevels,
+      zoomLevelPxPerFrame: ZoomLevels[zoom],
+      setZoom,
+      horizontalScroll,
+      maxVisibleLayers,
+      layerHeight: LayerHeight,
+      contentWidth,
+      graduationInterval,
+      visibleGraduationIndices,
+      visibleVerticalLineIndices,
+    }),
+    [
+      zoom,
+      horizontalScroll,
+      maxVisibleLayers,
+      contentWidth,
+      graduationInterval,
+      visibleGraduationIndices,
+      visibleVerticalLineIndices,
+    ],
+  );
 
   const handleTopScroll = () => {
     if (!topScrollRef.current) return;
@@ -255,28 +282,19 @@ const Timeline = () => {
         className="h-[calc(100%-1rem)] overflow-x-hidden overflow-y-scroll"
         onWheel={handleBodyWheel}
       >
-        <TimelineBaseUI
-          zoom={zoom}
-          zoomLevels={ZoomLevels}
-          horizontalScroll={horizontalScroll}
-          onZoomChange={setZoom}
-          maxVisibleLayers={maxVisibleLayers}
-          layerHeight={LayerHeight}
-          contentWidth={contentWidth}
-          graduationInterval={graduationInterval}
-          visibleGraduationIndices={visibleGraduationIndices}
-          visibleVerticalLineIndices={visibleVerticalLineIndices}
-        >
-          <MultipleSelect
-            zoomLevelPxPerFrame={ZoomLevels[zoom]}
-            layerHeight={LayerHeight}
-          />
-          <LayerItems
-            zoomLevelPxPerFrame={ZoomLevels[zoom]}
-            graduationInterval={graduationInterval}
-            layerHeight={LayerHeight}
-          />
-        </TimelineBaseUI>
+        <TimelineContext.Provider value={timelineContext}>
+          <TimelineBaseUI>
+            <MultipleSelect
+              zoomLevelPxPerFrame={ZoomLevels[zoom]}
+              layerHeight={LayerHeight}
+            />
+            <LayerItems
+              zoomLevelPxPerFrame={ZoomLevels[zoom]}
+              graduationInterval={graduationInterval}
+              layerHeight={LayerHeight}
+            />
+          </TimelineBaseUI>
+        </TimelineContext.Provider>
       </div>
     </div>
   );

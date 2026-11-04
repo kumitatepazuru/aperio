@@ -26,7 +26,7 @@ class PluginManager:
         self.components = ComponentRegistry(context.store_manager)
         self._loader = PluginLoader(self.generators, self.components)
         self._events = EventDispatcher(self.generators)
-        self._video = VideoRenderer(context, self.generators)
+        self._video = VideoRenderer(context, self.generators, self._events)
         self._audio = AudioRenderer(context, self.generators)
 
     # --- プラグイン管理 ---

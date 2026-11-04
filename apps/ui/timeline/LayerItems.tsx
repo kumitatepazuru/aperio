@@ -253,7 +253,7 @@ const LayerItems = ({
         }}
       >
         <div
-          className="absolute py-0.5"
+          className="absolute py-0.5 z-40"
           style={{
             left,
             width,

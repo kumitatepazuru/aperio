@@ -1,6 +1,6 @@
 from typing import Any, Callable, Literal, cast, overload
 
-from aperio.item_structures import GeneratorEvent, GeneratorInformation
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemStructure
 from aperio_plugin.plugin_base.generator_base import *
 
 from .generator_registry import GeneratorNotFoundError, GeneratorRegistry
@@ -13,12 +13,16 @@ type EventCallable[T, U] = Callable[[Callable[[Any, T], U]], Callable[[Any, T], 
 def event(*, type: Literal[GeneratorEvent.New]) -> EventCallable[dict, GeneratorInformation]: ...
 @overload
 def event(*, type: Literal[GeneratorEvent.RequestStructure]) -> EventCallable[dict, GeneratorInformation]: ...
+@overload
+def event(
+    *, type: Literal[GeneratorEvent.BeforeMakeFrame]
+) -> EventCallable[list[ItemStructure], list[ItemStructure] | None]: ...
 def event(*, type: GeneratorEvent) -> EventCallable:
     """
     プラグインのイベントハンドラーを登録するデコレーター。
 
     Args:
-        type: ハンドルするイベントの種別 (GeneratorEvent.New / GeneratorEvent.RequestStructure)
+        type: ハンドルするイベントの種別 (GeneratorEvent.New / GeneratorEvent.RequestStructure / GeneratorEvent.BeforeMakeFrame)
     """
 
     def decorator(func: Callable) -> Callable:
@@ -62,6 +66,25 @@ class EventDispatcher:
                 f"Plugin '{plugin_name}' has no method decorated with @event(type={type!r})"
             )
         return handler(params)
+
+    def reduce_event[T](self, type: GeneratorEvent, func: Callable[[T, Callable[..., Any]], T], initial: T) -> T:
+        """
+        全ジェネレーターの、指定イベント種別に対応するハンドラーを登録順に畳み込む。
+
+        Args:
+            type: イベント種別
+            func: (現在の値, ハンドラー) を受け取り、任意の方法でハンドラーを呼び出して新しい値を返す関数
+            initial: 初期値
+
+        Returns:
+            すべてのハンドラーを畳み込んだ後の値
+        """
+        acc = initial
+        for generator in self._registry:
+            handler = self._find_handler(generator, type)
+            if handler is not None:
+                acc = func(acc, handler)
+        return acc
 
     @staticmethod
     def _find_handler(generator: GeneratorBase, type: GeneratorEvent) -> Callable[[dict], Any] | None:

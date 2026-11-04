@@ -280,8 +280,8 @@ pub enum ItemStructure {
         layer: i32,
         start: i32, // アイテムの開始フレーム
         end: i32,   // アイテムの終了フレーム
-        x: i32,
-        y: i32,
+        x: f64,
+        y: f64,
         scale: f64,
         rotation: f64,
         alpha: f64,
@@ -331,6 +331,7 @@ pub struct GeneratorInformation {
 pub enum GeneratorEvent {
     New,
     RequestStructure,
+    BeforeMakeFrame,
 }
 
 #[napi(object)]

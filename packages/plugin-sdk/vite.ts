@@ -18,11 +18,13 @@ const SHARED_MODULES = [
   "zustand",
   "zustand/shallow",
   "@aperio/plugin-sdk/store",
+  "@aperio/plugin-sdk/timeline",
 ] as const;
 
 /** 型だけの d.ts でビルド時に実体を読めないモジュールの named export */
 const FIXED_EXPORTS: Record<string, string[]> = {
   "@aperio/plugin-sdk/store": ["useStore", "getStoreState"],
+  "@aperio/plugin-sdk/timeline": ["TimelineContext", "useTimeline"],
 };
 
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
