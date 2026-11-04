@@ -209,7 +209,7 @@ class _FrameComposition:
         if obj.get("link_id") is not None:
             chain.link(obj["id"], obj["link_id"])
         else:
-            result = self._generate(GeneratorKind.VIDEO_OBJECT, layer, obj, self._width, self._height)
+            result = self._generate(GeneratorKind.VIDEO_OBJECT, layer, obj, self._width, self._height, None)
             if result is None:
                 return None
             chain.apply(obj["id"], result)
@@ -219,7 +219,7 @@ class _FrameComposition:
                 chain.link(effect["id"], effect["link_id"])
                 continue
             current = chain.item_result
-            result = self._generate(GeneratorKind.VIDEO_EFFECT, layer, effect, current.width, current.height)
+            result = self._generate(GeneratorKind.VIDEO_EFFECT, layer, effect, current.width, current.height, current)
             if result is not None:
                 chain.apply(effect["id"], result)
 
@@ -232,12 +232,14 @@ class _FrameComposition:
         structure: dict,
         width: int,
         height: int,
+        item_result: ItemResult | None,
     ) -> VideoGenerateResult | None:
         """
         structure(GenerateStructure) に対応するジェネレーターを呼び出す。
 
         Args:
             width, height: 生成元のサイズ。オブジェクトの場合はフレームサイズ、エフェクトの場合は直前までのオブジェクトサイズ
+            item_result: 直前までの累積結果。オブジェクトの場合は None
         """
         generator = self._registry.get(structure["name"], kind)
         params = VideoGenerateParameters(
@@ -247,6 +249,9 @@ class _FrameComposition:
             width=width,
             height=height,
             structure_id=structure["id"],
+            item_result=item_result,
+            canvas_width=self._width,
+            canvas_height=self._height,
         )
         return generator.generate(params)
 

@@ -49,6 +49,7 @@ pub struct FileFilter {
     pub extensions: Vec<String>,
 }
 
+// TODO: アイテムの基礎情報を別にまとめることで、OffScreenSourceを別途定義しなくていいようにする
 #[napi(object)]
 #[pyclass(from_py_object, get_all, eq)]
 #[derive(Clone, PartialEq, Debug)]
@@ -66,12 +67,34 @@ pub struct ItemResult {
     // エフェクトが「自分の背面/前面に追加のアイテムを流し込みたい」場合に使う。
     // 合成ループは additional_item.item を実アイテムと全く同じコードパスで処理する。
     pub additional_item: Option<AdditionalItem>,
+    // オフスクリーン描画済み(アイテムの変形をテクスチャに焼き込み済み)のフラグ
+    pub offscreen: bool,
+    // 焼き込み直前のオブジェクトの形。offscreenではないときはNone。
+    pub offscreen_source: Option<OffscreenSource>,
+}
+
+/// オフスクリーン描画で焼き込まれる直前の、オブジェクトの幅・高さと累積変形。
+#[napi(object)]
+#[pyclass(from_py_object, get_all, eq)]
+#[derive(Clone, PartialEq, Debug)]
+pub struct OffscreenSource {
+    pub width: i32,
+    pub height: i32,
+    pub pos: Option<(f64, f64, f64)>,
+    pub center_x: Option<f64>,
+    pub center_y: Option<f64>,
+    pub scale: Option<(f64, f64)>,
+}
+
+/// `pos` の Z を捨てて X/Y だけにする(オフスクリーン済みのアイテムは Z を無視する)。
+fn drop_pos_z(pos: Option<(f64, f64, f64)>) -> Option<(f64, f64, f64)> {
+    pos.map(|(x, y, _)| (x, y, 0.0))
 }
 
 #[pymethods]
 impl ItemResult {
     #[new]
-    #[pyo3(signature = (width, height, pos=None, center_x=None, center_y=None, scale=None, rotate=None, alpha=None, additional_item=None))]
+    #[pyo3(signature = (width, height, pos=None, center_x=None, center_y=None, scale=None, rotate=None, alpha=None, additional_item=None, offscreen=false))]
     fn new(
         width: i32,
         height: i32,
@@ -82,6 +105,7 @@ impl ItemResult {
         rotate: Option<(f64, f64, f64)>,
         alpha: Option<f64>,
         additional_item: Option<AdditionalItem>,
+        offscreen: bool,
     ) -> Self {
         Self {
             width,
@@ -93,21 +117,56 @@ impl ItemResult {
             rotate,
             alpha,
             additional_item,
+            offscreen,
+            offscreen_source: None,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "ItemResult(width={:?}, height={:?}, pos={:?}, center_x={:?}, center_y={:?}, scale={:?}, rotate={:?}, alpha={:?}, additional_item={:?})",
-            self.width, self.height, self.pos, self.center_x, self.center_y, self.scale, self.rotate, self.alpha, self.additional_item
+            "ItemResult(width={:?}, height={:?}, pos={:?}, center_x={:?}, center_y={:?}, scale={:?}, rotate={:?}, alpha={:?}, additional_item={:?}, offscreen={:?}, offscreen_source={:?})",
+            self.width, self.height, self.pos, self.center_x, self.center_y, self.scale, self.rotate, self.alpha, self.additional_item, self.offscreen, self.offscreen_source
         )
     }
 
     fn combine(&mut self, item_result: ItemResult) {
+        // オフスクリーン描画の焼き込みの瞬間: 累積した変形はテクスチャに焼き込み済みなので捨てる。
+        // 捨てる前に、UI の枠用に焼き込み前の形を退避する(サイズの上書きより先に行う)。
+        if item_result.offscreen && !self.offscreen {
+            self.offscreen_source = Some(OffscreenSource {
+                width: self.width,
+                height: self.height,
+                pos: self.pos,
+                center_x: self.center_x,
+                center_y: self.center_y,
+                scale: self.scale,
+            });
+        }
+
         // サイズは「そのエフェクトが出力したテクスチャの大きさ」なので後勝ち。
         // 何もしないエフェクトも入力と同じ width/height を返すため無害。
         self.width = item_result.width;
         self.height = item_result.height;
+
+        if item_result.offscreen && !self.offscreen {
+            self.pos = None;
+            self.center_x = None;
+            self.center_y = None;
+            self.scale = None;
+            self.rotate = None;
+            self.alpha = None;
+            self.offscreen = true;
+        }
+
+        // オフスクリーン済み: 最終描画は X/Y の平行移動と中心ずれしか読まない。
+        // scale/rotate/alpha/pos.z は積まない(無視される)。
+        if self.offscreen {
+            self.pos = opt_add_tuple3_f64(drop_pos_z(self.pos), drop_pos_z(item_result.pos));
+            self.center_x = opt_add_f64(self.center_x, item_result.center_x);
+            self.center_y = opt_add_f64(self.center_y, item_result.center_y);
+            return;
+        }
+
         self.pos = opt_add_tuple3_f64(self.pos, item_result.pos);
         self.center_x = opt_add_f64(self.center_x, item_result.center_x);
         self.center_y = opt_add_f64(self.center_y, item_result.center_y);
@@ -363,6 +422,8 @@ pub mod item_structures {
     use super::ItemResult;
     #[pymodule_export]
     use super::ItemStructure;
+    #[pymodule_export]
+    use super::OffscreenSource;
     #[pymodule_export]
     use super::PluginNameInfo;
     #[pymodule_export]

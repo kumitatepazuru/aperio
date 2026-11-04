@@ -1,11 +1,16 @@
 import useContentSize from "@/hooks/useContentSize";
 import orgFloor from "@aperio/ui/utils/orgFloor";
 import useStore, { getCurrentVideoItems } from "@aperio/ui/store";
-import type { ItemStructure } from "native";
+import type { ItemResult, ItemStructure } from "native";
 import { useEffect, useState } from "react";
 import { FaArrowRotateRight } from "react-icons/fa6";
 
 type VideoItem = ItemStructure & { type: "Video" };
+
+// 枠の幾何(幅・高さ・座標・拡大率・中心ずれ)を取り出す。
+// オフスクリーン描画済みのアイテムは result 自体がキャンバス大に焼き込み後の値なので、
+// 焼き込み前の形(offscreenSource)で枠を描く。こうするとアイテムの x/y/scale/rotation に追従する。
+const boxGeometry = (result: ItemResult) => result.offscreenSource ?? result;
 
 const Overlay = () => {
   const viewerState = useStore((state) => state.viewerState);
@@ -44,16 +49,20 @@ const Overlay = () => {
 
     // 回転中心 = 枠の transform-origin (エフェクトの座標オフセット込み) をクライアント座標に変換
     // rotate button → item div → overlay div
-    const overlayEl = (e.currentTarget as HTMLElement).parentElement?.parentElement;
+    const overlayEl = (e.currentTarget as HTMLElement).parentElement
+      ?.parentElement;
     const overlayRect = overlayEl?.getBoundingClientRect();
     if (!overlayRect) return;
 
     const pctW = width / frameState.width;
     const pctH = height / frameState.height;
-    const originFrameX = item.x + (result?.pos?.[0] ?? 0);
-    const originFrameY = item.y + (result?.pos?.[1] ?? 0);
-    const centerClientX = overlayRect.left + (frameState.width / 2 + originFrameX) * pctW;
-    const centerClientY = overlayRect.top + (frameState.height / 2 + originFrameY) * pctH;
+    const box = result ? boxGeometry(result) : undefined;
+    const originFrameX = item.x + (box?.pos?.[0] ?? 0);
+    const originFrameY = item.y + (box?.pos?.[1] ?? 0);
+    const centerClientX =
+      overlayRect.left + (frameState.width / 2 + originFrameX) * pctW;
+    const centerClientY =
+      overlayRect.top + (frameState.height / 2 + originFrameY) * pctH;
 
     const initialAngle = Math.atan2(
       e.clientY - centerClientY,
@@ -128,20 +137,21 @@ const Overlay = () => {
 
     // エフェクトが返した拡大率・座標は item.scale/x/y の外側に乗る固定倍率・固定オフセット。
     // 枠の描画と同じものを使わないとハンドルを掴んだ瞬間に飛ぶ。
-    const resScaleX = result.scale?.[0] ?? 1;
-    const resScaleY = result.scale?.[1] ?? 1;
-    const posX = result.pos?.[0] ?? 0;
-    const posY = result.pos?.[1] ?? 0;
+    const box = boxGeometry(result);
+    const resScaleX = box.scale?.[0] ?? 1;
+    const resScaleY = box.scale?.[1] ?? 1;
+    const posX = box.pos?.[0] ?? 0;
+    const posY = box.pos?.[1] ?? 0;
 
     const initScale = item.scale;
     const initX = item.x + posX;
     const initY = item.y + posY;
-    const initHalfW = (result.width * initScale * resScaleX) / 200;
-    const initHalfH = (result.height * initScale * resScaleY) / 200;
+    const initHalfW = (box.width * initScale * resScaleX) / 200;
+    const initHalfH = (box.height * initScale * resScaleY) / 200;
 
     // center_x/y はスケール前のテクスチャピクセル単位なのでスケールを掛ける
-    const centerXRaw = result.centerX ?? 0;
-    const centerYRaw = result.centerY ?? 0;
+    const centerXRaw = box.centerX ?? 0;
+    const centerYRaw = box.centerY ?? 0;
     const initCenterXScaled = centerXRaw * (initScale / 100) * resScaleX;
     const initCenterYScaled = centerYRaw * (initScale / 100) * resScaleY;
 
@@ -201,8 +211,8 @@ const Overlay = () => {
 
       const scaleFactor = newDiagLen / diagLen;
       const newScale = initScale * scaleFactor;
-      const newHalfW = (result.width * newScale * resScaleX) / 200;
-      const newHalfH = (result.height * newScale * resScaleY) / 200;
+      const newHalfW = (box.width * newScale * resScaleX) / 200;
+      const newHalfH = (box.height * newScale * resScaleY) / 200;
 
       // スケール後の center オフセット（テクスチャpx × 新scale）
       const newCenterXScaled = centerXRaw * (newScale / 100) * resScaleX;
@@ -212,14 +222,18 @@ const Overlay = () => {
       // newCenter = anchor - toGlobal(newAnchLocal)
       // newAnchLocal = (-signX*newHalfW - newCenterXScaled, -signY*newHalfH - newCenterYScaled)
       // → newCenter = anchor + toGlobal(signX*newHalfW + newCenterXScaled, signY*newHalfH + newCenterYScaled)
-      const newItemX = anchorX + toGlobalX(
-        signX * newHalfW + newCenterXScaled,
-        signY * newHalfH + newCenterYScaled,
-      );
-      const newItemY = anchorY + toGlobalY(
-        signX * newHalfW + newCenterXScaled,
-        signY * newHalfH + newCenterYScaled,
-      );
+      const newItemX =
+        anchorX +
+        toGlobalX(
+          signX * newHalfW + newCenterXScaled,
+          signY * newHalfH + newCenterYScaled,
+        );
+      const newItemY =
+        anchorY +
+        toGlobalY(
+          signX * newHalfW + newCenterXScaled,
+          signY * newHalfH + newCenterYScaled,
+        );
 
       setTimelineItems(
         timelineItems.map((i) => {
@@ -324,16 +338,18 @@ const Overlay = () => {
         // エフェクトが返した拡大率・座標も枠に反映する。
         // TODO: 3D回転(result.rotate)とZ座標による遠近はCSSの矩形では表現できないため、
         // 枠は従来どおり item.rotation だけで回す(回転エフェクトを足すと枠と描画結果はずれる)。
-        const effScaleX = (item.scale / 100) * (result.scale?.[0] ?? 1);
-        const effScaleY = (item.scale / 100) * (result.scale?.[1] ?? 1);
-        const effX = item.x + (result.pos?.[0] ?? 0);
-        const effY = item.y + (result.pos?.[1] ?? 0);
+        // オフスクリーン描画済みのアイテムは、焼き込み前の形(offscreenSource)で枠を描く。
+        const box = boxGeometry(result);
+        const effScaleX = (item.scale / 100) * (box.scale?.[0] ?? 1);
+        const effScaleY = (item.scale / 100) * (box.scale?.[1] ?? 1);
+        const effX = item.x + (box.pos?.[0] ?? 0);
+        const effY = item.y + (box.pos?.[1] ?? 0);
         // scaleとborderの幅を考慮したサイズ
-        const scaledWidth = result.width * effScaleX + 4;
-        const scaledHeight = result.height * effScaleY + 4;
+        const scaledWidth = box.width * effScaleX + 4;
+        const scaledHeight = box.height * effScaleY + 4;
         // center_x/y はテクスチャpx単位なのでscaleを掛けてフレーム座標へ変換
-        const cxScaled = (result.centerX ?? 0) * effScaleX;
-        const cyScaled = (result.centerY ?? 0) * effScaleY;
+        const cxScaled = (box.centerX ?? 0) * effScaleX;
+        const cyScaled = (box.centerY ?? 0) * effScaleY;
         // バウンディングボックス中心 = (effX - cxScaled, effY - cyScaled)
         const startX = (effX - cxScaled - scaledWidth / 2) * percentWidth;
         const itemWidth = scaledWidth * percentWidth;

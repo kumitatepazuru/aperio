@@ -92,13 +92,41 @@ def last_leaf_id(id_tree_list: list) -> str:
     return node
 
 
+def pack_layer_params(inv: list[list[float]], center_x: float, center_y: float, alpha: float) -> bytes:
+    """逆ホモグラフィ・基点オフセット・透明度から、compose.slang のLayerParams(64バイト)を作る。
+    struct LayerParams: inv_transform (mat3x3), center_x, center_y, alpha, _pad -> 64 bytes
+    """
+    return struct.pack(
+        "<16f",
+        inv[0][0], inv[1][0], inv[2][0], 0.0,
+        inv[0][1], inv[1][1], inv[2][1], 0.0,
+        inv[0][2], inv[1][2], inv[2][2], 0.0,
+        center_x, center_y, alpha, 0.0,
+    )
+
+
+def _offscreen_layer_params(result: ItemResult) -> bytes:
+    """オフスクリーン描画済みのレイヤー用LayerParamsの生成"""
+    pos = result.pos or (0.0, 0.0, 0.0)
+    tx = float(math.trunc(pos[0]))
+    ty = float(math.trunc(pos[1]))
+    # 平行移動 (tx, ty) の逆行列
+    inv = [[1.0, 0.0, -tx], [0.0, 1.0, -ty], [0.0, 0.0, 1.0]]
+    return pack_layer_params(inv, result.center_x or 0.0, result.center_y or 0.0, 1.0)
+
+
 def layer_params(item: "ItemStructure.Video", result: ItemResult, canvas_height: int) -> bytes:
     """1レイヤーぶんの、compose.slang に渡す `LayerParams` を組み立てる。
 
     レイヤーを「ローカル z=0 平面上にある、基点(ピボット)中心のテクスチャ矩形」とみなし、
     拡大率 -> 3D回転 -> 平行移動(X/Y/Z) -> 透視投影 の順で画面へ送る。平面なので
     この一連の変換は3x3ホモグラフィ1枚で表せる。compose.slang には逆行列を渡す。
+
+    offscreenのときは、最終描画は矩形転送なので、X/Y の平行移動(整数画素への0方向切り捨て)と基点オフセットだけを使う。
     """
+    if result.offscreen:
+        return _offscreen_layer_params(result)
+
     pos = result.pos or (0.0, 0.0, 0.0)
     # 整数に丸めず実数のまま持つ (実機の Q12 = 1/4096px 相当のサブピクセル座標)
     eff_x = item.x + pos[0]
@@ -148,12 +176,4 @@ def layer_params(item: "ItemStructure.Video", result: ItemResult, canvas_height:
         inv = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         alpha = 0.0
 
-    # Slangのcompose.slangも列ごとにfloat4で受けるため、列優先で、各列は16バイトにパディングされる。
-    # struct LayerParams: inv_transform (mat3x3), center_x, center_y, alpha, _pad -> 64バイト
-    return struct.pack(
-        "<16f",
-        inv[0][0], inv[1][0], inv[2][0], 0.0,
-        inv[0][1], inv[1][1], inv[2][1], 0.0,
-        inv[0][2], inv[1][2], inv[2][2], 0.0,
-        eff_center_x, eff_center_y, alpha, 0.0,
-    )
+    return pack_layer_params(inv, eff_center_x, eff_center_y, alpha)
