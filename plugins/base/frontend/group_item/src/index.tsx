@@ -10,14 +10,19 @@ export default function GroupItem({
   const { item, left, width, top, layerHeight } = args;
   if (item.object.name !== GROUP_OBJECT_NAME) return <>{children}</>;
 
-  const layers = Number(item.object.parameters.layers ?? 1);
+  // 0 = 一番下まで
+  const layers = Number(item.object.parameters.layers ?? 0);
 
   return (
     <>
       {children}
       <div
         className="absolute z-20 bg-black/50 pointer-events-none"
-        style={{ left, width, top: top + layerHeight, height: layerHeight * layers }}
+        style={
+          layers === 0
+            ? { left, width, top: top + layerHeight, bottom: 0 }
+            : { left, width, top: top + layerHeight, height: layerHeight * layers }
+        }
       />
     </>
   );
