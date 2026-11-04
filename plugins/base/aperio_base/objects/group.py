@@ -73,12 +73,13 @@ class GroupObject(VideoObjectGeneratorBase):
         videos = [item for item in frame_structure if isinstance(item, ItemStructure.Video)]
         for item in sorted(videos, key=lambda i: i.layer):
             active = [(g, end) for g, end in active if item.layer < end]
-            if active:
-                parent[item.layer] = active[-1][0]
-            if self._is_group(item):
+            # 同じレイヤーのグループ(終端境界で隣接するアイテム等)は支配者にしない
+            owner = next((g for g, _ in reversed(active) if g.layer < item.layer), None)
+            is_group = self._is_group(item)
+            if owner is not None and (not is_group or item.object["parameters"].get("affected_by_parent", False)):
+                parent[item.layer] = owner
+            if is_group:
                 active.append((item, _range_end(item)))
-                if not item.object["parameters"].get("affected_by_parent", False):
-                    parent.pop(item.layer, None)
         return parent
 
 
