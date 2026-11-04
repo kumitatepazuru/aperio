@@ -22,7 +22,7 @@ export default function GroupItem({
     <>
       {children}
       <div
-        className="absolute z-20 bg-black/50 pointer-events-none"
+        className="absolute z-20 bg-black/40 pointer-events-none"
         style={
           layers === 0
             ? { left, width, top: top + layerHeight, bottom: 0 }

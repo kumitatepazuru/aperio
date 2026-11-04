@@ -97,7 +97,7 @@ const TimelineBaseUI = ({ children }: TimelineBaseUIProps) => {
       style={{ transform: `translateX(-${horizontalScroll}px)` }}
     >
       <div
-        className="w-20 shrink-0 bg-base-100 z-20 border-r"
+        className="w-20 shrink-0 bg-base-100 z-50 border-r"
         style={{ transform: `translateX(${horizontalScroll}px)` }}
       >
         <div className="h-7 border-b sticky top-0 bg-base-100">
@@ -133,7 +133,7 @@ const TimelineBaseUI = ({ children }: TimelineBaseUIProps) => {
       >
         {/* beginFrameの線 */}
         <div
-          className="absolute top-0 bottom-0 border-l border-info z-20"
+          className="absolute top-0 bottom-0 border-l border-info z-45"
           style={{
             left: viewerState.beginFrame * zoomLevels[zoom],
           }}
@@ -141,7 +141,7 @@ const TimelineBaseUI = ({ children }: TimelineBaseUIProps) => {
 
         {/* 再生中のフレームを示す線 */}
         <div
-          className="absolute top-0 bottom-0 border-l border-secondary z-20"
+          className="absolute top-0 bottom-0 border-l border-secondary z-45"
           style={{
             left: currentFrameCount * zoomLevels[zoom],
           }}
@@ -149,7 +149,7 @@ const TimelineBaseUI = ({ children }: TimelineBaseUIProps) => {
 
         {/* 目盛り線 */}
         <div
-          className="w-full h-7 border-b sticky top-0 bg-base-100 z-10"
+          className="w-full h-7 border-b sticky top-0 bg-base-100 z-43"
           ref={graduationRef}
         >
           {visibleGraduationIndices.map((index) => {
