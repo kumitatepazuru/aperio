@@ -8,34 +8,25 @@ import {
 import frameToDate from "@aperio/ui/utils/frameToDate";
 import useStore, { getCurrentFrameCount } from "@aperio/ui/store";
 import { useShallow } from "zustand/shallow";
+import { useTimeline } from "./TimelineContext";
 
 type TimelineBaseUIProps = {
-  zoom: number;
-  zoomLevels: number[];
-  horizontalScroll: number;
-  onZoomChange: (nextZoom: number) => void;
-  maxVisibleLayers: number;
-  layerHeight: number;
-  contentWidth: number;
-  graduationInterval: number;
-  visibleGraduationIndices: number[];
-  visibleVerticalLineIndices: number[];
   children: ReactNode;
 };
 
-const TimelineBaseUI = ({
-  zoom,
-  zoomLevels,
-  horizontalScroll,
-  onZoomChange,
-  maxVisibleLayers,
-  layerHeight,
-  contentWidth,
-  graduationInterval,
-  visibleGraduationIndices,
-  visibleVerticalLineIndices,
-  children,
-}: TimelineBaseUIProps) => {
+const TimelineBaseUI = ({ children }: TimelineBaseUIProps) => {
+  const {
+    zoom,
+    zoomLevels,
+    horizontalScroll,
+    setZoom: onZoomChange,
+    maxVisibleLayers,
+    layerHeight,
+    contentWidth,
+    graduationInterval,
+    visibleGraduationIndices,
+    visibleVerticalLineIndices,
+  } = useTimeline();
   const { frameState, viewerState, pause, setSelectedItemId } = useStore(
     useShallow((state) => ({
       frameState: state.frameState,
