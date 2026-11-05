@@ -62,7 +62,8 @@ impl<'a> Writer<'a> {
 
     fn run(&mut self, kernels: &[(&Kernel, &SlangKernel)]) -> Option<String> {
         let layouts: Vec<KernelLayout> = kernels.iter().map(|(_, s)| s.layout.clone()).collect();
-        let mut out = encode_header(&layouts);
+        let chunk = self.a.program.files[self.a.program.main_file as usize].chunk.clone();
+        let mut out = encode_header(&chunk, &layouts);
         out.push_str(" __lg_cf = {}; __lg_df = {};");
 
         // 生成関数(CpuFunction)。
@@ -90,7 +91,7 @@ impl<'a> Writer<'a> {
             let chunk = chunk_name(&files[fid as usize]);
             let _ = write!(
                 out,
-                " package.preload[{}] = __lg_load({}, {});",
+                " __lg_pre[{}] = __lg_load({}, {});",
                 lua_string(name.as_bytes()),
                 lua_string(src.as_bytes()),
                 lua_string(chunk.as_bytes())

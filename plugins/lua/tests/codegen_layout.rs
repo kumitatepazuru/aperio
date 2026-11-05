@@ -37,13 +37,15 @@ fn header_round_trip() {
         },
         KernelLayout { fields: vec![Field::U32] },
     ];
-    let header = encode_header(&kernels);
-    assert_eq!(header, "--[[lua_gpu v1 k0=u,a(r(x=f;on=b)),R3|k1=u]]");
+    let header = encode_header("main.lua", &kernels);
+    assert_eq!(header, "--[[lua_gpu v1 @main.lua|k0=u,a(r(x=f;on=b)),R3|k1=u]]");
     let lua = format!("{header} print('hi')\n");
-    assert_eq!(decode_header(&lua).unwrap(), kernels);
-    assert_eq!(decode_header("--[[lua_gpu v1 ]]").unwrap(), vec![]);
+    let h = decode_header(&lua).unwrap();
+    assert_eq!((h.chunk.as_str(), h.kernels), ("main.lua", kernels));
+    assert!(decode_header("--[[lua_gpu v1 @x]]").unwrap().kernels.is_empty());
     assert!(decode_header("print(1)").is_err());
-    assert!(decode_header("--[[lua_gpu v1 k0=x]]").is_err());
+    assert!(decode_header("--[[lua_gpu v1 @x|k0=x]]").is_err());
+    assert!(decode_header("--[[lua_gpu v1 k0=u]]").is_err());
 }
 
 #[test]

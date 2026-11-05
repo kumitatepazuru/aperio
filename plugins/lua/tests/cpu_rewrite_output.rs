@@ -34,7 +34,7 @@ fn code_without_kernels_is_kept_verbatim() {
     // 1 行目はプレリュードの後ろに元の 1 行目が続く。
     assert!(lines[0].ends_with("-- comment"), "{}", lines[0]);
     assert_eq!(&lines[1..], &src.lines().collect::<Vec<_>>()[1..]);
-    assert!(decode_header(&c.lua).unwrap().is_empty());
+    assert!(decode_header(&c.lua).unwrap().kernels.is_empty());
 }
 
 #[test]
@@ -58,7 +58,7 @@ print("after")
     assert!(lines[1].contains("__lg_dispatch(0, {"), "{}", lines[1]);
     assert_eq!(lines[7], "print(\"after\")");
     // レイアウト: 総数 + 2 次元ぶん(開始・刻み・回数)。
-    assert_eq!(decode_header(&c.lua).unwrap()[0].fields.len(), 7);
+    assert_eq!(decode_header(&c.lua).unwrap().kernels[0].fields.len(), 7);
     lua_gpu::frontend::parse(&c.lua).expect("generated Lua must parse");
 }
 

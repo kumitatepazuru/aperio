@@ -102,13 +102,26 @@ impl KernelLayout {
 
 pub const HEADER_PREFIX: &str = "--[[lua_gpu v1 ";
 
-/// レイアウトをヘッダー文字列にする(`--[[lua_gpu v1 k0=u,f,f,u,a(f)|k1=...]]`)。
-pub fn encode_header(kernels: &[KernelLayout]) -> String {
+/// ヘッダーの内容。
+#[derive(Clone, Debug, PartialEq)]
+pub struct Header {
+    /// 元のチャンク名(実行時エラーの表示に使う)。
+    pub chunk: String,
+    pub kernels: Vec<KernelLayout>,
+}
+
+/// レイアウトをヘッダー文字列にする(`--[[lua_gpu v1 @main.lua|k0=u,f,f,u,a(f)|k1=...]]`)。
+pub fn encode_header(chunk: &str, kernels: &[KernelLayout]) -> String {
     let mut s = String::from(HEADER_PREFIX);
+    // チャンク名は区切り文字とコメントの終わりを含まないようにする。
+    let safe: String = chunk
+        .chars()
+        .map(|c| if matches!(c, '|' | ']' | '\n' | '\r') { '_' } else { c })
+        .collect();
+    s.push('@');
+    s.push_str(&safe);
     for (i, k) in kernels.iter().enumerate() {
-        if i > 0 {
-            s.push('|');
-        }
+        s.push('|');
         s.push_str(&format!("k{i}="));
         for (j, f) in k.fields.iter().enumerate() {
             if j > 0 {
@@ -121,18 +134,21 @@ pub fn encode_header(kernels: &[KernelLayout]) -> String {
     s
 }
 
-/// CPU 用 Lua の先頭のヘッダーからレイアウトを読む。
-pub fn decode_header(lua: &str) -> Result<Vec<KernelLayout>, String> {
+/// CPU 用 Lua の先頭のヘッダーを読む。
+pub fn decode_header(lua: &str) -> Result<Header, String> {
     let rest = lua
         .strip_prefix(HEADER_PREFIX)
         .ok_or_else(|| "missing lua_gpu header (is this the CPU Lua produced by convert?)".to_string())?;
     let end = rest.find("]]").ok_or_else(|| "unterminated lua_gpu header".to_string())?;
     let body = &rest[..end];
-    if body.is_empty() {
-        return Ok(Vec::new());
-    }
+    let mut parts = body.split('|');
+    let chunk = parts
+        .next()
+        .and_then(|p| p.strip_prefix('@'))
+        .ok_or_else(|| "malformed lua_gpu header (missing chunk name)".to_string())?
+        .to_string();
     let mut kernels = Vec::new();
-    for (i, part) in body.split('|').enumerate() {
+    for (i, part) in parts.enumerate() {
         let spec = part
             .strip_prefix(&format!("k{i}="))
             .ok_or_else(|| format!("malformed kernel layout `{part}`"))?;
@@ -152,7 +168,7 @@ pub fn decode_header(lua: &str) -> Result<Vec<KernelLayout>, String> {
         }
         kernels.push(KernelLayout { fields });
     }
-    Ok(kernels)
+    Ok(Header { chunk, kernels })
 }
 
 struct P<'a> {
