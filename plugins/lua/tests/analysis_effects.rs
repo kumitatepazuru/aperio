@@ -6,7 +6,6 @@ use lua_gpu::analysis::effects::{Effects, SiteImpl};
 use lua_gpu::analysis::resolve::Resolver;
 use lua_gpu::diag::Diagnostics;
 use lua_gpu::frontend;
-use lua_gpu::hir::*;
 use lua_gpu::stdlib::Effect;
 
 /// 最後の文の効果。

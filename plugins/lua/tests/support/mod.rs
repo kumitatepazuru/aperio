@@ -76,6 +76,30 @@ pub fn registry(functions: Vec<FunctionSpec>) -> Registry {
     Registry::new(functions, Options::default()).unwrap()
 }
 
+/// フロントエンド〜カーネル化の計画までを実行する。
+pub fn analyze(reg: &Registry, src: &str) -> (Option<lua_gpu::pipeline::Analysis>, lua_gpu::diag::Diagnostics) {
+    let mut diags = lua_gpu::diag::Diagnostics::new();
+    let a = lua_gpu::pipeline::analyze(src, "main.lua", None, reg, &mut diags);
+    (a, diags)
+}
+
+/// エラーなしで解析できることを確かめて返す。
+pub fn analyze_ok(reg: &Registry, src: &str) -> lua_gpu::pipeline::Analysis {
+    let (a, d) = analyze(reg, src);
+    assert!(!d.has_errors(), "unexpected errors:\n{d}");
+    a.expect("analysis")
+}
+
+pub fn error_codes(reg: &Registry, src: &str) -> Vec<&'static str> {
+    let (_, d) = analyze(reg, src);
+    d.errors().map(|e| e.code).collect()
+}
+
+pub fn warning_codes(reg: &Registry, src: &str) -> Vec<&'static str> {
+    let (_, d) = analyze(reg, src);
+    d.warnings().map(|e| e.code).collect()
+}
+
 /// 典型的な obj API(テスト用): getpixel / putpixel(GPU)、w / h(外部値を読む CPU property)。
 pub fn obj_registry() -> Registry {
     registry(vec![
