@@ -272,12 +272,39 @@ impl<'a> Detector<'a> {
         }
     }
 
+    /// ループ本体が(入れ子のループの中ではなく)直接 GPU 関数を呼んでいるか。
+    fn calls_gpu_directly(&self, body: &Block) -> bool {
+        body.stmts.iter().any(|s| match &s.kind {
+            StmtKind::NumFor { .. }
+            | StmtKind::GenFor { .. }
+            | StmtKind::While { .. }
+            | StmtKind::Repeat { .. } => false,
+            StmtKind::Do(b) => self.calls_gpu_directly(b),
+            StmtKind::If { arms, else_block } => {
+                arms.iter().any(|(c, b)| self.expr_has_gpu(c) || self.calls_gpu_directly(b))
+                    || else_block.as_ref().is_some_and(|b| self.calls_gpu_directly(b))
+            }
+            _ => self.contains_gpu(s),
+        })
+    }
+
+    fn expr_has_gpu(&self, e: &Expr) -> bool {
+        self.contains_gpu(&Stmt {
+            id: u32::MAX,
+            kind: StmtKind::Call(e.clone()),
+            span: e.span,
+        })
+    }
+
     fn try_parallel(&mut self, func: FuncId, s: &Stmt) -> Option<Candidate> {
         let StmtKind::NumFor { var, body, .. } = &s.kind else {
             return None;
         };
         let outer = Self::dim_of(s)?;
         let mut options: Vec<(Vec<Dim>, Block)> = Vec::new();
+        // 並列化するのは、GPU 関数を直接呼ぶ最も内側のループ(またはその完全な 2 重の入れ子)だけ。
+        // 外側のループ(例: パスの繰り返し)は、反復どうしが画像を通じて依存し得るので CPU に残す。
+        let direct = self.calls_gpu_directly(body);
 
         // 完全な入れ子で、内側の上下限が外側のループ変数に依存しないなら 2 次元。
         if let [inner] = body.stmts.as_slice() {
@@ -300,7 +327,7 @@ impl<'a> Detector<'a> {
                     .expr(start)
                     .max(probe.expr(limit))
                     .max(step.as_ref().map(|e| probe.expr(e)).unwrap_or(Bt::U));
-                if bounds == Bt::U && self.contains_gpu(inner) {
+                if bounds == Bt::U && self.calls_gpu_directly(inner_body) {
                     options.push((
                         vec![outer.clone(), Self::dim_of(inner)?],
                         inner_body.clone(),
@@ -308,7 +335,13 @@ impl<'a> Detector<'a> {
                 }
             }
         }
-        options.push((vec![outer], body.clone()));
+        if direct {
+            options.push((vec![outer], body.clone()));
+        }
+        if options.is_empty() {
+            // GPU 関数は内側のループの中だけ: このループは CPU に残し、中を探す。
+            return None;
+        }
 
         let mut last_blockers = Vec::new();
         for (dims, kbody) in options {
