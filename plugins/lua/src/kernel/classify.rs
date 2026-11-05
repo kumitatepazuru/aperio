@@ -54,6 +54,8 @@ pub struct Classifier<'a> {
     replay_needed_vars: HashSet<VarId>,
     /// 記録する式を含む文。
     record_stmts: HashSet<StmtId>,
+    /// 再生でも同じ構造で実行する、CPU で判定できる条件付きの飛び越し(goto / break を含む if)。
+    replay_controls: HashSet<StmtId>,
     /// いま見ている文(記録を含む文として印を付けるため)。
     cur_stmt: Option<StmtId>,
     /// 記録できない場所(while / repeat / 記録ループの中のループ)なら、その理由。
@@ -124,6 +126,7 @@ impl<'a> Classifier<'a> {
             gpu_stmts: HashSet::new(),
             replay_leaves: HashSet::new(),
             record_stmts: HashSet::new(),
+            replay_controls: HashSet::new(),
             expr_types: HashMap::new(),
             single_thread,
         };
@@ -150,6 +153,7 @@ impl<'a> Classifier<'a> {
             replay_leaves: HashSet::new(),
             replay_needed_vars: HashSet::new(),
             record_stmts: HashSet::new(),
+            replay_controls: HashSet::new(),
             cur_stmt: None,
             record_blocked: None,
             short_circuit_depth: 0,
@@ -321,7 +325,9 @@ impl<'a> Classifier<'a> {
                         return false;
                     }
                 }
-                self.can_gpu(obj, depth + 1) && child_ok(key)
+                // `t.name` のキーは静的なフィールド名(文字列の値として GPU に置く必要はない)。
+                let key_ok = matches!(key.kind, ExprKind::Str(_)) || child_ok(key);
+                self.can_gpu(obj, depth + 1) && key_ok
             }
             ExprKind::Call { args, .. } | ExprKind::Method { args, .. } => {
                 let callee_ok = match self.resolver.callee(e) {
@@ -356,7 +362,10 @@ impl<'a> Classifier<'a> {
                 }
             },
             ExprKind::Unary { op, expr } => match op {
-                UnOp::Len => matches!(self.guess_type(expr), GpuTy::Array(..)) && self.can_gpu(expr, depth + 1),
+                UnOp::Len => {
+                    !matches!(self.guess_type(expr), GpuTy::Float | GpuTy::Bool | GpuTy::Cpu | GpuTy::Record(_))
+                        && self.can_gpu(expr, depth + 1)
+                }
                 _ => !matches!(self.guess_type(expr), GpuTy::Cpu) && child_ok(expr),
             },
             ExprKind::Paren(inner) => self.can_gpu(inner, depth + 1),
@@ -448,7 +457,11 @@ impl<'a> Classifier<'a> {
                     return t.clone();
                 }
                 if self.body_locals.contains(v) {
-                    return GpuTy::Unknown;
+                    // 宣言時の初期値から推定する(初期値は宣言より前の変数しか参照しないので循環しない)。
+                    return match self.local_init(*v) {
+                        Some(init) => self.guess_type(&init),
+                        None => GpuTy::Unknown,
+                    };
                 }
                 self.capture_guess(e)
             }
@@ -563,9 +576,21 @@ impl<'a> Classifier<'a> {
     // ---- 文 ---------------------------------------------------------------------
 
     fn block(&mut self, b: &Block) {
+        let saved = self.ctl;
         for s in &b.stmts {
             self.stmt(s);
+            // 条件付きの goto / break の後ろの文は、その条件に制御依存する。
+            if let Some(j) = self.bt.jump_bt(s) {
+                if !matches!(s.kind, StmtKind::Break | StmtKind::Goto(_)) {
+                    if j < Bt::P && self.in_func.is_none() {
+                        // CPU でも判定できる飛び越しは、再生でも同じ構造で行う。
+                        self.replay_controls.insert(s.id);
+                    }
+                    self.ctl = self.ctl.max(j);
+                }
+            }
         }
+        self.ctl = saved;
     }
 
     fn mark_gpu(&mut self, s: &Stmt) {
@@ -729,10 +754,8 @@ impl<'a> Classifier<'a> {
                     self.mark_gpu(s);
                 }
             }
-            StmtKind::Break | StmtKind::Goto(_) | StmtKind::Label(_) => {
-                self.mark_gpu(s);
-                self.replay_leaves.insert(s.id);
-            }
+            // 飛び越し自体は副作用ではない(再生では、含む構造が再生されるときに一緒に出力する)。
+            StmtKind::Break | StmtKind::Goto(_) | StmtKind::Label(_) => self.mark_gpu(s),
         }
     }
 
@@ -1589,9 +1612,11 @@ impl<'a> Classifier<'a> {
                     changed = true;
                 }
             }
-            // 再生する文が読む本体の local も必要。
+            // 再生する文(と再生する飛び越しの条件)が読む本体の local も必要。
+            let combined: HashSet<StmtId> =
+                self.replay_leaves.union(&self.replay_controls).copied().collect();
             let mut reads = Vec::new();
-            collect_stmt_reads(self.program, body, &self.replay_leaves, &mut reads);
+            collect_stmt_reads(self.program, body, &combined, &mut reads);
             for v in reads {
                 if self.body_locals.contains(&v) && needed.insert(v) {
                     changed = true;
@@ -1603,7 +1628,9 @@ impl<'a> Classifier<'a> {
         }
         // 再生する文が P の値を読んでいたらエラー(CPU では計算できない)。
         let mut bad = Vec::new();
-        check_replay_reads(self.program, body, &self.replay_leaves, &self.k.var_bt, &self.dim_vars, &mut bad);
+        let combined: HashSet<StmtId> =
+            self.replay_leaves.union(&self.replay_controls).copied().collect();
+        check_replay_reads(self.program, body, &combined, &self.k.var_bt, &self.dim_vars, &mut bad);
         for (span, name) in bad {
             self.error(
                 "cpu-needs-gpu-value",
@@ -1615,6 +1642,7 @@ impl<'a> Classifier<'a> {
         self.k.needs_replay = !self.replay_leaves.is_empty() || !self.k.records.is_empty() || has_state;
         self.k.replay_leaves = std::mem::take(&mut self.replay_leaves);
         self.k.record_stmts = std::mem::take(&mut self.record_stmts);
+        self.k.replay_controls = std::mem::take(&mut self.replay_controls);
     }
 }
 

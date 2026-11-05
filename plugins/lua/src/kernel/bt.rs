@@ -131,8 +131,38 @@ impl<'a> BtCx<'a> {
     }
 
     fn block(&mut self, b: &Block, ctl: Bt) {
+        let mut c = ctl;
         for s in &b.stmts {
-            self.stmt(s, ctl);
+            self.stmt(s, c);
+            // 条件付きの goto / break の後ろの文は、その条件に制御依存する。
+            if let Some(j) = self.jump_bt(s) {
+                c = c.max(j);
+            }
+        }
+    }
+
+    /// 文が(条件付きで)ループの残りを飛ばす goto / break を含むなら、その条件の binding time。
+    pub fn jump_bt(&self, s: &Stmt) -> Option<Bt> {
+        match &s.kind {
+            StmtKind::Break | StmtKind::Goto(_) => Some(Bt::U),
+            StmtKind::Do(b) => b.stmts.iter().filter_map(|x| self.jump_bt(x)).max(),
+            StmtKind::If { arms, else_block } => {
+                let mut c = Bt::U;
+                let mut found: Option<Bt> = None;
+                for (cond, b) in arms {
+                    c = c.max(self.expr(cond));
+                    if let Some(j) = b.stmts.iter().filter_map(|x| self.jump_bt(x)).max() {
+                        found = Some(found.unwrap_or(Bt::U).max(c).max(j));
+                    }
+                }
+                if let Some(b) = else_block {
+                    if let Some(j) = b.stmts.iter().filter_map(|x| self.jump_bt(x)).max() {
+                        found = Some(found.unwrap_or(Bt::U).max(c).max(j));
+                    }
+                }
+                found
+            }
+            _ => None,
         }
     }
 

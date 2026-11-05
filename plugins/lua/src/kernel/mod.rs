@@ -148,6 +148,8 @@ pub struct Kernel {
     pub replay_leaves: HashSet<StmtId>,
     /// 記録する式を含む文(再生ではその位置で記録する値だけを評価する)。
     pub record_stmts: HashSet<StmtId>,
+    /// 再生でも同じ構造で実行する条件付きの飛び越し(goto / break を含む if)。
+    pub replay_controls: HashSet<StmtId>,
     /// GPU で評価する式の型。
     pub expr_types: HashMap<ExprKey, GpuTy>,
     /// 単一スレッドのカーネル(並列次元なし)。
