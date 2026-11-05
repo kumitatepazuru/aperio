@@ -599,7 +599,7 @@ impl<'a> Lowerer<'a> {
             if let Some(entry) = self.registry.get(&name) {
                 if self.registry.is_property(entry) {
                     let start = self.span(tok).start;
-                    return self.new_site(name, vec![], false, true, span, start, 0);
+                    return self.new_site(name, vec![], false, true, span, start, 0, span.end);
                 }
                 if self.registry.py(entry).is_none() {
                     self.error(
@@ -757,7 +757,13 @@ impl<'a> Lowerer<'a> {
                         let name = String::from_utf8_lossy(s).into_owned();
                         match g.as_str() {
                             "require" => self.requires.push((name, *arg_span)),
-                            "dofile" => self.dofiles.push((name, *arg_span)),
+                            "dofile" => {
+                                self.program.dofile_calls.push(DofileCall {
+                                    path: name.clone(),
+                                    span,
+                                });
+                                self.dofiles.push((name, *arg_span))
+                            }
                             _ => {}
                         }
                     }
@@ -804,12 +810,18 @@ impl<'a> Lowerer<'a> {
                 // path そのものが spec。
                 if self.registry.is_property(&entry) {
                     let sp = self.chain_span(span, suffixes, i);
-                    let e = self.new_site(path, vec![], false, true, sp, chain_start, i as u32);
+                    let callee_end = if i == 0 {
+                        self.span(tok).end
+                    } else {
+                        self.span(suffixes[i - 1]).end
+                    };
+                    let e = self.new_site(path, vec![], false, true, sp, chain_start, i as u32, callee_end);
                     return Some((e, i));
                 }
                 match suffixes.get(i) {
-                    Some(Suffix::Call(Call::AnonymousCall(args))) => {
-                        let args = self.args(args);
+                    Some(Suffix::Call(Call::AnonymousCall(fargs))) => {
+                        let callee_end = self.span(fargs.as_ref()).start;
+                        let args = self.args(fargs);
                         let sp = self.chain_span(span, suffixes, i + 1);
                         let e = self.new_site(
                             path,
@@ -819,6 +831,7 @@ impl<'a> Lowerer<'a> {
                             sp,
                             chain_start,
                             (i + 1) as u32,
+                            callee_end,
                         );
                         return Some((e, i + 1));
                     }
@@ -856,7 +869,8 @@ impl<'a> Lowerer<'a> {
                     }
                     let args = self.args(mc.args());
                     let sp = self.chain_span(span, suffixes, i + 1);
-                    let e = self.new_site(cand, args, true, false, sp, chain_start, (i + 1) as u32);
+                    let callee_end = self.span(mc.args()).start;
+                    let e = self.new_site(cand, args, true, false, sp, chain_start, (i + 1) as u32, callee_end);
                     return Some((e, i + 1));
                 }
                 _ => return None,
@@ -888,6 +902,7 @@ impl<'a> Lowerer<'a> {
         span: Span,
         chain_start: u32,
         suffixes_consumed: u32,
+        callee_end: u32,
     ) -> Expr {
         let id = self.program.sites.len() as SiteId;
         self.program.sites.push(Site {
@@ -899,6 +914,7 @@ impl<'a> Lowerer<'a> {
             span,
             chain_start,
             suffixes_consumed,
+            callee_end,
         });
         Expr {
             kind: ExprKind::Spec(id),

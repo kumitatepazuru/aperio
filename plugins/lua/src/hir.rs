@@ -287,6 +287,17 @@ pub struct Site {
     /// spec に対応する部分が消費した suffix の数。
     pub chain_start: u32,
     pub suffixes_consumed: u32,
+    /// CPU 書き換え用: 呼び出される側(`obj.getpixel` / `obj:getpixel`)の終わり = 引数の始まりの
+    /// バイト位置。property の読み取りならチェーンの終わり。
+    pub callee_end: u32,
+}
+
+/// 定数パスの dofile 呼び出し(CPU 書き換えで同梱したファイルの呼び出しに置き換える)。
+#[derive(Clone, Debug)]
+pub struct DofileCall {
+    pub path: String,
+    /// `dofile("x")` 全体の範囲。
+    pub span: Span,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -322,6 +333,8 @@ pub struct Program {
     pub modules: IndexMap<String, FileId>,
     /// dofile のパス(ソースに書かれた文字列)→ ファイル。
     pub dofiles: IndexMap<String, FileId>,
+    /// 定数パスの dofile 呼び出し箇所。
+    pub dofile_calls: Vec<DofileCall>,
     /// エントリポイント(メインチャンク)のファイル。
     pub main_file: FileId,
     pub stmt_count: u32,

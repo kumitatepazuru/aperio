@@ -1,6 +1,8 @@
 // 結合テスト共通のヘルパー(spec の組み立てなど)。
 #![allow(dead_code)]
 
+pub mod dump;
+
 use std::sync::{Arc, Mutex};
 
 use lua_gpu::spec::{
