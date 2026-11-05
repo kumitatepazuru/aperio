@@ -447,12 +447,13 @@
 | `GeneratorEvent.New`              | プラグインが新規追加されたときのイベント |
 | `GeneratorEvent.RequestStructure` | パラメータ構造の再取得イベント           |
 | `GeneratorEvent.BeforeMakeFrame`  | フレーム生成直前に `frame_structure` を受け取り、`list[ItemStructure]` を返すと差し替える(`None` なら変更なし)イベント |
+| `GeneratorEvent.AfterMakeFrame`   | フレーム生成直後に `frame_structure`(`BeforeMakeFrame` 適用後)と `dict[str, ItemResult]` を受け取り、`dict[str, ItemResult]` を返すと生成結果を差し替える(`None` なら変更なし)イベント。UI の枠に使われる |
 
 **用法:**
 
 - `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定
 - `call_event(plugin_name, GeneratorEvent.New, params)` — PluginManager(EventDispatcher)から呼び出す
-- `EventDispatcher.reduce_event(type, func, initial)` — 全ジェネレーターの該当ハンドラーを登録順に畳み込む(`BeforeMakeFrame` は `VideoRenderer._build` から呼ばれる)
+- `EventDispatcher.reduce_event(type, func, initial)` — 全ジェネレーターの該当ハンドラーを登録順に畳み込む(`BeforeMakeFrame` / `AfterMakeFrame` は `VideoRenderer._build` から呼ばれる)
 - Rust側: `GeneratorEvent::New` として `call_method1` の引数に渡す
 
 ---

@@ -1,12 +1,15 @@
 from typing import Any, Callable, Literal, cast, overload
 
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemStructure
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, ItemStructure
 from aperio_plugin.plugin_base.generator_base import *
 
 from .generator_registry import GeneratorNotFoundError, GeneratorRegistry
 from .plugin_base import GeneratorBase
 
 type EventCallable[T, U] = Callable[[Callable[[Any, T], U]], Callable[[Any, T], U]]
+type AfterMakeFrameHandler = Callable[
+    [Any, list[ItemStructure], dict[str, ItemResult]], dict[str, ItemResult] | None
+]
 
 
 @overload
@@ -17,12 +20,16 @@ def event(*, type: Literal[GeneratorEvent.RequestStructure]) -> EventCallable[di
 def event(
     *, type: Literal[GeneratorEvent.BeforeMakeFrame]
 ) -> EventCallable[list[ItemStructure], list[ItemStructure] | None]: ...
+@overload
+def event(
+    *, type: Literal[GeneratorEvent.AfterMakeFrame]
+) -> Callable[[AfterMakeFrameHandler], AfterMakeFrameHandler]: ...
 def event(*, type: GeneratorEvent) -> EventCallable:
     """
     プラグインのイベントハンドラーを登録するデコレーター。
 
     Args:
-        type: ハンドルするイベントの種別 (GeneratorEvent.New / GeneratorEvent.RequestStructure / GeneratorEvent.BeforeMakeFrame)
+        type: ハンドルするイベントの種別 (GeneratorEvent.New / GeneratorEvent.RequestStructure / GeneratorEvent.BeforeMakeFrame / GeneratorEvent.AfterMakeFrame)
     """
 
     def decorator(func: Callable) -> Callable:

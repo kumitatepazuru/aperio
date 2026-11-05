@@ -107,12 +107,17 @@ class VideoRenderer:
                 composition.add_item(layer)
 
             builder = composition.to_builder(self._compose_shader, self._fill_black_shader)
+            results = self._events.reduce_event(
+                GeneratorEvent.AfterMakeFrame,
+                lambda acc, handler: _apply_after_make_frame(frame_structure, acc, handler),
+                composition.results,
+            )
 
         except Exception as e:
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
-        return builder, composition.results
+        return builder, results
 
 
 def _apply_before_make_frame(
@@ -126,6 +131,20 @@ def _apply_before_make_frame(
     if not isinstance(result, list):
         raise TypeError("BeforeMakeFrame handler must return a list of ItemStructure or None")
     return result
+
+
+def _apply_after_make_frame(
+    frame_structure: list[ItemStructure],
+    results: dict[str, ItemResult],
+    handler: Callable[[list[ItemStructure], dict[str, ItemResult]], dict[str, ItemResult] | None],
+) -> dict[str, ItemResult]:
+    """AfterMakeFrame ハンドラーを呼び、None 以外が返ればその生成結果に差し替える。"""
+    new_results = handler(frame_structure, results)
+    if new_results is None:
+        return results
+    if not isinstance(new_results, dict):
+        raise TypeError("AfterMakeFrame handler must return a dict of ItemResult or None")
+    return new_results
 
 
 class _FrameComposition:
@@ -180,6 +199,10 @@ class _FrameComposition:
         )
 
     def _push(self, builder: gpu_util.PyImageGenerateBuilder, item: "ItemStructure.Video", result: ItemResult) -> None:
+        # 描画するステップが無い(ItemResult だけを返すグループ等)ものを積むと、
+        # compose シェーダーの入力テクスチャとレイヤーパラメーターの数がずれてしまう
+        if not builder.get_id_tree():
+            return
         self._layer_builders.append(builder)
         self._layer_params.append(layer_params(item, result, self._height))
 
@@ -213,6 +236,10 @@ class _FrameComposition:
             if result is None:
                 return None
             chain.apply(obj["id"], result)
+
+        if not chain.has_pipeline:
+            # テクスチャを持たないオブジェクト(グループ等)には、エフェクトを適用する対象が無い
+            return chain
 
         for effect in layer.effects:
             if effect.get("link_id") is not None:
@@ -278,6 +305,11 @@ class _VideoChain:
         if self._item_result is None:
             raise RuntimeError("The chain has no object step yet")
         return self._item_result
+
+    @property
+    def has_pipeline(self) -> bool:
+        """描画するステップ(またはリンク)を持っているか。ItemResult だけを返したオブジェクトは持たない。"""
+        return self._pending_link is not None or bool(self._builder.get_id_tree())
 
     def link(self, structure_id: str, link_id: str) -> None:
         """プラグインを呼ばず、link_idが指す既存のパイプライン出力をそのまま使い回すステップ。"""

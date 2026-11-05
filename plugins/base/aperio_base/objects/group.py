@@ -5,11 +5,12 @@ from aperio.item_structures import (
     GenerateStructure,
     GeneratorEvent,
     GeneratorInformation,
+    ItemResult,
     ItemStructure,
     RequestStructureParameter,
 )
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, VideoGenerateParameters, VideoObjectGeneratorBase
+from aperio_plugin.plugin_base.generator_base import VideoGenerateParameters, VideoObjectGeneratorBase
 
 
 class GroupObject(VideoObjectGeneratorBase):
@@ -53,8 +54,57 @@ class GroupObject(VideoObjectGeneratorBase):
             result.append(_apply_chain(item, chain))
         return result
 
-    def generate(self, params: VideoGenerateParameters) -> GeneratorTextureReturn | None:
-        return None
+    @event(type=GeneratorEvent.AfterMakeFrame)
+    def on_after_make_frame(
+        self, frame_structure: list[ItemStructure], results: dict[str, ItemResult]
+    ) -> dict[str, ItemResult] | None:
+        """グループの ItemResult を、支配下のメンバー全員を囲む大きさに書き換える(UI の枠に使われる)。"""
+        groups = [item for item in frame_structure if isinstance(item, ItemStructure.Video) and self._is_group(item)]
+        if not groups:
+            return None
+        parent = self._build_parent_table(frame_structure)
+
+        # グループ id → 支配下のメンバーの枠の角(フレーム座標)。入れ子のグループには内側のメンバーも含める
+        corners: dict[str, list[tuple[float, float]]] = {}
+        for item in frame_structure:
+            if not isinstance(item, ItemStructure.Video) or self._is_group(item) or item.layer not in parent:
+                continue
+            result = results.get(item.id)
+            if result is None:
+                continue
+            points = _box_corners(item, result)
+            owner = parent[item.layer]
+            while True:
+                corners.setdefault(owner.id, []).extend(points)
+                if owner.layer not in parent:
+                    break
+                owner = parent[owner.layer]
+
+        new_results = dict(results)
+        for group in groups:
+            points = corners.get(group.id)
+            if not points or group.id not in results:
+                continue
+            chain = [group]
+            while chain[-1].layer in parent:
+                chain.append(parent[chain[-1].layer])
+            if any(g.scale == 0 for g in chain):
+                continue
+            local = [_to_local(p, chain) for p in points]
+            xs = [x for x, _ in local]
+            ys = [y for _, y in local]
+            # 枠の中心はグループの原点(x, y)からの相対位置。center は「原点が枠の中心からどれだけずれるか」なので符号が逆
+            new_results[group.id] = ItemResult(
+                _ceil_size(max(xs) - min(xs)),
+                _ceil_size(max(ys) - min(ys)),
+                center_x=-(max(xs) + min(xs)) / 2,
+                center_y=-(max(ys) + min(ys)) / 2,
+            )
+        return new_results
+
+    def generate(self, params: VideoGenerateParameters) -> ItemResult:
+        # グループ自身は何も描画しない。枠の大きさはメンバーの生成後に AfterMakeFrame で決まるので、ここでは仮の値を返す
+        return ItemResult(1, 1, center_x=0.0, center_y=0.0)
 
     def _is_group(self, item: ItemStructure) -> bool:
         return (
@@ -94,6 +144,38 @@ def _rotate(x: float, y: float, degrees: float) -> tuple[float, float]:
     rad = math.radians(degrees)
     c, s = math.cos(rad), math.sin(rad)
     return x * c - y * s, x * s + y * c
+
+
+def _ceil_size(value: float) -> int:
+    """枠の大きさを整数pxに切り上げる。回転の逆変換で出る浮動小数点の誤差(60.00000000001 等)で1px増えないよう丸めてから切り上げる。"""
+    return max(1, math.ceil(round(value, 4)))
+
+
+def _box_corners(item: ItemStructure.Video, result: ItemResult) -> list[tuple[float, float]]:
+    """アイテムの枠の4つの角をフレーム座標で返す。UI の Overlay.tsx が枠を描く計算と同じ。"""
+    box = result.offscreen_source or result
+    scale_x = item.scale / 100.0 * (box.scale[0] if box.scale else 1.0)
+    scale_y = item.scale / 100.0 * (box.scale[1] if box.scale else 1.0)
+    pivot_x = item.x + (box.pos[0] if box.pos else 0.0)
+    pivot_y = item.y + (box.pos[1] if box.pos else 0.0)
+    center_x = (box.center_x or 0.0) * scale_x
+    center_y = (box.center_y or 0.0) * scale_y
+    half_w = box.width * scale_x / 2
+    half_h = box.height * scale_y / 2
+
+    corners = []
+    for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        rx, ry = _rotate(sign_x * half_w - center_x, sign_y * half_h - center_y, item.rotation)
+        corners.append((pivot_x + rx, pivot_y + ry))
+    return corners
+
+
+def _to_local(point: tuple[float, float], chain: list[ItemStructure.Video]) -> tuple[float, float]:
+    """フレーム座標の点を、鎖(内側 → 外側)の先頭のグループのローカル座標に戻す。`_apply_chain` の逆変換。"""
+    x, y = point
+    for g in reversed(chain):
+        x, y = _rotate((x - g.x) / (g.scale / 100.0), (y - g.y) / (g.scale / 100.0), -g.rotation)
+    return x, y
 
 
 def _apply_chain(item: ItemStructure.Video, chain: list[ItemStructure.Video]) -> ItemStructure.Video:

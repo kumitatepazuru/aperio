@@ -391,6 +391,7 @@ pub enum GeneratorEvent {
     New,
     RequestStructure,
     BeforeMakeFrame,
+    AfterMakeFrame,
 }
 
 #[napi(object)]
