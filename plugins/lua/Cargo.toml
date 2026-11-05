@@ -1,0 +1,26 @@
+[package]
+name = "lua_gpu"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[lib]
+name = "lua_gpu"
+# cdylib: maturin で Python 拡張モジュールにする / rlib: tests/ の結合テストから使う
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# pyo3 バインディング。maturin(pyproject.toml)からのみ有効化し、
+# `cargo test -p lua_gpu` では libpython をリンクしないようにする。
+python = ["dep:pyo3"]
+
+[dependencies]
+full_moon = { version = "3", default-features = false, features = ["luajit"] }
+mlua = { version = "0.12", features = ["luajit", "vendored", "send"] }
+pyo3 = { workspace = true, optional = true }
+thiserror = "2"
+indexmap = "2"
+
+[dev-dependencies]
+aperio-gpu = { path = "../../crates/aperio-gpu" }
+tokio = { workspace = true, features = ["rt-multi-thread"] }

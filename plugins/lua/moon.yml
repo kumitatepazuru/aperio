@@ -1,0 +1,49 @@
+# Lua(LuaJIT) → Slang 変換ライブラリ lua_gpu の wheel ビルドとテスト。
+tasks:
+  # 同梱用 wheel を build/plugins/ に出力する(base-plugin:wheel と同じ場所。aperio-env に入る)。
+  wheel:
+    command: uvx
+    args: [maturin, build, --release, -m, plugins/lua/Cargo.toml, -o, build/plugins]
+    inputs:
+      - src/**/*
+      - Cargo.toml
+      - pyproject.toml
+      - lua_gpu.pyi
+      - /Cargo.toml
+      - /Cargo.lock
+    # base-plugin:wheel と出力ディレクトリを共有するので、自分の wheel だけに絞る。
+    outputs:
+      - /build/plugins/lua_gpu-*.whl
+
+  # Python バインディングのスモークテスト(ビルドした wheel を隔離環境に入れて実行する)。
+  test-python:
+    command: uv
+    args:
+      - run
+      - --no-project
+      - --isolated
+      - --python
+      - "3.14"
+      - --find-links
+      - build/plugins
+      - --with
+      - lua-gpu
+      - python
+      - plugins/lua/tests/python/test_lua_gpu.py
+    deps:
+      - ~:wheel
+    options:
+      cache: false
+
+  # dev 依存の aperio-gpu(生成シェーダーのコンパイル・GPU 差分テスト)が slang を必要とする。
+  test:
+    command: cargo
+    args: [test, -p, lua_gpu]
+    deps:
+      - vcpkg:install
+    inputs:
+      - src/**/*
+      - tests/**/*
+      - Cargo.toml
+      - /Cargo.toml
+      - /Cargo.lock

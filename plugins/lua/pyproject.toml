@@ -1,0 +1,18 @@
+[project]
+name = "lua-gpu"
+description = "Convert Lua (LuaJIT) scripts into CPU Lua + Slang compute kernels for Aperio"
+requires-python = ">=3.14"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dynamic = ["version"]
+
+[build-system]
+requires = ["maturin>=1.9.4,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+# pyo3 0.28 では extension-module feature は不要(maturin が PYO3_BUILD_EXTENSION_MODULE を設定する)。
+features = ["python"]
+module-name = "lua_gpu"

@@ -23,6 +23,7 @@ members = ["python/stubs", "plugins/*"]
 [tool.uv.sources]
 aperio-base-plugin = { workspace = true }
 aperio-plugin-stubs = { workspace = true }
+lua-gpu = { workspace = true }
 
 # mypy は editable インストールの .pth を辿らないので、スタブの場所を明示する。
 [tool.mypy]
