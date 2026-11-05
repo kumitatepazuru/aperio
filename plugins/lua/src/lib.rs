@@ -8,7 +8,9 @@ pub mod diag;
 pub mod expand;
 pub mod frontend;
 pub mod hir;
+pub mod runtime;
 pub mod spec;
+pub mod stdlib;
 pub mod types;
 
 #[cfg(feature = "python")]
