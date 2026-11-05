@@ -4,6 +4,7 @@
 //! コア部分は pyo3 に依存せず、`python` feature を有効にしたときだけ Python バインディングを公開する。
 
 pub mod analysis;
+pub mod codegen;
 pub mod diag;
 pub mod expand;
 pub mod frontend;
