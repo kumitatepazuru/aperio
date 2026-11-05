@@ -385,7 +385,11 @@ impl<'a> Classifier<'a> {
         match b.gpu {
             GpuImpl::Intrinsic(_) | GpuImpl::Helper(_) => true,
             GpuImpl::Special => match b.name {
-                "assert" | "error" | "tonumber" | "rawequal" | "select" | "type" => true,
+                // tonumber は数値に対してだけ恒等(文字列の変換は CPU)。
+                "tonumber" => args
+                    .first()
+                    .is_some_and(|a| matches!(self.guess_type(a), GpuTy::Float)),
+                "assert" | "error" | "rawequal" | "select" | "type" => true,
                 "rawget" => true,
                 "string.len" | "string.byte" => args.first().is_some_and(|a| matches!(a.kind, ExprKind::Str(_))),
                 _ => false,
@@ -499,6 +503,16 @@ impl<'a> Classifier<'a> {
                     (GpuTy::Cpu, _) => GpuTy::Cpu,
                     _ => GpuTy::Unknown,
                 }
+            }
+            // file:read / file:lines / 文字列メソッドの結果は文字列(CPU 専用)。
+            ExprKind::Method { name, .. }
+                if matches!(
+                    name.as_str(),
+                    "read" | "lines" | "format" | "sub" | "upper" | "lower" | "rep" | "gsub" | "match"
+                        | "reverse" | "char"
+                ) =>
+            {
+                GpuTy::Cpu
             }
             ExprKind::Call { .. } | ExprKind::Method { .. } => match self.resolver.callee(e) {
                 Some(StaticValue::Builtin(b)) => match b.gpu {
@@ -934,8 +948,14 @@ impl<'a> Classifier<'a> {
         if gpu && targets.iter().any(|t| matches!(t, Target::Var(_) | Target::LocalIndex(..))) {
             self.mark_gpu(s);
         }
+        // CPU 側の状態(外側の変数・共有テーブル)を更新する、または副作用のある代入は必ず再生する。
+        // CPU でしか値が分からない本体の local の定義だけなら、記録で必要になったときに
+        // finish_replay が再生に加える。
+        let updates_cpu_state = targets
+            .iter()
+            .any(|t| matches!(t, Target::Outer | Target::SharedIndex));
+        let cpu = cpu && (updates_cpu_state || self.effects.stmt(s) > Effect::ReadOnly);
         if cpu || value_bt < Bt::P {
-            // CPU でも計算できる代入は、再生で必要になったときのために候補にする(finish_replay で絞る)。
             if cpu {
                 if self.in_p_loop || self.ctl == Bt::P {
                     self.error(
@@ -1134,6 +1154,32 @@ impl<'a> Classifier<'a> {
                         self.error("gpu-compare", e.span, "only numbers and booleans can be compared on the GPU");
                     }
                     GpuTy::Bool
+                }
+                // `c and a or b`(三項演算子の慣用句): (c と a が真) ? a : b。
+                BinOp::Or if matches!(&lhs.kind, ExprKind::Binary { op: BinOp::And, .. }) => {
+                    let ExprKind::Binary { lhs: c, rhs: a, .. } = &lhs.kind else {
+                        unreachable!()
+                    };
+                    self.gexpr(c, &GpuTy::Unknown);
+                    self.short_circuit_depth += 1;
+                    let at = self.gexpr(a, expect);
+                    let bt = self.gexpr(rhs, &at);
+                    self.short_circuit_depth -= 1;
+                    match at.unify(&bt) {
+                        Some(t) if t.is_scalar_or_unknown() => t,
+                        _ => {
+                            self.error(
+                                "gpu-logic",
+                                e.span,
+                                format!(
+                                    "`c and a or b` on the GPU needs a and b to have the same type (got {} and {})",
+                                    at.describe(),
+                                    bt.describe()
+                                ),
+                            );
+                            GpuTy::Unknown
+                        }
+                    }
                 }
                 BinOp::And | BinOp::Or => {
                     let l = self.gexpr(lhs, expect);
@@ -1483,6 +1529,46 @@ impl<'a> Classifier<'a> {
 
     /// CPU で計算する値(持ち出し or 記録)にする。
     fn cpu_value(&mut self, e: &Expr, expect: &GpuTy) -> GpuTy {
+        // 再代入されない本体の local で、初期値がループ不変かつ副作用の無いものは、初期値ごと持ち出す
+        // (例: `local gain = tonumber(io.open(path):read("*a"))` → ディスパッチ前に 1 回だけ読む)。
+        if let ExprKind::Local(v) = e.kind {
+            if self.body_locals.contains(&v)
+                && self.cpu_defined.contains_key(&v)
+                && !self.program.var(v).reassigned
+            {
+                if let Some(init) = self.local_init(v) {
+                    let eff = self.effects.expr(&init);
+                    let ok = eff == Effect::Pure || (eff == Effect::ReadOnly && !self.body_has_write);
+                    if ok && self.is_invariant(&init) {
+                        let ikey = ExprKey::of(&init);
+                        let idx = match self.k.cpu_refs.get(&ikey) {
+                            Some(CpuRef::Hoist(i)) => *i,
+                            _ => {
+                                let guess = self.guess_type(&init);
+                                let ty = match guess.unify(expect) {
+                                    Some(t) if t.is_scalar() => t,
+                                    _ if guess.is_scalar() => guess,
+                                    _ => GpuTy::Float,
+                                };
+                                let i = self.k.hoists.len();
+                                self.k.hoists.push(CpuValue {
+                                    expr: init.clone(),
+                                    ty,
+                                    record_loop: None,
+                                    offset: 0,
+                                });
+                                self.k.cpu_refs.insert(ikey, CpuRef::Hoist(i));
+                                i
+                            }
+                        };
+                        let ty = self.k.hoists[idx].ty.clone();
+                        self.k.cpu_refs.insert(ExprKey::of(e), CpuRef::Hoist(idx));
+                        self.expr_types.insert(ExprKey::of(e), ty.clone());
+                        return ty;
+                    }
+                }
+            }
+        }
         let guess = self.guess_type(e);
         let ty = match guess.unify(expect) {
             Some(t) if t.is_scalar() => t,

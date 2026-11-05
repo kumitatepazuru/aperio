@@ -1241,6 +1241,22 @@ impl<'a> Gen<'a> {
                 return r.to_string();
             }
         }
+        // `c and a or b` → (c と a が真) ? a : b。
+        if op == BinOp::Or {
+            if let ExprKind::Binary {
+                op: BinOp::And,
+                lhs: c,
+                rhs: a,
+            } = &lhs.kind
+            {
+                let cc = self.truthy(c);
+                let at = self.expr_ty(a);
+                let ac = self.scalar(a);
+                let bc = self.scalar(rhs);
+                let a_truthy = if at == GpuTy::Bool { ac.clone() } else { "true".into() };
+                return format!("(({cc} && {a_truthy}) ? {ac} : {bc})");
+            }
+        }
         let lt = self.expr_ty(lhs);
         let rt = self.expr_ty(rhs);
         match op {
