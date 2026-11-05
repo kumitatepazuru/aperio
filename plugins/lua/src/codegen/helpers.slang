@@ -67,7 +67,10 @@ int lg_tobiti(float x) {
     float f = floor(x);
     float d = x - f;
     if (d > 0.5 || (d == 0.5 && fmod(f, 2.0) != 0.0)) f += 1.0;
+    // int32 の範囲はそのまま変換する(float32 では負の数に 2^32 を足すと桁が落ちるため)。
+    if (f >= -2147483648.0 && f < 2147483648.0) return int(f);
     float m = f - 4294967296.0 * floor(f / 4294967296.0);
+    if (m >= 4294967296.0) m = 0.0;
     return asint(uint(m));
 }
 float lg_tobit(float x) { return float(lg_tobiti(x)); }
