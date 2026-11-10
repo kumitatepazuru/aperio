@@ -175,12 +175,13 @@ class _FrameComposition:
         builder, item_result = chain.finish()
         self.results[layer.id] = item_result
 
-        behind_entries = self._resolve_additional(chain.behind, layer.id)
-        ahead_entries = self._resolve_additional(chain.ahead, layer.id)
+        additional_items = item_result.additional_items
+        behind_entries = self._resolve_additional([a for a in additional_items if a.behind], layer.id)
+        ahead_entries = self._resolve_additional([a for a in additional_items if not a.behind], layer.id)
 
         for entry in behind_entries:
             self._push(*entry)
-        self._push(builder, layer, item_result)
+        self._push(builder, item_result)
         for entry in ahead_entries:
             self._push(*entry)
 
@@ -198,17 +199,17 @@ class _FrameComposition:
             ) # TODO: render Passを使っての高速化と簡潔化を試みる
         )
 
-    def _push(self, builder: gpu_util.PyImageGenerateBuilder, item: "ItemStructure.Video", result: ItemResult) -> None:
+    def _push(self, builder: gpu_util.PyImageGenerateBuilder, result: ItemResult) -> None:
         # 描画するステップが無い(ItemResult だけを返すグループ等)ものを積むと、
         # compose シェーダーの入力テクスチャとレイヤーパラメーターの数がずれてしまう
         if not builder.get_id_tree():
             return
         self._layer_builders.append(builder)
-        self._layer_params.append(layer_params(item, result, self._height))
+        self._layer_params.append(layer_params(result, self._height))
 
     def _resolve_additional(
         self, items: list[AdditionalItem], layer_id: str
-    ) -> list[tuple[gpu_util.PyImageGenerateBuilder, "ItemStructure.Video", ItemResult]]:
+    ) -> list[tuple[gpu_util.PyImageGenerateBuilder, ItemResult]]:
         entries = []
         for additional in items:
             if not isinstance(additional.item, ItemStructure.Video):
@@ -217,8 +218,7 @@ class _FrameComposition:
             chain = self._resolve_chain(additional.item)
             if chain is None:
                 continue
-            builder, item_result = chain.finish()
-            entries.append((builder, additional.item, item_result))
+            entries.append(chain.finish())
         return entries
 
     def _resolve_chain(self, layer: ItemStructure.Video) -> _VideoChain | None:
@@ -226,7 +226,7 @@ class _FrameComposition:
         1つの Video アイテムの object→effects チェーンを解決する。
         オブジェクトのジェネレーターが None を返した場合(スキップ対象)は None を返す。
         """
-        chain = _VideoChain(self._structure_targets)
+        chain = _VideoChain(self._structure_targets, layer)
 
         obj = layer.object
         if obj.get("link_id") is not None:
@@ -245,7 +245,8 @@ class _FrameComposition:
             if effect.get("link_id") is not None:
                 chain.link(effect["id"], effect["link_id"])
                 continue
-            current = chain.item_result
+            # プラグインが変更してから None を返しても(スキップ)累積値が汚れないようにコピーを渡す
+            current = chain.item_result.copy()
             result = self._generate(GeneratorKind.VIDEO_EFFECT, layer, effect, current.width, current.height, current)
             if result is not None:
                 chain.apply(effect["id"], result)
@@ -266,8 +267,10 @@ class _FrameComposition:
 
         Args:
             width, height: 生成元のサイズ。オブジェクトの場合はフレームサイズ、エフェクトの場合は直前までのオブジェクトサイズ
-            item_result: 直前までの累積結果。オブジェクトの場合は None
+            item_result: 直前までの累積結果。None(オブジェクトの場合)ならアイテム自身から作る
         """
+        if item_result is None:
+            item_result = ItemResult.from_item(layer)
         generator = self._registry.get(structure["name"], kind)
         params = VideoGenerateParameters(
             frame_number=self._frame_number,
@@ -285,11 +288,12 @@ class _FrameComposition:
 
 class _VideoChain:
     """
-    1アイテム分の object→effects チェーンの途中状態。ビルダー・合成後の ItemResult・チェーン中に現れた追加アイテムを積み上げていく。
+    1アイテム分の object→effects チェーンの途中状態。ビルダーと、各ステップが返した最新の ItemResultを持つ。
     """
 
-    def __init__(self, structure_targets: dict[str, StructureTarget]) -> None:
+    def __init__(self, structure_targets: dict[str, StructureTarget], layer: ItemStructure.Video) -> None:
         self._structure_targets = structure_targets
+        self._layer = layer
         self._builder = gpu_util.PyImageGenerateBuilder()
         self._item_result: ItemResult | None = None
         # link_idが連続するチェーンでは、実際にadd_linkedをビルダーに反映するのは
@@ -297,8 +301,6 @@ class _VideoChain:
         # エイリアス登録のみ)。Linkedは直前の状態を無視してリンク先のテクスチャに
         # 差し替えるため、連続してadd_linkedすると手前の分が無駄になってしまうため。
         self._pending_link: StructureTarget | None = None
-        self.behind: list[AdditionalItem] = []
-        self.ahead: list[AdditionalItem] = []
 
     @property
     def item_result(self) -> ItemResult:
@@ -318,19 +320,15 @@ class _VideoChain:
             raise ValueError(f"link_id {link_id} was not resolved before use (structure {structure_id})")
         self._structure_targets[structure_id] = target
         self._pending_link = target
-        self._item_result = ItemResult(target[1], target[2])
+        # リンク先のテクスチャに差し替わるので、変形はアイテム自身のものからやり直す。additional_itemsは引き継ぐ
+        linked = ItemResult.from_item(self._layer, target[1], target[2])
+        if self._item_result is not None:
+            linked.additional_items = self._item_result.additional_items
+        self._item_result = linked
 
     def apply(self, structure_id: str, result: VideoGenerateResult) -> None:
-        """ジェネレーターの生成結果をチェーンに積み、その出力を `structure_id` で参照できるよう登録する。"""
-        step_result = result if isinstance(result, ItemResult) else result.item_result
-        additional = step_result.additional_item
-        if additional is not None:
-            (self.behind if additional.behind else self.ahead).append(additional)
-
-        if self._item_result is None:
-            self._item_result = step_result
-        else:
-            self._item_result.combine(step_result)
+        """ジェネレーターの生成結果(絶対値)で累積値を置き換え、その出力を `structure_id` で参照できるよう登録する。"""
+        self._item_result = result if isinstance(result, ItemResult) else result.item_result
 
         self._flush_link()
         if not isinstance(result, ItemResult):

@@ -1,7 +1,7 @@
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import (
     GeneratorBuilderReturn,
@@ -82,7 +82,7 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
 
         if not alpha_boundary:
             packed = struct.pack("ii", radius, aspect)
-            return GeneratorShaderReturn(self.shader, packed, ItemResult(width, height))
+            return GeneratorShaderReturn(self.shader, packed, params.item_result.with_size(width, height))
 
         # 透明度境界モード(README 4): 元のアルファを2パスのボックスぼかし
         # (ゼロ埋め境界・常にフルカーネル幅で正規化)で実際にぼかし、元のアルファ
@@ -105,4 +105,4 @@ class BoundaryBlurEffect(VideoEffectGeneratorBase):
             .add_shader(self.box_blur_h_alpha_merge_shader, h_params, width, height)
         )
 
-        return GeneratorBuilderReturn(builder, ItemResult(width, height))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(width, height))

@@ -2,7 +2,7 @@ import math
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -77,7 +77,7 @@ class ConvexEdgeEffect(VideoEffectGeneratorBase):
         if steps <= 0:
             # README §2: 幅==0、またはクランプ後に幅<=0(=オブジェクトが2px未満)は
             # バッファを入れ替えない早期リターン。恒等コピーで代用する。
-            return GeneratorShaderReturn(self.identity_shader, struct.pack("i", 0), ItemResult(w, h))
+            return GeneratorShaderReturn(self.identity_shader, struct.pack("i", 0), params.item_result.with_size(w, h))
 
         # README §3: t = radians(角度)*-1。方向ベクトルは単位ベクトルのままシェーダーへ渡す
         # (Q16固定小数点への変換は原作バイナリの整数演算を再現するためだけの精度欠落なので廃止)。
@@ -86,4 +86,4 @@ class ConvexEdgeEffect(VideoEffectGeneratorBase):
         dir_y = math.cos(t)
 
         shader_params = struct.pack("ifff", steps, dir_x, dir_y, height)
-        return GeneratorShaderReturn(self.convex_edge_shader, shader_params, ItemResult(w, h))
+        return GeneratorShaderReturn(self.convex_edge_shader, shader_params, params.item_result.with_size(w, h))

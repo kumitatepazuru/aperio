@@ -64,10 +64,12 @@ class VideoGenerateParameters:
     """生成元のフレームの幅。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
     height: int
     """生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
+    item_result: ItemResult
+    """
+    この生成の直前までに作成されたItemResultのコピー。これをもとに、生成後のItemResultを作る。
+    """
     structure_id: str = ""
     """この呼び出しが対応する`GenerateStructure.id`(`layer.object["id"]`または対応するeffectの`["id"]`)。"""
-    item_result: ItemResult | None = None
-    """この生成の直前までに積み上がった`ItemResult`"""
     canvas_width: int = 0
     """合成先キャンバスの幅(px)。"""
     canvas_height: int = 0
@@ -76,7 +78,7 @@ class VideoGenerateParameters:
 @dataclass
 class AudioGeneratorReturn:
     """オーディオの generate() の戻り値。additional_item は video 側の
-    ItemResult.additional_item と対称な仕組みで、自分と同じ時間窓に
+    ItemResult.additional_items と対称な仕組みで、自分と同じ時間窓に
     加算ミックスする追加のオーディオアイテムを指定できる(behind は無視される。
     音声は加算合成なので順序に意味が無いため)。"""
 

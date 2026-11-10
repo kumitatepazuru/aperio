@@ -1,7 +1,7 @@
 import struct
 
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -99,12 +99,8 @@ class MirrorEffect(VideoEffectGeneratorBase):
         )
 
         if recenter:
-            item_result = ItemResult(ow, oh)
+            item_result = params.item_result.with_size(ow, oh)
         else:
             center_axis = (orig_start + dim // 2) - total_axis_dim // 2
-            item_result = ItemResult(
-                ow, oh,
-                center_x=(center_axis if axis == 1 else 0),
-                center_y=(center_axis if axis == 0 else 0),
-            )
+            item_result = params.item_result.with_size(ow, oh).add_center((center_axis if axis == 1 else 0), (center_axis if axis == 0 else 0))
         return GeneratorShaderReturn(self.mirror_shader, shader_params, item_result)

@@ -172,7 +172,7 @@
 
 ## ItemResult
 
-**定義:** フレームレンダリング後、各アイテムの出力サイズ情報を格納する型。
+**定義:** 各アイテムの生成結果。出力テクスチャのサイズと、画面上の最終的な変形を絶対値で持つ。
 
 **型定義:**
 
@@ -180,19 +180,44 @@
 - TypeScript: `dist/app/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemResult`
 - Python: `crates/aperio-napi/src/structs/item_structures.rs`（pyo3 で定義、スタブは `build/stub/aperio/item_structures.pyi`）→ `class ItemResult`
 
-**フィールド:** `width: number`, `height: number`。ほかに任意で `pos` / `centerX` / `centerY` / `scale` / `rotate` / `alpha` / `additionalItem`(エフェクトが積む変形)と、`offscreen: boolean`(既定 false)と `offscreenSource`(下記)を持つ。
+**フィールド:**
 
-**`offscreen`(オフスクリーン済み):** `オフスクリーン描画` エフェクトが、そこまでの変形(アイテム自身の `x/y/scale/rotation/alpha` と、これまでのエフェクトが積んだ `pos/scale/rotate/alpha/center`)をフレーム大のテクスチャに焼き込んだ印。立っている間は次のとおり扱う。
-- `ItemResult.combine`: 立てる瞬間に累積した `pos/center/scale/rotate/alpha` を捨てる。以降は `pos` の X/Y と `center` だけを加算し、`scale/rotate/alpha/pos.z` は積まない(無視される)。
-- `frame_builder.layer_params`: アイテム自身の `x/y/scale/rotation/alpha` を読まず、`pos` の X/Y(0方向へ整数画素に切り捨て)と `center` だけで合成する。
-- `ItemResult.offscreenSource`(`OffscreenSource`: `width/height/pos/centerX/centerY/scale`): 焼き込み直前の形。`combine` が立てる瞬間に退避する。`offscreen` が偽のときは未設定。
-- `Overlay.tsx`: 枠とハンドルを `offscreenSource` の形で、通常のアイテムと同じ計算で描く(焼き込み時にアイテムの `x/y/scale/rotation` が適用されるので、移動・回転・拡大の操作はそのまま効く)。焼き込み後に置いた `座標` の X/Y は枠に反映されない。
+| フィールド | 型 | 意味 |
+| --- | --- | --- |
+| `width` / `height` | `int` | 出力テクスチャのサイズ(px) |
+| `pos` | `(x, y, z)` | キャンバス中央を原点とした位置(px)。Z は奥行き |
+| `center_x` / `center_y` | `float` | 回転・拡縮の基点オフセット(拡大前のテクスチャpx) |
+| `scale` | `(x, y)` | 拡大率(1.0 = 等倍) |
+| `rotate` | `(x, y, z)` | 各軸の回転(度) |
+| `alpha` | `float` | 不透明度(1.0 = 不透明。合成時に 0〜1 にクランプ) |
+| `additional_items` | `list[AdditionalItem]` | チェーン中に積まれた追加アイテム。合成時に `behind` に従ってアイテムの背面/前面に配置される |
+| `offscreen` | `bool` | オフスクリーン描画済みか(下記) |
+| `offscreen_source` | `OffscreenSource \| None` | 焼き込み直前の形(下記) |
+
+変形の既定値(位置0・等倍・無回転・不透明・基点ずれ0)は Rust の `ItemResult::identity` だけで定義する。コンストラクタの省略した引数はこの値になる。
+
+**生成とユーティリティ(Python):**
+
+- `ItemResult.from_item(item, width=0, height=0)`: `ItemStructure.Video` の `x/y/scale/rotation/alpha` を絶対値にした結果(`pos=(x, y, 0)`、`scale=scale/100`、`rotate=(0, 0, rotation)`、`alpha=alpha/100`)。
+- `with_size(width, height)`: 変形を保ったままサイズだけを変えたコピー。
+- `copy()`: コピー。
+- `add_pos(x, y, z=0)` / `add_center(x, y)` / `mul_scale(x, y)` / `add_rotate(x, y, z)` / `mul_alpha(a)` / `add_additional_item(item)`: 自身を変更して自身を返す(チェーンできる)。
+- `a + b` / `a += b`: `b` を差分として積む。`pos/center/rotate` は加算、`scale/alpha` は乗算、`additional_items` は連結。サイズは `a` のまま(`b` のサイズは使わないので、差分は `ItemResult(0, 0, pos=…)` のように作る)。
+- `to_offscreen(width, height)`: 下記。
+
+**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(layer)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.layer_params` は `ItemResult` だけから合成パラメーターを作る(アイテムの値は読まない)。
+
+**`offscreen`(オフスクリーン済み):** `オフスクリーン描画` エフェクトが、そこまでの変形をキャンバス大のテクスチャに焼き込んだことを示すフラグ。
+- `to_offscreen(width, height)`: 変形を持たない `width x height` の結果を返す。`offscreen` を立て、`offscreen_source` に焼き込み前の形を残し、`additional_items` は引き継ぐ。
+- `frame_builder.layer_params`: `pos` の X/Y(0方向へ整数画素に切り捨て)と `center` だけで合成する。`scale/rotate/alpha/pos.z` は無視する。
+- `OffscreenSource`(`width/height/pos/center_x/center_y/scale/rotate/alpha`): 焼き込み直前の形。`offscreen` が偽のときは `None`。
+- `Overlay.tsx`: 枠とハンドルを `offscreenSource` の形で描く。焼き込み後に置いた `座標` の X/Y は枠に反映されない。
 - 二重に焼き込まないよう、`オフスクリーン描画` は `offscreen` が立っていれば何もしない。
 
 **用法:**
 
 - `frameResults: Record<string, ItemResult>` — ストアのトップレベルフィールド。アイテムIDをキーとした描画結果辞書
-- `Overlay.tsx` でアイテムの表示サイズ計算に使用
+- `Overlay.tsx` でアイテムの枠の描画に使用(`pos/scale/rotate[2]/center` をそのまま使う)
 
 ---
 
@@ -296,10 +321,10 @@
 | `width`        | `int`                 | キャンバス幅（px）   |
 | `height`       | `int`                 | キャンバス高さ（px） |
 | `structure_id` | `str`                 | 対応する `GenerateStructure.id` |
-| `item_result`  | `ItemResult \| None`  | エフェクトのみ。直前までに積まれた累積結果（読み取り専用。オブジェクトは `None`） |
+| `item_result`  | `ItemResult`          | 直前までに積まれた累積結果（絶対値）のコピー。オブジェクトには `ItemResult.from_item(layer)` が入る。ジェネレーターはこれを変更して返す |
 | `canvas_width` / `canvas_height` | `int` | 合成先キャンバスのサイズ（px）。エフェクトでは `width`/`height` が直前のオブジェクトサイズなので別に持つ |
 
-**戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | None`
+**戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | ItemResult | None`。返した `ItemResult` がそのまま新しい累積結果になる。
 
 ### 音声系
 

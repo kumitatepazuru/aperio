@@ -7,9 +7,9 @@ import { FaArrowRotateRight } from "react-icons/fa6";
 
 type VideoItem = ItemStructure & { type: "Video" };
 
-// 枠の幾何(幅・高さ・座標・拡大率・中心ずれ)を取り出す。
+// 枠の幾何(幅・高さ・座標・拡大率・回転・中心ずれ)を取り出す。
 // オフスクリーン描画済みのアイテムは result 自体がキャンバス大に焼き込み後の値なので、
-// 焼き込み前の形(offscreenSource)で枠を描く。こうするとアイテムの x/y/scale/rotation に追従する。
+// 焼き込み前の形(offscreenSource)で枠を描く。
 const boxGeometry = (result: ItemResult) => result.offscreenSource ?? result;
 
 const Overlay = () => {
@@ -45,9 +45,9 @@ const Overlay = () => {
 
     const item = timelineItems.find((i) => i.id === itemId);
     const result = frameResults[itemId];
-    if (!item || item.type !== "Video") return;
+    if (!item || item.type !== "Video" || !result) return;
 
-    // 回転中心 = 枠の transform-origin (エフェクトの座標オフセット込み) をクライアント座標に変換
+    // 回転中心 = 枠の transform-origin (画面上の絶対座標) をクライアント座標に変換
     // rotate button → item div → overlay div
     const overlayEl = (e.currentTarget as HTMLElement).parentElement
       ?.parentElement;
@@ -56,9 +56,9 @@ const Overlay = () => {
 
     const pctW = width / frameState.width;
     const pctH = height / frameState.height;
-    const box = result ? boxGeometry(result) : undefined;
-    const originFrameX = item.x + (box?.pos?.[0] ?? 0);
-    const originFrameY = item.y + (box?.pos?.[1] ?? 0);
+    const box = boxGeometry(result);
+    const originFrameX = box.pos[0];
+    const originFrameY = box.pos[1];
     const centerClientX =
       overlayRect.left + (frameState.width / 2 + originFrameX) * pctW;
     const centerClientY =
@@ -124,10 +124,11 @@ const Overlay = () => {
     const pctW = width / frameState.width;
     const pctH = height / frameState.height;
 
-    // CSS rotate(-item.rotation) の回転行列
+    // 枠の CSS rotate(box.rotate[2]) と同じ回転行列
     // ローカル→グローバル: [cosR, sinR; -sinR, cosR]
     // グローバル→ローカル: [cosR, -sinR; sinR, cosR]（転置）
-    const rotRad = (item.rotation * Math.PI) / 180;
+    const box = boxGeometry(result);
+    const rotRad = (box.rotate[2] * Math.PI) / 180;
     const cosR = Math.cos(rotRad);
     const sinR = Math.sin(rotRad);
     const toGlobalX = (lx: number, ly: number) => cosR * lx + sinR * ly;
@@ -135,25 +136,15 @@ const Overlay = () => {
     const toLocalX = (gx: number, gy: number) => cosR * gx - sinR * gy;
     const toLocalY = (gx: number, gy: number) => sinR * gx + cosR * gy;
 
-    // エフェクトが返した拡大率・座標は item.scale/x/y の外側に乗る固定倍率・固定オフセット。
-    // 枠の描画と同じものを使わないとハンドルを掴んだ瞬間に飛ぶ。
-    const box = boxGeometry(result);
-    const resScaleX = box.scale?.[0] ?? 1;
-    const resScaleY = box.scale?.[1] ?? 1;
-    const posX = box.pos?.[0] ?? 0;
-    const posY = box.pos?.[1] ?? 0;
-
-    const initScale = item.scale;
-    const initX = item.x + posX;
-    const initY = item.y + posY;
-    const initHalfW = (box.width * initScale * resScaleX) / 200;
-    const initHalfH = (box.height * initScale * resScaleY) / 200;
+    const [initScaleX, initScaleY] = box.scale;
+    const initX = box.pos[0];
+    const initY = box.pos[1];
+    const initHalfW = (box.width * initScaleX) / 2;
+    const initHalfH = (box.height * initScaleY) / 2;
 
     // center_x/y はスケール前のテクスチャピクセル単位なのでスケールを掛ける
-    const centerXRaw = box.centerX ?? 0;
-    const centerYRaw = box.centerY ?? 0;
-    const initCenterXScaled = centerXRaw * (initScale / 100) * resScaleX;
-    const initCenterYScaled = centerYRaw * (initScale / 100) * resScaleY;
+    const initCenterXScaled = box.centerX * initScaleX;
+    const initCenterYScaled = box.centerY * initScaleY;
 
     const cornerSign = {
       se: { signX: 1, signY: 1 },
@@ -164,7 +155,7 @@ const Overlay = () => {
     const { signX, signY } = cornerSign[direction];
 
     // ドラッグ頂点・アンカーのローカル座標（centerオフセット込み）
-    // シェーダーはテクスチャの (dims/2 + center) を item.x/y にマップするため、
+    // シェーダーはテクスチャの (dims/2 + center) を box.pos にマップするため、
     // 各コーナーのローカル座標は ±halfW/H から center 分だけずれる
     const dragLocalX = signX * initHalfW - initCenterXScaled + handleOffsetX;
     const dragLocalY = signY * initHalfH - initCenterYScaled + handleOffsetY;
@@ -210,13 +201,12 @@ const Overlay = () => {
       if (newDiagLen <= 0) return; // 反転防止
 
       const scaleFactor = newDiagLen / diagLen;
-      const newScale = initScale * scaleFactor;
-      const newHalfW = (box.width * newScale * resScaleX) / 200;
-      const newHalfH = (box.height * newScale * resScaleY) / 200;
+      const newHalfW = initHalfW * scaleFactor;
+      const newHalfH = initHalfH * scaleFactor;
 
       // スケール後の center オフセット（テクスチャpx × 新scale）
-      const newCenterXScaled = centerXRaw * (newScale / 100) * resScaleX;
-      const newCenterYScaled = centerYRaw * (newScale / 100) * resScaleY;
+      const newCenterXScaled = initCenterXScaled * scaleFactor;
+      const newCenterYScaled = initCenterYScaled * scaleFactor;
 
       // アンカーを固定したまま新しい中心座標を計算
       // newCenter = anchor - toGlobal(newAnchLocal)
@@ -241,10 +231,10 @@ const Overlay = () => {
             if (i.type !== "Video") return i;
             return {
               ...i,
-              scale: orgFloor(newScale, 100),
-              // newItemX/Y はエフェクトのオフセット込みの位置なので、item.x/y へ戻す
-              x: Math.round(newItemX - posX),
-              y: Math.round(newItemY - posY),
+              scale: orgFloor(i.scale * scaleFactor, 100),
+              // newItemX/Y は画面上の絶対位置なので、移動量だけを item.x/y へ足す
+              x: Math.round(i.x + (newItemX - initX)),
+              y: Math.round(i.y + (newItemY - initY)),
             };
           }
           const initS = initOtherScales.get(i.id);
@@ -335,21 +325,18 @@ const Overlay = () => {
 
         const percentWidth = width / frameState.width;
         const percentHeight = height / frameState.height;
-        // エフェクトが返した拡大率・座標も枠に反映する。
-        // TODO: 3D回転(result.rotate)とZ座標による遠近はCSSの矩形では表現できないため、
-        // 枠は従来どおり item.rotation だけで回す(回転エフェクトを足すと枠と描画結果はずれる)。
+        // 枠は result の絶対値で描く。
+        // TODO: X/Y軸回転とZ座標による遠近はCSSの矩形では表現できないため、枠はZ軸回転だけで回す。
         // オフスクリーン描画済みのアイテムは、焼き込み前の形(offscreenSource)で枠を描く。
         const box = boxGeometry(result);
-        const effScaleX = (item.scale / 100) * (box.scale?.[0] ?? 1);
-        const effScaleY = (item.scale / 100) * (box.scale?.[1] ?? 1);
-        const effX = item.x + (box.pos?.[0] ?? 0);
-        const effY = item.y + (box.pos?.[1] ?? 0);
+        const [effScaleX, effScaleY] = box.scale;
+        const [effX, effY] = box.pos;
         // scaleとborderの幅を考慮したサイズ
         const scaledWidth = box.width * effScaleX + 4;
         const scaledHeight = box.height * effScaleY + 4;
         // center_x/y はテクスチャpx単位なのでscaleを掛けてフレーム座標へ変換
-        const cxScaled = (box.centerX ?? 0) * effScaleX;
-        const cyScaled = (box.centerY ?? 0) * effScaleY;
+        const cxScaled = box.centerX * effScaleX;
+        const cyScaled = box.centerY * effScaleY;
         // バウンディングボックス中心 = (effX - cxScaled, effY - cyScaled)
         const startX = (effX - cxScaled - scaledWidth / 2) * percentWidth;
         const itemWidth = scaledWidth * percentWidth;
@@ -358,7 +345,7 @@ const Overlay = () => {
         // 真ん中が0,0のためオフセットで修正
         const offsetX = (frameState.width / 2) * percentWidth;
         const offsetY = (frameState.height / 2) * percentHeight;
-        // 回転中心 (item.x, item.y) がdiv内のどの位置かを transform-origin に指定
+        // 回転中心 (box.pos) がdiv内のどの位置かを transform-origin に指定
         const originX = cxScaled * percentWidth + itemWidth / 2;
         const originY = cyScaled * percentHeight + itemHeight / 2;
 
@@ -371,7 +358,7 @@ const Overlay = () => {
               width: itemWidth,
               top: startY + offsetY,
               height: itemHeight,
-              transform: `rotate(${item.rotation}deg)`,
+              transform: `rotate(${box.rotate[2]}deg)`,
               transformOrigin: `${originX}px ${originY}px`,
               opacity: selected ? 1 : 0,
               cursor: selected ? "move" : "default",

@@ -85,4 +85,4 @@ class VibrationEffect(VideoEffectGeneratorBase):
                     r = 1.0
                 disp[axis] += weight * amp[axis] * r * s
 
-        return ItemResult(params.width, params.height, pos=(disp[0], disp[1], disp[2]))
+        return params.item_result.add_pos(disp[0], disp[1], disp[2])

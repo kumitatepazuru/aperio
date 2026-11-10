@@ -2,7 +2,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -241,4 +241,4 @@ class GlowEffect(VideoEffectGeneratorBase):
             self.composite_shader, struct.pack("i", 1 if light_only else 0), nw, nh
         )
 
-        return GeneratorBuilderReturn(builder, ItemResult(nw, nh))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(nw, nh))

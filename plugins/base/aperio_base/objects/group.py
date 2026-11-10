@@ -72,7 +72,7 @@ class GroupObject(VideoObjectGeneratorBase):
             result = results.get(item.id)
             if result is None:
                 continue
-            points = _box_corners(item, result)
+            points = _box_corners(result)
             owner = parent[item.layer]
             while True:
                 corners.setdefault(owner.id, []).extend(points)
@@ -85,26 +85,32 @@ class GroupObject(VideoObjectGeneratorBase):
             points = corners.get(group.id)
             if not points or group.id not in results:
                 continue
+            # グループ自身は BeforeMakeFrame で書き換えないので、上位グループの変形をここで合成して絶対値にする
             chain = [group]
             while chain[-1].layer in parent:
                 chain.append(parent[chain[-1].layer])
-            if any(g.scale == 0 for g in chain):
+            scale, rotation, x, y, alpha = _compose_chain(chain)
+            if scale == 0:
                 continue
-            local = [_to_local(p, chain) for p in points]
-            xs = [x for x, _ in local]
-            ys = [y for _, y in local]
-            # 枠の中心はグループの原点(x, y)からの相対位置。center は「原点が枠の中心からどれだけずれるか」なので符号が逆
-            new_results[group.id] = ItemResult(
-                _ceil_size(max(xs) - min(xs)),
-                _ceil_size(max(ys) - min(ys)),
-                center_x=-(max(xs) + min(xs)) / 2,
-                center_y=-(max(ys) + min(ys)) / 2,
-            )
+            group_result = results[group.id].copy()
+            group_result.pos = (x, y, 0.0)
+            group_result.scale = (scale, scale)
+            group_result.rotate = (0.0, 0.0, rotation)
+            group_result.alpha = alpha
+
+            local = [_to_local(p, group_result) for p in points]
+            xs = [lx for lx, _ in local]
+            ys = [ly for _, ly in local]
+            # center は「原点が枠の中心からどれだけずれるか」(拡大前のpx)なので、枠の中心の符号を逆にしたもの
+            group_result = group_result.with_size(_ceil_size(max(xs) - min(xs)), _ceil_size(max(ys) - min(ys)))
+            group_result.center_x = -(max(xs) + min(xs)) / 2
+            group_result.center_y = -(max(ys) + min(ys)) / 2
+            new_results[group.id] = group_result
         return new_results
 
     def generate(self, params: VideoGenerateParameters) -> ItemResult:
         # グループ自身は何も描画しない。枠の大きさはメンバーの生成後に AfterMakeFrame で決まるので、ここでは仮の値を返す
-        return ItemResult(1, 1, center_x=0.0, center_y=0.0)
+        return params.item_result.with_size(1, 1)
 
     def _is_group(self, item: ItemStructure) -> bool:
         return (
@@ -151,38 +157,32 @@ def _ceil_size(value: float) -> int:
     return max(1, math.ceil(round(value, 4)))
 
 
-def _box_corners(item: ItemStructure.Video, result: ItemResult) -> list[tuple[float, float]]:
+def _box_corners(result: ItemResult) -> list[tuple[float, float]]:
     """アイテムの枠の4つの角をフレーム座標で返す。UI の Overlay.tsx が枠を描く計算と同じ。"""
     box = result.offscreen_source or result
-    scale_x = item.scale / 100.0 * (box.scale[0] if box.scale else 1.0)
-    scale_y = item.scale / 100.0 * (box.scale[1] if box.scale else 1.0)
-    pivot_x = item.x + (box.pos[0] if box.pos else 0.0)
-    pivot_y = item.y + (box.pos[1] if box.pos else 0.0)
-    center_x = (box.center_x or 0.0) * scale_x
-    center_y = (box.center_y or 0.0) * scale_y
+    scale_x, scale_y = box.scale
+    pivot_x, pivot_y = box.pos[0], box.pos[1]
+    center_x = box.center_x * scale_x
+    center_y = box.center_y * scale_y
     half_w = box.width * scale_x / 2
     half_h = box.height * scale_y / 2
 
     corners = []
     for sign_x, sign_y in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-        rx, ry = _rotate(sign_x * half_w - center_x, sign_y * half_h - center_y, item.rotation)
+        rx, ry = _rotate(sign_x * half_w - center_x, sign_y * half_h - center_y, box.rotate[2])
         corners.append((pivot_x + rx, pivot_y + ry))
     return corners
 
 
-def _to_local(point: tuple[float, float], chain: list[ItemStructure.Video]) -> tuple[float, float]:
-    """フレーム座標の点を、鎖(内側 → 外側)の先頭のグループのローカル座標に戻す。`_apply_chain` の逆変換。"""
+def _to_local(point: tuple[float, float], result: ItemResult) -> tuple[float, float]:
+    """フレーム座標の点を、result の位置・拡大率(X)・Z軸回転を原点とするローカル座標に戻す。"""
     x, y = point
-    for g in reversed(chain):
-        x, y = _rotate((x - g.x) / (g.scale / 100.0), (y - g.y) / (g.scale / 100.0), -g.rotation)
-    return x, y
+    scale = result.scale[0]
+    return _rotate((x - result.pos[0]) / scale, (y - result.pos[1]) / scale, -result.rotate[2])
 
 
-def _apply_chain(item: ItemStructure.Video, chain: list[ItemStructure.Video]) -> ItemStructure.Video:
-    """
-    グループの鎖(内側 → 外側)を1つの相似変換に合成し、メンバーの位置・回転・拡大率・透明度に適用する。
-    エフェクトはメンバー自身 → 内側 → 外側の順に積む。
-    """
+def _compose_chain(chain: list[ItemStructure.Video]) -> tuple[float, float, float, float, float]:
+    """グループの鎖(内側 → 外側)を1つの相似変換に合成し、(拡大率, 回転, X, Y, 不透明度) を返す。"""
     inner = chain[0]
     scale = inner.scale / 100.0
     rotation = inner.rotation
@@ -195,6 +195,15 @@ def _apply_chain(item: ItemStructure.Video, chain: list[ItemStructure.Video]) ->
         scale *= p_scale
         rotation += p.rotation
         alpha *= p.alpha / 100.0
+    return scale, rotation, tx, ty, alpha
+
+
+def _apply_chain(item: ItemStructure.Video, chain: list[ItemStructure.Video]) -> ItemStructure.Video:
+    """
+    グループの鎖(内側 → 外側)を1つの相似変換に合成し、メンバーの位置・回転・拡大率・透明度に適用する。
+    エフェクトはメンバー自身 → 内側 → 外側の順に積む。
+    """
+    scale, rotation, tx, ty, alpha = _compose_chain(chain)
 
     x, y = _rotate(item.x, item.y, rotation)
     effects = [_rebuild(e) for e in item.effects]

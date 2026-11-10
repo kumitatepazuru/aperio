@@ -2,7 +2,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -138,7 +138,7 @@ class LightEffect(VideoEffectGeneratorBase):
         if A_frac <= 0:
             # 比率=-100%: 後光パス・キャンバス拡張・最終合成を丸ごとスキップして
             # 即returnする(README §5)。
-            return GeneratorBuilderReturn(shadowed, ItemResult(w, h))
+            return GeneratorBuilderReturn(shadowed, params.item_result.with_size(w, h))
 
         # クランプ#2: 後光パス専用に半径を上書きする。常にこちらのrを使うため、
         # 陰影パスより半径が小さくなることがある(README §2)。
@@ -167,4 +167,4 @@ class LightEffect(VideoEffectGeneratorBase):
             self.composite_shader, composite_params, nw, nh
         )
 
-        return GeneratorBuilderReturn(final_builder, ItemResult(nw, nh))
+        return GeneratorBuilderReturn(final_builder, params.item_result.with_size(nw, nh))

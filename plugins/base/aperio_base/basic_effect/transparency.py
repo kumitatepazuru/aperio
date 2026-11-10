@@ -34,4 +34,4 @@ class TransparencyEffect(VideoEffectGeneratorBase):
         transparency = float(args.get("transparency", 0.0))
         alpha = max(0.0, min(1.0, 1.0 - transparency / 100.0))
 
-        return ItemResult(params.width, params.height, alpha=alpha)
+        return params.item_result.mul_alpha(alpha)

@@ -1,7 +1,7 @@
 import math
 import struct
 
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -128,4 +128,4 @@ class GradationEffect(VideoEffectGeneratorBase):
             blend_mode, w, h,
         )
 
-        return GeneratorShaderReturn(self.gradation_shader, shader_params, ItemResult(w, h))
+        return GeneratorShaderReturn(self.gradation_shader, shader_params, params.item_result.with_size(w, h))

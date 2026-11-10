@@ -45,4 +45,4 @@ class PositionEffect(VideoEffectGeneratorBase):
         y = float(args.get("y", 0.0))
         z = float(args.get("z", 0.0))
 
-        return ItemResult(params.width, params.height, pos=(x, y, z))
+        return params.item_result.add_pos(x, y, z)

@@ -284,7 +284,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
         # ずれないよう半分だけ戻す(README §3「fpip+0xD4/+0xD8の補正」に相当)。
         center_x = round(-X / 2)
         center_y = round(-Y / 2)
-        return GeneratorBuilderReturn(final_builder, ItemResult(nw, nh, center_x=center_x, center_y=center_y))
+        return GeneratorBuilderReturn(final_builder, params.item_result.with_size(nw, nh).add_center(center_x, center_y))
 
     def _generate_separate_object(
         self, params: VideoGenerateParameters, w: int, h: int, shadow_params: _ShadowParams
@@ -326,7 +326,9 @@ class ShadowEffect(VideoEffectGeneratorBase):
         )
         additional_item = AdditionalItem(item=shadow_item, behind=True)
 
-        return GeneratorShaderReturn(self.select_shader, struct.pack("i", 0), ItemResult(w, h, additional_item=additional_item))
+        return GeneratorShaderReturn(
+            self.select_shader, struct.pack("i", 0), params.item_result.with_size(w, h).add_additional_item(additional_item)
+        )
 
 
 class ShadowLayerEffect(VideoEffectGeneratorBase):
@@ -362,4 +364,4 @@ class ShadowLayerEffect(VideoEffectGeneratorBase):
         if shadow_params is None:
             return None
         shadow = _build_shadow_layer(self.shaders, self.pattern_cache, shadow_params, w, h)
-        return GeneratorBuilderReturn(shadow.builder, ItemResult(shadow.box_w, shadow.box_h))
+        return GeneratorBuilderReturn(shadow.builder, params.item_result.with_size(shadow.box_w, shadow.box_h))

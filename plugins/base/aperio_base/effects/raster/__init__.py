@@ -2,7 +2,7 @@ import math
 import struct
 
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -81,7 +81,7 @@ class RasterEffect(VideoEffectGeneratorBase):
         center_x = w // 2 - (x0 + ow // 2)
         center_y = h // 2 - (y0 + oh // 2)
         return GeneratorShaderReturn(
-            self.raster_shader, shader_params, ItemResult(ow, oh, center_x=center_x, center_y=center_y)
+            self.raster_shader, shader_params, params.item_result.with_size(ow, oh).add_center(center_x, center_y)
         )
 
     def _grow_1d(self, dim: int, range_px: int) -> tuple[int, int]:

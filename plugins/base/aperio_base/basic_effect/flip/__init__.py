@@ -1,6 +1,6 @@
 import struct
 
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -65,4 +65,4 @@ class FlipEffect(VideoEffectGeneratorBase):
 
         shader_params = struct.pack("iiiiiiii", fv, fh, il, ic, ia, 0, 0, 0)
 
-        return GeneratorShaderReturn(self.shader, shader_params, ItemResult(params.width, params.height))
+        return GeneratorShaderReturn(self.shader, shader_params, params.item_result.with_size(params.width, params.height))

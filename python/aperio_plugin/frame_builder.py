@@ -4,7 +4,7 @@ import math
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import ItemResult, ItemStructure
+from aperio.item_structures import ItemResult
 from .plugin_base.generator_base import (
     GeneratorBuilderReturn,
     GeneratorFuncReturn,
@@ -107,43 +107,37 @@ def pack_layer_params(inv: list[list[float]], center_x: float, center_y: float, 
 
 def _offscreen_layer_params(result: ItemResult) -> bytes:
     """オフスクリーン描画済みのレイヤー用LayerParamsの生成"""
-    pos = result.pos or (0.0, 0.0, 0.0)
-    tx = float(math.trunc(pos[0]))
-    ty = float(math.trunc(pos[1]))
+    tx = float(math.trunc(result.pos[0]))
+    ty = float(math.trunc(result.pos[1]))
     # 平行移動 (tx, ty) の逆行列
     inv = [[1.0, 0.0, -tx], [0.0, 1.0, -ty], [0.0, 0.0, 1.0]]
-    return pack_layer_params(inv, result.center_x or 0.0, result.center_y or 0.0, 1.0)
+    return pack_layer_params(inv, result.center_x, result.center_y, 1.0)
 
 
-def layer_params(item: "ItemStructure.Video", result: ItemResult, canvas_height: int) -> bytes:
+def layer_params(result: ItemResult, canvas_height: int) -> bytes:
     """1レイヤーぶんの、compose.slang に渡す `LayerParams` を組み立てる。
 
     レイヤーを「ローカル z=0 平面上にある、基点(ピボット)中心のテクスチャ矩形」とみなし、
     拡大率 -> 3D回転 -> 平行移動(X/Y/Z) -> 透視投影 の順で画面へ送る。平面なので
     この一連の変換は3x3ホモグラフィ1枚で表せる。compose.slang には逆行列を渡す。
+    変形はすべて `result` の絶対値から読む。
 
     offscreenのときは、最終描画は矩形転送なので、X/Y の平行移動(整数画素への0方向切り捨て)と基点オフセットだけを使う。
     """
     if result.offscreen:
         return _offscreen_layer_params(result)
 
-    pos = result.pos or (0.0, 0.0, 0.0)
     # 整数に丸めず実数のまま持つ (実機の Q12 = 1/4096px 相当のサブピクセル座標)
-    eff_x = item.x + pos[0]
-    eff_y = item.y + pos[1]
-    eff_z = pos[2]
+    eff_x, eff_y, eff_z = result.pos
 
-    rotate = result.rotate or (0.0, 0.0, 0.0)
-    rx_rad = math.radians(rotate[0])
-    ry_rad = math.radians(rotate[1])
-    rz_rad = math.radians(item.rotation + rotate[2])
+    rx_rad = math.radians(result.rotate[0])
+    ry_rad = math.radians(result.rotate[1])
+    rz_rad = math.radians(result.rotate[2])
 
-    eff_center_x = result.center_x or 0.0
-    eff_center_y = result.center_y or 0.0
+    eff_center_x = result.center_x
+    eff_center_y = result.center_y
 
-    scale = result.scale or (1.0, 1.0)
-    eff_scale_x = (item.scale / 100.0) * scale[0]
-    eff_scale_y = (item.scale / 100.0) * scale[1]
+    eff_scale_x, eff_scale_y = result.scale
 
     # 3D回転行列 R = Rz * Ry * Rx (3行目は透視投影で使う奥行き成分)
     cx, sx = math.cos(rx_rad), math.sin(rx_rad)
@@ -167,8 +161,7 @@ def layer_params(item: "ItemStructure.Video", result: ItemResult, canvas_height:
     ]
     inv = invert_3x3(forward)
 
-    alpha = (item.alpha / 100.0) * (result.alpha if result.alpha is not None else 1.0)
-    alpha = max(0.0, min(1.0, alpha))
+    alpha = max(0.0, min(1.0, result.alpha))
 
     if inv is None or d + eff_z <= 0.0:
         # 平面が真横を向いている / オブジェクトがカメラ位置より手前にある。

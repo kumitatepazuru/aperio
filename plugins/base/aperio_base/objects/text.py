@@ -1,5 +1,5 @@
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio.gpu_util import PyCompiledTextureFunc
 from aperio.text_rendering import PyTextRenderer, PyTextSpec
 from aperio_plugin.event_manager import event
@@ -62,5 +62,5 @@ class TextObject(VideoObjectGeneratorBase):
         return GeneratorTextureReturn(
             compiled=self.compiled_func,
             params=prepared,
-            item_result=ItemResult(prepared.width, prepared.height),
+            item_result=params.item_result.with_size(prepared.width, prepared.height),
         )

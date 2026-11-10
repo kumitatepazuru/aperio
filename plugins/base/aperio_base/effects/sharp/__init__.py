@@ -1,7 +1,7 @@
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -96,4 +96,4 @@ class SharpEffect(VideoEffectGeneratorBase):
             self.composite_shader, composite_params, w, h
         )
 
-        return GeneratorBuilderReturn(builder, ItemResult(w, h))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(w, h))

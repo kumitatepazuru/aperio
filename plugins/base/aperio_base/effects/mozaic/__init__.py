@@ -1,7 +1,7 @@
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -70,4 +70,4 @@ class MozaicEffect(VideoEffectGeneratorBase):
             .add_shader(self.mozaic_v_shader, v_params, width, height)
         )
 
-        return GeneratorBuilderReturn(builder, ItemResult(width, height))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(width, height))

@@ -2,7 +2,7 @@ import math
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -137,4 +137,4 @@ class DiffusionLightEffect(VideoEffectGeneratorBase):
 
         current = current.add_shader(self.ycbcr_decode_shader, None, cur_w, cur_h)
 
-        return GeneratorBuilderReturn(current, ItemResult(cur_w, cur_h))
+        return GeneratorBuilderReturn(current, params.item_result.with_size(cur_w, cur_h))

@@ -1,6 +1,6 @@
 import struct
 
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -78,7 +78,7 @@ class ClipEffect(VideoEffectGeneratorBase):
         shader_params = struct.pack("iiii", shader_clip_left, shader_clip_top, new_width, new_height)
 
         if move_center:
-            return GeneratorShaderReturn(self.clip_shader, shader_params, ItemResult(new_width, new_height))
+            return GeneratorShaderReturn(self.clip_shader, shader_params, params.item_result.with_size(new_width, new_height))
 
         # center_x/center_y でクリップ前の位置を維持する
         # クランプ後の実効 shader_clip_left/top と new_width/height から逆算することで、
@@ -86,5 +86,5 @@ class ClipEffect(VideoEffectGeneratorBase):
         center_x = params.width // 2 - (shader_clip_left + new_width // 2)
         center_y = params.height // 2 - (shader_clip_top + new_height // 2)
         return GeneratorShaderReturn(
-            self.clip_shader, shader_params, ItemResult(new_width, new_height, center_x=center_x, center_y=center_y)
+            self.clip_shader, shader_params, params.item_result.with_size(new_width, new_height).add_center(center_x, center_y)
         )

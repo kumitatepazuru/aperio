@@ -2,7 +2,7 @@ import math
 import struct
 
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -114,4 +114,4 @@ class ResizeEffect(VideoEffectGeneratorBase):
 
         shader_params = struct.pack("iiii", new_width, new_height, 1 if no_interpolation else 0, 0)
 
-        return GeneratorShaderReturn(self.resize_shader, shader_params, ItemResult(new_width, new_height))
+        return GeneratorShaderReturn(self.resize_shader, shader_params, params.item_result.with_size(new_width, new_height))

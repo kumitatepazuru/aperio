@@ -1,7 +1,7 @@
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -119,4 +119,4 @@ class CompositeImageEffect(VideoEffectGeneratorBase):
                 .add_shader(self.media_composite_mode_shader, struct.pack("i", mode_index), w, h)
             )
 
-        return GeneratorBuilderReturn(builder, ItemResult(w, h))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(w, h))

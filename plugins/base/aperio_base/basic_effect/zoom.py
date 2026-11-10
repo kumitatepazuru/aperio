@@ -51,4 +51,4 @@ class ZoomEffect(VideoEffectGeneratorBase):
         scale_x = zoom * zoom_x
         scale_y = zoom * zoom_y
 
-        return ItemResult(params.width, params.height, scale=(scale_x, scale_y))
+        return params.item_result.mul_scale(scale_x, scale_y)

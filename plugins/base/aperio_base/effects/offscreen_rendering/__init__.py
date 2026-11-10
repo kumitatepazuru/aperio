@@ -1,5 +1,5 @@
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult
+from aperio.item_structures import GeneratorEvent, GeneratorInformation
 from aperio_plugin.event_manager import event
 from aperio_plugin.frame_builder import layer_params
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
@@ -36,19 +36,16 @@ class OffscreenRenderingEffect(VideoEffectGeneratorBase):
 
     def generate(self, params: VideoGenerateParameters) -> GeneratorShaderReturn | None:
         item_result = params.item_result
-        if item_result is None:
-            return None
         # オフスクリーン済みなら何もしない
         if item_result.offscreen:
             return None
 
         # 座標・回転・拡大率・透明度・中心ずれ(+3D回転の透視)は最終合成と同じ式で求める。
-        # 焼き込んだ後は ItemResult.combine が累積変形を捨て、以降 layer_params はアイテム自身の
-        # 変形を読まなくなる。
-        shader_params = layer_params(params.layer, item_result, params.canvas_height)
+        shader_params = layer_params(item_result, params.canvas_height)
 
+        # 焼き込んだ後は変形を持たないキャンバス大の結果になり、焼き込み前の形は offscreen_source に残る。
         return GeneratorShaderReturn(
             self.offscreen_shader,
             shader_params,
-            ItemResult(params.canvas_width, params.canvas_height, offscreen=True),
+            item_result.to_offscreen(params.canvas_width, params.canvas_height),
         )
