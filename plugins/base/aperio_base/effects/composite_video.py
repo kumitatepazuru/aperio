@@ -95,7 +95,7 @@ class CompositeVideoEffect(VideoEffectGeneratorBase):
         tile_image = bool(args.get("tile_image", False))
         mode = args.get("mode", "overwrite_color")
 
-        elapsed = params.frame_number - params.layer.start
+        elapsed = params.frame_number - params.item.start
         own_frame = playback_start + round(elapsed * playback_speed)
 
         if sync_video_files:

@@ -205,7 +205,7 @@
 - `a + b` / `a += b`: `b` を差分として積む。`pos/center/rotate` は加算、`scale/alpha` は乗算、`additional_items` は連結。サイズは `a` のまま(`b` のサイズは使わないので、差分は `ItemResult(0, 0, pos=…)` のように作る)。
 - `to_offscreen(width, height)`: 下記。
 
-**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(layer)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.layer_params` は `ItemResult` だけから合成パラメーターを作る(アイテムの値は読まない)。
+**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(item)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.layer_params` は `ItemResult` だけから合成パラメーターを作る(アイテムの値は読まない)。
 
 **`offscreen`(オフスクリーン済み):** `オフスクリーン描画` エフェクトが、そこまでの変形をキャンバス大のテクスチャに焼き込んだことを示すフラグ。
 - `to_offscreen(width, height)`: 変形を持たない `width x height` の結果を返す。`offscreen` を立て、`offscreen_source` に焼き込み前の形を残し、`additional_items` は引き継ぐ。
@@ -316,12 +316,12 @@
 | フィールド     | 型                    | 意味                 |
 | -------------- | --------------------- | -------------------- |
 | `frame_number` | `int`                 | 生成するフレーム番号 |
-| `layer`        | `ItemStructure.Video` | 対象アイテムの情報   |
+| `item`         | `ItemStructure.Video` | 対象アイテムの情報   |
 | `args`         | `dict`                | パラメータ値の辞書   |
 | `width`        | `int`                 | キャンバス幅（px）   |
 | `height`       | `int`                 | キャンバス高さ（px） |
 | `structure_id` | `str`                 | 対応する `GenerateStructure.id` |
-| `item_result`  | `ItemResult`          | 直前までに積まれた累積結果（絶対値）のコピー。オブジェクトには `ItemResult.from_item(layer)` が入る。ジェネレーターはこれを変更して返す |
+| `item_result`  | `ItemResult`          | 直前までに積まれた累積結果（絶対値）のコピー。オブジェクトには `ItemResult.from_item(item)` が入る。ジェネレーターはこれを変更して返す |
 | `canvas_width` / `canvas_height` | `int` | 合成先キャンバスのサイズ（px）。エフェクトでは `width`/`height` が直前のオブジェクトサイズなので別に持つ |
 
 **戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | ItemResult | None`。返した `ItemResult` がそのまま新しい累積結果になる。
@@ -339,7 +339,7 @@
 | フィールド      | 型                                | 意味                                          |
 | --------------- | --------------------------------- | --------------------------------------------- |
 | `start_time`    | `float`                           | 生成開始時刻（秒）                            |
-| `layer`         | `ItemStructure.Audio`             | 対象アイテムの情報                            |
+| `item`          | `ItemStructure.Audio`             | 対象アイテムの情報                            |
 | `sample_rate`   | `int`                             | サンプルレート（Hz）                          |
 | `channels`      | `int`                             | チャンネル数                                  |
 | `sample_count`  | `int`                             | 生成するサンプル数                            |

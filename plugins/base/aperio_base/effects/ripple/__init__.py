@@ -66,7 +66,7 @@ class RippleEffect(VideoEffectGeneratorBase):
 
         w, h = params.width, params.height
         fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
-        elapsed_seconds = (params.frame_number - params.layer.start) / fps
+        elapsed_seconds = (params.frame_number - params.item.start) / fps
         wavefront = speed * elapsed_seconds
 
         shader_params = struct.pack(

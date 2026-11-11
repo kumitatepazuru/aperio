@@ -75,7 +75,7 @@ class VideoObject(VideoObjectGeneratorBase):
             return None
         video_loader, compiled_func = entry
 
-        video_frame_number = params.frame_number - params.layer.start + 1
+        video_frame_number = params.frame_number - params.item.start + 1
         write_video_sync_frame(params.frame_number, video_frame_number)
 
         return GeneratorTextureReturn(

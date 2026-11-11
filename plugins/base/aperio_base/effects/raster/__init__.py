@@ -57,7 +57,7 @@ class RasterEffect(VideoEffectGeneratorBase):
 
         w, h = params.width, params.height
         fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
-        elapsed_seconds = (params.frame_number - params.layer.start) / fps
+        elapsed_seconds = (params.frame_number - params.item.start) / fps
         dimension = w if vertical else h
         phase = elapsed_seconds * speed * wavelength_px - dimension / 2.0
 

@@ -96,7 +96,7 @@ class NoiseEffect(VideoEffectGeneratorBase):
         seed = int(args.get("seed", 0))
 
         # exedit-inspect noise README §9: `速度X`/`速度Y`/`変化速度`の時間積分は経過フレーム数に対して行われる
-        elapsed_frames = params.frame_number - params.layer.start
+        elapsed_frames = params.frame_number - params.item.start
         ox = elapsed_frames * velocity_x
         oy = elapsed_frames * velocity_y
         oz = elapsed_frames * change_speed

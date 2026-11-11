@@ -256,7 +256,7 @@ class _FrameComposition:
     def _generate(
         self,
         kind: Literal[GeneratorKind.VIDEO_OBJECT, GeneratorKind.VIDEO_EFFECT],
-        layer: ItemStructure.Video,
+        item: ItemStructure.Video,
         structure: dict,
         width: int,
         height: int,
@@ -270,11 +270,11 @@ class _FrameComposition:
             item_result: 直前までの累積結果。None(オブジェクトの場合)ならアイテム自身から作る
         """
         if item_result is None:
-            item_result = ItemResult.from_item(layer)
+            item_result = ItemResult.from_item(item)
         generator = self._registry.get(structure["name"], kind)
         params = VideoGenerateParameters(
             frame_number=self._frame_number,
-            layer=layer,
+            item=item,
             args=structure["parameters"],
             width=width,
             height=height,

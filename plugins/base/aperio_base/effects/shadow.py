@@ -298,7 +298,7 @@ class ShadowEffect(VideoEffectGeneratorBase):
         フレーム内での使い回し(`video_renderer._VideoChain.link`のlink_id処理)により、
         オーナーの再デコード・再生成は発生しない。
         """
-        owner = params.layer
+        owner = params.item
         object_stub, effect_stubs = build_link_prefix(owner, params.structure_id)
         tail_effect = GenerateStructure(
             id=str(uuid.uuid4()),

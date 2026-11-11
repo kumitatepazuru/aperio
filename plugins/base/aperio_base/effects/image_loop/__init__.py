@@ -67,7 +67,7 @@ class ImageLoopEffect(VideoEffectGeneratorBase):
         if scale < 1.0:
             builder = builder.add_shader(self.resize_shader, struct.pack("ii", tile_w, tile_h), tile_w, tile_h)
 
-        elapsed_frames = params.frame_number - params.layer.start
+        elapsed_frames = params.frame_number - params.item.start
         offset_x = round(speed_x * scale * elapsed_frames) % tile_w
         offset_y = round(speed_y * scale * elapsed_frames) % tile_h
 

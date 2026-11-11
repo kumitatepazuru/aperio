@@ -24,8 +24,8 @@ def in_out_ramp(params: VideoGenerateParameters, in_seconds: float, out_seconds:
 
     # アイテム内のフレーム位置。item.end は排他境界なので end-1 が原作の
     # inclusive な終端フレームに相当する。
-    t = params.frame_number - params.layer.start
-    u = (params.layer.end - 1) - params.frame_number
+    t = params.frame_number - params.item.start
+    u = (params.item.end - 1) - params.frame_number
 
     # イン側の `if (a < 4096)` は到達不能なガードなので省略し、min()1本に
     # まとめている(fade README §4)。アウト側は原作どおり厳密不等号の

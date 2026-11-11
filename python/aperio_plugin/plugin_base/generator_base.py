@@ -56,8 +56,8 @@ class VideoGenerateParameters:
 
     frame_number: int
     """生成するフレームの番号"""
-    layer: "ItemStructure.Video"
-    """生成するフレームのレイヤー情報"""
+    item: "ItemStructure.Video"
+    """生成するフレームのアイテム情報"""
     args: dict
     """フレーム生成に必要な引数群"""
     width: int
@@ -69,7 +69,7 @@ class VideoGenerateParameters:
     この生成の直前までに作成されたItemResultのコピー。これをもとに、生成後のItemResultを作る。
     """
     structure_id: str = ""
-    """この呼び出しが対応する`GenerateStructure.id`(`layer.object["id"]`または対応するeffectの`["id"]`)。"""
+    """この呼び出しが対応する`GenerateStructure.id`(`item.object["id"]`または対応するeffectの`["id"]`)。"""
     canvas_width: int = 0
     """合成先キャンバスの幅(px)。"""
     canvas_height: int = 0
@@ -92,8 +92,8 @@ class AudioGenerateParameters:
 
     start_time: float
     """生成を開始する時間（秒）。フレーム番号にfpsをかけたもの"""
-    layer: "ItemStructure.Audio"
-    """生成するサンプルのレイヤー情報"""
+    item: "ItemStructure.Audio"
+    """生成するサンプルのアイテム情報"""
     sample_rate: int
     """サンプルレート"""
     channels: int
