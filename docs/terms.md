@@ -473,13 +473,25 @@
 | `GeneratorEvent.RequestStructure` | パラメータ構造の再取得イベント           |
 | `GeneratorEvent.BeforeMakeFrame`  | フレーム生成直前に `frame_structure` を受け取り、`list[ItemStructure]` を返すと差し替える(`None` なら変更なし)イベント |
 | `GeneratorEvent.AfterMakeFrame`   | フレーム生成直後に `frame_structure`(`BeforeMakeFrame` 適用後)と `dict[str, ItemResult]` を受け取り、`dict[str, ItemResult]` を返すと生成結果を差し替える(`None` なら変更なし)イベント。UI の枠に使われる |
+| `GeneratorEvent.ItemMove`         | UI の枠でアイテムを動かしたときに、編集前と編集後の現在フレームのアイテム(`list[ItemStructure]` 2つ)を受け取り、書き換えた編集後の list を返す(`None` なら変更なし)イベント |
+| `GeneratorEvent.ItemScale`        | 同上。枠の角で拡大縮小したとき |
+| `GeneratorEvent.ItemRotate`       | 同上。枠の回転ハンドルで回転したとき |
 
 **用法:**
 
-- `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定
+- `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定。ハンドラーの型は `EventCallable[[引数...], 戻り値]`
 - `call_event(plugin_name, GeneratorEvent.New, params)` — PluginManager(EventDispatcher)から呼び出す
-- `EventDispatcher.reduce_event(type, func, initial)` — 全ジェネレーターの該当ハンドラーを登録順に畳み込む(`BeforeMakeFrame` / `AfterMakeFrame` は `VideoRenderer._build` から呼ばれる)
-- Rust側: `GeneratorEvent::New` として `call_method1` の引数に渡す
+- `EventDispatcher.reduce_event(type, initial, *args)` — 全ジェネレーターの該当ハンドラーを `handler(*args, 現在の値)` として登録順に畳み込む。ハンドラーが `None` を返せば値はそのまま、現在の値と異なる型を返せば `TypeError`。`BeforeMakeFrame` / `AfterMakeFrame` は `VideoRenderer._build` から、`ItemMove` / `ItemScale` / `ItemRotate` は UI から `window.events.reduceItemMove(newItems, oldItems)` 等(napi: `AperioManager.reduceItem*` → `PluginManager.reduce_event`)で呼ばれる
+- Rust側: `crates/aperio-napi/src/lib.rs` の `impl_plugin_event_methods!` に1行足すと、イベントを呼ぶ napi メソッドが生成される
+  - `call fn(GeneratorEvent::X): Params -> Return` — 指定プラグインのハンドラーを1つ呼ぶ(`PluginManager.call_event`)。JS: `fn(pluginName, params)`
+  - `reduce fn(GeneratorEvent::X): (initial: T, arg: U, ...) -> Return` — 先頭の引数を初期値として、全プラグインのハンドラーを `handler(*残りの引数, 現在の値)` として畳み込む(`PluginManager.reduce_event`)。
+- TS側: 生成したメソッド名を `packages/shared/index.ts` の `EVENT_METHODS` に足すと、main の IPC 登録(`apps/main/eventIpc.ts`)・preload の公開・`window.events` の型(`AperioManager` から導出)がすべて揃う。
+
+### アイテム編集イベント(ItemMove / ItemScale / ItemRotate)
+
+`Overlay.tsx` は、操作開始時の現在フレームのアイテムを編集前とし、選択中のアイテムを画面上(キャンバス座標)の値のまま編集したものを編集後として、`window.events.reduceItemMove/Scale/Rotate(newItems, oldItems)` で全プラグインに通す(ハンドラーは `handler(oldItems, newItems)`)。ハンドラーは編集前後を比べて編集後のアイテムをパラメーター上の値に書き換え、UI は返ってきた選択中のアイテムをタイムラインに反映する。編集前のアイテムは `BeforeMakeFrame` 適用前のもの。
+
+- グループ(`base_object.group_object`)はメンバーの `x/y` の差分を、支配するグループの鎖の逆変換(`回転(-r) / 拡大率`)で戻す。回転は加算・拡大率は乗算で合成されるので差分は書き換えない
 
 ---
 
