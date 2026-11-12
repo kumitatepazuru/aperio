@@ -47,11 +47,37 @@ class GroupObject(VideoObjectGeneratorBase):
             if not isinstance(item, ItemStructure.Video) or self._is_group(item) or item.layer not in parent:
                 result.append(item)
                 continue
-            # 内側のグループから外側へたどる
-            chain = [parent[item.layer]]
-            while chain[-1].layer in parent:
-                chain.append(parent[chain[-1].layer])
-            result.append(_apply_chain(item, chain))
+            result.append(_apply_chain(item, _parent_chain(item, parent)))
+        return result
+
+    @event(type=GeneratorEvent.ItemMove)
+    @event(type=GeneratorEvent.ItemScale)
+    @event(type=GeneratorEvent.ItemRotate)
+    def on_item_edit(
+        self, old_items: list[ItemStructure], new_items: list[ItemStructure]
+    ) -> list[ItemStructure] | None:
+        """
+        UI は画面上の値のまま編集してくるので、支配するグループの変形を戻してメンバーのパラメーター上の値にする。
+        回転(加算)と拡大率(乗算)はグループと合成しても差分が変わらないので、書き換えるのは x/y の差分だけ。
+        """
+        parent = self._build_parent_table(old_items)
+        if not parent:
+            return None
+        olds = {item.id: item for item in old_items if isinstance(item, ItemStructure.Video)}
+
+        result: list[ItemStructure] = []
+        for new in new_items:
+            old = olds.get(new.id) if isinstance(new, ItemStructure.Video) else None
+            if not isinstance(new, ItemStructure.Video) or old is None or old.layer not in parent:
+                result.append(new)
+                continue
+            # _apply_chain / on_after_make_frame と同じく、画面上の位置 = 拡大率 * 回転(x, y) + 平行移動
+            scale, rotation, _, _, _ = _compose_chain(_parent_chain(old, parent))
+            if scale == 0:
+                result.append(new)
+                continue
+            dx, dy = _rotate((new.x - old.x) / scale, (new.y - old.y) / scale, -rotation)
+            result.append(_with_position(new, old.x + dx, old.y + dy))
         return result
 
     @event(type=GeneratorEvent.AfterMakeFrame)
@@ -86,10 +112,7 @@ class GroupObject(VideoObjectGeneratorBase):
             if not points or group.id not in results:
                 continue
             # グループ自身は BeforeMakeFrame で書き換えないので、上位グループの変形をここで合成して絶対値にする
-            chain = [group]
-            while chain[-1].layer in parent:
-                chain.append(parent[chain[-1].layer])
-            scale, rotation, x, y, alpha = _compose_chain(chain)
+            scale, rotation, x, y, alpha = _compose_chain([group, *_parent_chain(group, parent)])
             if scale == 0:
                 continue
             group_result = results[group.id].copy()
@@ -137,6 +160,16 @@ class GroupObject(VideoObjectGeneratorBase):
             if is_group:
                 active.append((item, _range_end(item)))
         return parent
+
+
+def _parent_chain(item: ItemStructure.Video, parent: dict[int, ItemStructure.Video]) -> list[ItemStructure.Video]:
+    """item を支配するグループの鎖(内側 → 外側)。支配するグループが無ければ空。"""
+    chain: list[ItemStructure.Video] = []
+    layer = item.layer
+    while layer in parent:
+        chain.append(parent[layer])
+        layer = chain[-1].layer
+    return chain
 
 
 def _range_end(group: ItemStructure.Video) -> float:
@@ -225,6 +258,25 @@ def _apply_chain(item: ItemStructure.Video, chain: list[ItemStructure.Video]) ->
         alpha=item.alpha * alpha,
         object=_rebuild(item.object),
         effects=effects,
+    )
+
+
+def _with_position(item: ItemStructure.Video, x: float, y: float) -> ItemStructure.Video:
+    """位置だけを変えた ItemStructure.Video を返す。"""
+    return ItemStructure.Video(
+        id=item.id,
+        layer=item.layer,
+        start=item.start,
+        end=item.end,
+        min=item.min,
+        max=item.max,
+        x=x,
+        y=y,
+        scale=item.scale,
+        rotation=item.rotation,
+        alpha=item.alpha,
+        object=_rebuild(item.object),
+        effects=[_rebuild(e) for e in item.effects],
     )
 
 
