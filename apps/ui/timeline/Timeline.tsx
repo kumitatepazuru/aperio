@@ -189,7 +189,7 @@ const Timeline = () => {
         async (objName, type) => {
           console.log("Add object from context menu:", objName);
 
-          const structure = await window.main.requestNewGenerator(objName, {});
+          const structure = await window.events.requestNew(objName, {});
           const defaultParams: Record<string, unknown> = {};
           structure.structure.forEach((param) => {
             if (param.type === "Font") {

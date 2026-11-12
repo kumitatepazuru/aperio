@@ -1,6 +1,6 @@
 import os.path
 import traceback
-from typing import Callable, Literal
+from typing import Literal
 
 from aperio import gpu_util, logger
 from aperio.item_structures import AdditionalItem, GeneratorEvent, ItemResult, ItemStructure
@@ -95,9 +95,7 @@ class VideoRenderer:
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
 
-            frame_structure = self._events.reduce_event(
-                GeneratorEvent.BeforeMakeFrame, _apply_before_make_frame, frame_structure
-            )
+            frame_structure = self._events.reduce_event(GeneratorEvent.BeforeMakeFrame, frame_structure)
 
             composition = _FrameComposition(self._registry, frame_number, width, height)
             for layer in frame_structure:
@@ -107,44 +105,13 @@ class VideoRenderer:
                 composition.add_item(layer)
 
             builder = composition.to_builder(self._compose_shader, self._fill_black_shader)
-            results = self._events.reduce_event(
-                GeneratorEvent.AfterMakeFrame,
-                lambda acc, handler: _apply_after_make_frame(frame_structure, acc, handler),
-                composition.results,
-            )
+            results = self._events.reduce_event(GeneratorEvent.AfterMakeFrame, composition.results, frame_structure)
 
         except Exception as e:
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
         return builder, results
-
-
-def _apply_before_make_frame(
-    frame_structure: list[ItemStructure],
-    handler: Callable[[list[ItemStructure]], list[ItemStructure] | None],
-) -> list[ItemStructure]:
-    """BeforeMakeFrame ハンドラーを呼び、None 以外が返ればその構造に差し替える。"""
-    result = handler(frame_structure)
-    if result is None:
-        return frame_structure
-    if not isinstance(result, list):
-        raise TypeError("BeforeMakeFrame handler must return a list of ItemStructure or None")
-    return result
-
-
-def _apply_after_make_frame(
-    frame_structure: list[ItemStructure],
-    results: dict[str, ItemResult],
-    handler: Callable[[list[ItemStructure], dict[str, ItemResult]], dict[str, ItemResult] | None],
-) -> dict[str, ItemResult]:
-    """AfterMakeFrame ハンドラーを呼び、None 以外が返ればその生成結果に差し替える。"""
-    new_results = handler(frame_structure, results)
-    if new_results is None:
-        return results
-    if not isinstance(new_results, dict):
-        raise TypeError("AfterMakeFrame handler must return a dict of ItemResult or None")
-    return new_results
 
 
 class _FrameComposition:

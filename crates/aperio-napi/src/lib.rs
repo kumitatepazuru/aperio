@@ -280,9 +280,16 @@ impl AperioManager {
 }
 
 // イベント系メソッドは #[napi] impl の外でマクロ展開する
+//   call   fn(Event): Params -> Return
+//   reduce fn(Event): (initial: T, arg: U, ...) -> Return
+// ここに追加したメソッドは、packages/shared の EVENT_METHODS にも追加すると window.events から呼べる
 impl_plugin_event_methods! {
     AperioManager {
-        request_new(GeneratorEvent::New): JsonValue -> GeneratorInformation,
-        request_structure(GeneratorEvent::RequestStructure): JsonValue -> GeneratorInformation,
+        call request_new(GeneratorEvent::New): JsonValue -> GeneratorInformation,
+        call request_structure(GeneratorEvent::RequestStructure): JsonValue -> GeneratorInformation,
+        // new_items: 画面上の値のまま編集した後のアイテム、old_items: 編集前の現在フレームのアイテム
+        reduce reduce_item_move(GeneratorEvent::ItemMove): (old_items: Vec<ItemStructure>) -> Vec<ItemStructure>,
+        reduce reduce_item_scale(GeneratorEvent::ItemScale): (old_items: Vec<ItemStructure>) -> Vec<ItemStructure>,
+        reduce reduce_item_rotate(GeneratorEvent::ItemRotate): (old_items: Vec<ItemStructure>) -> Vec<ItemStructure>,
     }
 }

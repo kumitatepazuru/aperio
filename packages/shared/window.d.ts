@@ -1,14 +1,22 @@
 import {
   type AperioConfig,
+  type AperioManager,
   type PluginNameInfo,
   type ItemStructure,
-  type GeneratorInformation,
 } from "native";
+import type { EventMethod } from "./index";
 
 /** フォントファミリー名 → ウェイト値（100/200/…/900）の配列 */
 type FontsList = Record<string, number[]>;
 import { sharedTexture, type OpenDialogOptions } from "electron";
 import type { SyncableState, SyncableStatePartial } from "native";
+
+// APIは自動で一括定義する
+type EventApi = {
+  [K in EventMethod]: (
+    ...args: Parameters<AperioManager[K]>
+  ) => Promise<ReturnType<AperioManager[K]>>;
+};
 
 declare global {
   interface Window {
@@ -47,14 +55,6 @@ declare global {
     main: {
       getPluginNames: () => Promise<PluginNameInfo>;
       getFontsList: () => Promise<FontsList>;
-      requestNewGenerator: (
-        pluginName: string,
-        args: Record<string, unknown>,
-      ) => Promise<GeneratorInformation>;
-      requestParameterStruct: (
-        pluginName: string,
-        params: Record<string, unknown>,
-      ) => Promise<GeneratorInformation>;
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       openContextMenu: (id: string) => Promise<void>;
@@ -68,5 +68,7 @@ declare global {
         options: OpenDialogOptions,
       ) => Promise<string[] | undefined>;
     };
+    // プラグインイベント
+    events: EventApi;
   }
 }

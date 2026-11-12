@@ -54,8 +54,8 @@ const SortableEffectItem = ({
 
   useEffect(() => {
     const currentParams = selectedItem?.effects[index]?.parameters ?? {};
-    window.main
-      .requestParameterStruct(effect.name, currentParams)
+    window.events
+      .requestStructure(effect.name, currentParams)
       .then((struct) => {
         setStructures(struct.structure);
         setParams(initValues(struct.structure, currentParams));
@@ -68,7 +68,7 @@ const SortableEffectItem = ({
   const handleChange = async (newParams: Record<string, ConfigableValue>) => {
     setParams(newParams);
     try {
-      const struct = await window.main.requestParameterStruct(
+      const struct = await window.events.requestStructure(
         effect.name,
         newParams,
       );

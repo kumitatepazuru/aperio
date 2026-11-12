@@ -482,6 +482,7 @@ pub struct GeneratorInformation {
     pub structure: Vec<RequestStructureParameter>,
 }
 
+
 #[napi]
 #[pyclass(eq, from_py_object)]
 #[derive(PartialEq, Clone, Debug)]
@@ -490,6 +491,9 @@ pub enum GeneratorEvent {
     RequestStructure,
     BeforeMakeFrame,
     AfterMakeFrame,
+    ItemMove,
+    ItemScale,
+    ItemRotate,
 }
 
 #[napi(object)]

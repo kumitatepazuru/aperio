@@ -6,6 +6,30 @@ import { useEffect, useState } from "react";
 import { FaArrowRotateRight } from "react-icons/fa6";
 
 type VideoItem = ItemStructure & { type: "Video" };
+type ItemEditEvent = "reduceItemMove" | "reduceItemScale" | "reduceItemRotate";
+
+// ドラッグ中は mousemove ごとにプラグインへイベントを投げる。処理中の呼び出しがあれば最新の1件だけを保留し、
+// 完了後に実行することで、IPC が詰まったり古い結果が新しい結果を上書きしたりしないようにする。
+const createLatestRunner = () => {
+  let inFlight = false;
+  let pending: (() => Promise<void>) | null = null;
+  const run = (task: () => Promise<void>) => {
+    if (inFlight) {
+      pending = task;
+      return;
+    }
+    inFlight = true;
+    task()
+      .catch((err) => console.error("Failed to dispatch item event:", err))
+      .finally(() => {
+        inFlight = false;
+        const next = pending;
+        pending = null;
+        if (next) run(next);
+      });
+  };
+  return run;
+};
 
 // 枠の幾何(幅・高さ・座標・拡大率・回転・中心ずれ)を取り出す。
 // オフスクリーン描画済みのアイテムは result 自体がキャンバス大に焼き込み後の値なので、
@@ -36,6 +60,41 @@ const Overlay = () => {
     })();
   }, [viewerState, frameResults, timelineItems]);
 
+  // 操作ごとにイベントを呼び、結果によってその情報に基づいてアイテムを更新する
+  const startItemEdit = (event: ItemEditEvent) => {
+    const oldItems = items;
+    const selected = new Set(selectedItemIds);
+    const run = createLatestRunner();
+
+    return (edit: (item: VideoItem) => VideoItem) => {
+      const newItems = oldItems.map((i) =>
+        i.type === "Video" && selected.has(i.id) ? edit(i) : i,
+      );
+      run(async () => {
+        // ハンドラーは handler(oldItems, newItems) として呼ばれ、書き換えた newItems を返す
+        const results = await window.events[event](newItems, oldItems);
+        const edited = new Map(
+          results
+            .filter((i): i is VideoItem => i.type === "Video" && selected.has(i.id))
+            .map((i) => [i.id, i]),
+        );
+        setTimelineItems(
+          timelineItems.map((i) => {
+            const r = edited.get(i.id);
+            if (!r) return i;
+            return {
+              ...r,
+              x: Math.round(r.x),
+              y: Math.round(r.y),
+              scale: orgFloor(r.scale, 100),
+              rotation: orgFloor(r.rotation, 100),
+            };
+          }),
+        );
+      });
+    };
+  };
+
   const onRotateStart = (
     itemId: string,
     e: React.MouseEvent<HTMLDivElement>,
@@ -64,37 +123,28 @@ const Overlay = () => {
     const centerClientY =
       overlayRect.top + (frameState.height / 2 + originFrameY) * pctH;
 
-    const initialAngle = Math.atan2(
+    const edit = startItemEdit("reduceItemRotate");
+
+    // atan2 は ±180度で折り返すので、前回からの差分を積み上げて1周以上の回転も連続させる
+    let prevAngle = Math.atan2(
       e.clientY - centerClientY,
       e.clientX - centerClientX,
     );
-
-    // 選択中のすべてのVideoアイテムの初期回転角を記録
-    const initRotations = new Map(
-      timelineItems
-        .filter(
-          (i): i is VideoItem =>
-            selectedItemIds.includes(i.id) && i.type === "Video",
-        )
-        .map((i) => [i.id, i.rotation]),
-    );
+    let totalAngle = 0;
 
     const onRotate = (e: MouseEvent) => {
       const currentAngle = Math.atan2(
         e.clientY - centerClientY,
         e.clientX - centerClientX,
       );
-      const deltaAngleDeg = (currentAngle - initialAngle) * (180 / Math.PI);
-
-      setTimelineItems(
-        timelineItems.map((i) => {
-          const initRot = initRotations.get(i.id);
-          if (initRot === undefined) return i;
-          if (i.type !== "Video") return i;
-          // CSS: rotate(-item.rotation) なので、時計回りドラッグ = item.rotation 減少
-          return { ...i, rotation: orgFloor(initRot - deltaAngleDeg, 100) };
-        }),
-      );
+      let diff = currentAngle - prevAngle;
+      if (diff > Math.PI) diff -= 2 * Math.PI;
+      else if (diff < -Math.PI) diff += 2 * Math.PI;
+      totalAngle += diff;
+      prevAngle = currentAngle;
+      // 画面は y 下向きなので atan2 の増加 = 時計回り。枠は CSS rotate(+rotation) で、正の回転も時計回り
+      const deltaAngleDeg = totalAngle * (180 / Math.PI);
+      edit((i) => ({ ...i, rotation: i.rotation + deltaAngleDeg }));
     };
 
     document.addEventListener("mousemove", onRotate);
@@ -124,17 +174,17 @@ const Overlay = () => {
     const pctW = width / frameState.width;
     const pctH = height / frameState.height;
 
-    // 枠の CSS rotate(box.rotate[2]) と同じ回転行列
-    // ローカル→グローバル: [cosR, sinR; -sinR, cosR]
-    // グローバル→ローカル: [cosR, -sinR; sinR, cosR]（転置）
+    // 枠の CSS rotate(box.rotate[2]) と同じ回転行列(y 下向きで正 = 時計回り。frame_builder の Z軸回転とも同じ)
+    // ローカル→グローバル: [cosR, -sinR; sinR, cosR]
+    // グローバル→ローカル: [cosR, sinR; -sinR, cosR]（転置）
     const box = boxGeometry(result);
     const rotRad = (box.rotate[2] * Math.PI) / 180;
     const cosR = Math.cos(rotRad);
     const sinR = Math.sin(rotRad);
-    const toGlobalX = (lx: number, ly: number) => cosR * lx + sinR * ly;
-    const toGlobalY = (lx: number, ly: number) => -sinR * lx + cosR * ly;
-    const toLocalX = (gx: number, gy: number) => cosR * gx - sinR * gy;
-    const toLocalY = (gx: number, gy: number) => sinR * gx + cosR * gy;
+    const toGlobalX = (lx: number, ly: number) => cosR * lx - sinR * ly;
+    const toGlobalY = (lx: number, ly: number) => sinR * lx + cosR * ly;
+    const toLocalX = (gx: number, gy: number) => cosR * gx + sinR * gy;
+    const toLocalY = (gx: number, gy: number) => -sinR * gx + cosR * gy;
 
     const [initScaleX, initScaleY] = box.scale;
     const initX = box.pos[0];
@@ -176,17 +226,7 @@ const Overlay = () => {
     const initialMouseX = e.clientX;
     const initialMouseY = e.clientY;
 
-    // 他の選択Videoアイテムの初期スケールを記録
-    const initOtherScales = new Map(
-      timelineItems
-        .filter(
-          (i): i is VideoItem =>
-            selectedItemIds.includes(i.id) &&
-            i.id !== itemId &&
-            i.type === "Video",
-        )
-        .map((i) => [i.id, i.scale]),
-    );
+    const edit = startItemEdit("reduceItemScale");
 
     const onScale = (e: MouseEvent) => {
       // マウス移動量をフレーム座標系に変換してからローカル座標系へ逆回転
@@ -225,24 +265,17 @@ const Overlay = () => {
           signY * newHalfH + newCenterYScaled,
         );
 
-      setTimelineItems(
-        timelineItems.map((i) => {
-          if (i.id === itemId) {
-            if (i.type !== "Video") return i;
-            return {
+      // 掴んだアイテムは基点を画面上で (newItem - init) だけ動かす。
+      // 他の選択アイテムは同じ倍率を各自の基点を中心に掛ける(移動なし)。
+      edit((i) =>
+        i.id === itemId
+          ? {
               ...i,
-              scale: orgFloor(i.scale * scaleFactor, 100),
-              // newItemX/Y は画面上の絶対位置なので、移動量だけを item.x/y へ足す
-              x: Math.round(i.x + (newItemX - initX)),
-              y: Math.round(i.y + (newItemY - initY)),
-            };
-          }
-          const initS = initOtherScales.get(i.id);
-          if (initS === undefined) return i;
-          if (i.type !== "Video") return i;
-          // 他の選択アイテム: 同じスケール倍率を適用（各自の中心から拡縮）
-          return { ...i, scale: orgFloor(initS * scaleFactor, 100) };
-        }),
+              scale: i.scale * scaleFactor,
+              x: i.x + (newItemX - initX),
+              y: i.y + (newItemY - initY),
+            }
+          : { ...i, scale: i.scale * scaleFactor },
       );
     };
 
@@ -268,30 +301,13 @@ const Overlay = () => {
     const initialMouseX = e.clientX;
     const initialMouseY = e.clientY;
 
-    // 選択中のすべてのVideoアイテムの初期座標を記録
-    const initItems = timelineItems
-      .filter(
-        (i): i is VideoItem =>
-          selectedItemIds.includes(i.id) && i.type === "Video",
-      )
-      .map((i) => ({ id: i.id, x: i.x, y: i.y }));
+    const edit = startItemEdit("reduceItemMove");
 
     const onDrag = (e: MouseEvent) => {
-      const deltaX = e.clientX - initialMouseX;
-      const deltaY = e.clientY - initialMouseY;
-
-      setTimelineItems(
-        timelineItems.map((i) => {
-          const init = initItems.find((it) => it.id === i.id);
-          if (!init) return i;
-          if (i.type !== "Video") return i;
-          return {
-            ...i,
-            x: Math.round(init.x + deltaX / pctW),
-            y: Math.round(init.y + deltaY / pctH),
-          };
-        }),
-      );
+      // 画面上(フレーム座標)の移動量
+      const deltaX = (e.clientX - initialMouseX) / pctW;
+      const deltaY = (e.clientY - initialMouseY) / pctH;
+      edit((i) => ({ ...i, x: i.x + deltaX, y: i.y + deltaY }));
     };
 
     document.addEventListener("mousemove", onDrag);
