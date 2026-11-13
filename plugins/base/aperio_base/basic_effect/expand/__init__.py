@@ -1,7 +1,7 @@
 import struct
 
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -90,5 +90,5 @@ class ExpandEffect(VideoEffectGeneratorBase):
         shader_params = struct.pack("iiiii", left, top, new_width, new_height, 1 if fill else 0)
 
         return GeneratorShaderReturn(
-            self.expand_shader, shader_params, ItemResult(new_width, new_height, center_x=center_x, center_y=center_y)
+            self.expand_shader, shader_params, params.item_result.with_size(new_width, new_height).add_center(center_x, center_y)
         )

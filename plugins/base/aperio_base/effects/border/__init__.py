@@ -2,7 +2,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -149,4 +149,4 @@ class BorderEffect(VideoEffectGeneratorBase):
             .add_shader(self.composite_shader, None, box_w, box_h)
         )
 
-        return GeneratorBuilderReturn(final_builder, ItemResult(box_w, box_h))
+        return GeneratorBuilderReturn(final_builder, params.item_result.with_size(box_w, box_h))

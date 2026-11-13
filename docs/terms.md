@@ -172,7 +172,7 @@
 
 ## ItemResult
 
-**定義:** フレームレンダリング後、各アイテムの出力サイズ情報を格納する型。
+**定義:** 各アイテムの生成結果。出力テクスチャのサイズと、画面上の最終的な変形を絶対値で持つ。
 
 **型定義:**
 
@@ -180,12 +180,44 @@
 - TypeScript: `dist/app/native/index.d.ts`（napi-rs による自動生成）→ `interface ItemResult`
 - Python: `crates/aperio-napi/src/structs/item_structures.rs`（pyo3 で定義、スタブは `build/stub/aperio/item_structures.pyi`）→ `class ItemResult`
 
-**フィールド:** `width: number`, `height: number`
+**フィールド:**
+
+| フィールド | 型 | 意味 |
+| --- | --- | --- |
+| `width` / `height` | `int` | 出力テクスチャのサイズ(px) |
+| `pos` | `(x, y, z)` | キャンバス中央を原点とした位置(px)。Z は奥行き |
+| `center_x` / `center_y` | `float` | 回転・拡縮の基点オフセット(拡大前のテクスチャpx) |
+| `scale` | `(x, y)` | 拡大率(1.0 = 等倍) |
+| `rotate` | `(x, y, z)` | 各軸の回転(度) |
+| `alpha` | `float` | 不透明度(1.0 = 不透明。合成時に 0〜1 にクランプ) |
+| `additional_items` | `list[AdditionalItem]` | チェーン中に積まれた追加アイテム。合成時に `behind` に従ってアイテムの背面/前面に配置される |
+| `offscreen` | `bool` | オフスクリーン描画済みか(下記) |
+| `offscreen_source` | `OffscreenSource \| None` | 焼き込み直前の形(下記) |
+
+変形の既定値(位置0・等倍・無回転・不透明・基点ずれ0)は Rust の `ItemResult::identity` だけで定義する。コンストラクタの省略した引数はこの値になる。
+
+**生成とユーティリティ(Python):**
+
+- `ItemResult.from_item(item, width=0, height=0)`: `ItemStructure.Video` の `x/y/scale/rotation/alpha` を絶対値にした結果(`pos=(x, y, 0)`、`scale=scale/100`、`rotate=(0, 0, rotation)`、`alpha=alpha/100`)。
+- `with_size(width, height)`: 変形を保ったままサイズだけを変えたコピー。
+- `copy()`: コピー。
+- `add_pos(x, y, z=0)` / `add_center(x, y)` / `mul_scale(x, y)` / `add_rotate(x, y, z)` / `mul_alpha(a)` / `add_additional_item(item)`: 自身を変更して自身を返す(チェーンできる)。
+- `a + b` / `a += b`: `b` を差分として積む。`pos/center/rotate` は加算、`scale/alpha` は乗算、`additional_items` は連結。サイズは `a` のまま(`b` のサイズは使わないので、差分は `ItemResult(0, 0, pos=…)` のように作る)。
+- `to_offscreen(width, height)`: 下記。
+
+**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(item)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.layer_params` は `ItemResult` だけから合成パラメーターを作る(アイテムの値は読まない)。
+
+**`offscreen`(オフスクリーン済み):** `オフスクリーン描画` エフェクトが、そこまでの変形をキャンバス大のテクスチャに焼き込んだことを示すフラグ。
+- `to_offscreen(width, height)`: 変形を持たない `width x height` の結果を返す。`offscreen` を立て、`offscreen_source` に焼き込み前の形を残し、`additional_items` は引き継ぐ。
+- `frame_builder.layer_params`: `pos` の X/Y(0方向へ整数画素に切り捨て)と `center` だけで合成する。`scale/rotate/alpha/pos.z` は無視する。
+- `OffscreenSource`(`width/height/pos/center_x/center_y/scale/rotate/alpha`): 焼き込み直前の形。`offscreen` が偽のときは `None`。
+- `Overlay.tsx`: 枠とハンドルを `offscreenSource` の形で描く。焼き込み後に置いた `座標` の X/Y は枠に反映されない。
+- 二重に焼き込まないよう、`オフスクリーン描画` は `offscreen` が立っていれば何もしない。
 
 **用法:**
 
 - `frameResults: Record<string, ItemResult>` — ストアのトップレベルフィールド。アイテムIDをキーとした描画結果辞書
-- `Overlay.tsx` でアイテムの表示サイズ計算に使用
+- `Overlay.tsx` でアイテムの枠の描画に使用(`pos/scale/rotate[2]/center` をそのまま使う)
 
 ---
 
@@ -284,12 +316,15 @@
 | フィールド     | 型                    | 意味                 |
 | -------------- | --------------------- | -------------------- |
 | `frame_number` | `int`                 | 生成するフレーム番号 |
-| `layer`        | `ItemStructure.Video` | 対象アイテムの情報   |
+| `item`         | `ItemStructure.Video` | 対象アイテムの情報   |
 | `args`         | `dict`                | パラメータ値の辞書   |
 | `width`        | `int`                 | キャンバス幅（px）   |
 | `height`       | `int`                 | キャンバス高さ（px） |
+| `structure_id` | `str`                 | 対応する `GenerateStructure.id` |
+| `item_result`  | `ItemResult`          | 直前までに積まれた累積結果（絶対値）のコピー。オブジェクトには `ItemResult.from_item(item)` が入る。ジェネレーターはこれを変更して返す |
+| `canvas_width` / `canvas_height` | `int` | 合成先キャンバスのサイズ（px）。エフェクトでは `width`/`height` が直前のオブジェクトサイズなので別に持つ |
 
-**戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | None`
+**戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | ItemResult | None`。返した `ItemResult` がそのまま新しい累積結果になる。
 
 ### 音声系
 
@@ -304,7 +339,7 @@
 | フィールド      | 型                                | 意味                                          |
 | --------------- | --------------------------------- | --------------------------------------------- |
 | `start_time`    | `float`                           | 生成開始時刻（秒）                            |
-| `layer`         | `ItemStructure.Audio`             | 対象アイテムの情報                            |
+| `item`          | `ItemStructure.Audio`             | 対象アイテムの情報                            |
 | `sample_rate`   | `int`                             | サンプルレート（Hz）                          |
 | `channels`      | `int`                             | チャンネル数                                  |
 | `sample_count`  | `int`                             | 生成するサンプル数                            |
@@ -437,13 +472,26 @@
 | `GeneratorEvent.New`              | プラグインが新規追加されたときのイベント |
 | `GeneratorEvent.RequestStructure` | パラメータ構造の再取得イベント           |
 | `GeneratorEvent.BeforeMakeFrame`  | フレーム生成直前に `frame_structure` を受け取り、`list[ItemStructure]` を返すと差し替える(`None` なら変更なし)イベント |
+| `GeneratorEvent.AfterMakeFrame`   | フレーム生成直後に `frame_structure`(`BeforeMakeFrame` 適用後)と `dict[str, ItemResult]` を受け取り、`dict[str, ItemResult]` を返すと生成結果を差し替える(`None` なら変更なし)イベント。UI の枠に使われる |
+| `GeneratorEvent.ItemMove`         | UI の枠でアイテムを動かしたときに、編集前と編集後の現在フレームのアイテム(`list[ItemStructure]` 2つ)を受け取り、書き換えた編集後の list を返す(`None` なら変更なし)イベント |
+| `GeneratorEvent.ItemScale`        | 同上。枠の角で拡大縮小したとき |
+| `GeneratorEvent.ItemRotate`       | 同上。枠の回転ハンドルで回転したとき |
 
 **用法:**
 
-- `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定
+- `@event(type=GeneratorEvent.New)` — プラグインメソッドにデコレーターで指定。ハンドラーの型は `EventCallable[[引数...], 戻り値]`
 - `call_event(plugin_name, GeneratorEvent.New, params)` — PluginManager(EventDispatcher)から呼び出す
-- `EventDispatcher.reduce_event(type, func, initial)` — 全ジェネレーターの該当ハンドラーを登録順に畳み込む(`BeforeMakeFrame` は `VideoRenderer._build` から呼ばれる)
-- Rust側: `GeneratorEvent::New` として `call_method1` の引数に渡す
+- `EventDispatcher.reduce_event(type, initial, *args)` — 全ジェネレーターの該当ハンドラーを `handler(*args, 現在の値)` として登録順に畳み込む。ハンドラーが `None` を返せば値はそのまま、現在の値と異なる型を返せば `TypeError`。`BeforeMakeFrame` / `AfterMakeFrame` は `VideoRenderer._build` から、`ItemMove` / `ItemScale` / `ItemRotate` は UI から `window.events.reduceItemMove(newItems, oldItems)` 等(napi: `AperioManager.reduceItem*` → `PluginManager.reduce_event`)で呼ばれる
+- Rust側: `crates/aperio-napi/src/lib.rs` の `impl_plugin_event_methods!` に1行足すと、イベントを呼ぶ napi メソッドが生成される
+  - `call fn(GeneratorEvent::X): Params -> Return` — 指定プラグインのハンドラーを1つ呼ぶ(`PluginManager.call_event`)。JS: `fn(pluginName, params)`
+  - `reduce fn(GeneratorEvent::X): (initial: T, arg: U, ...) -> Return` — 先頭の引数を初期値として、全プラグインのハンドラーを `handler(*残りの引数, 現在の値)` として畳み込む(`PluginManager.reduce_event`)。
+- TS側: 生成したメソッド名を `packages/shared/index.ts` の `EVENT_METHODS` に足すと、main の IPC 登録(`apps/main/eventIpc.ts`)・preload の公開・`window.events` の型(`AperioManager` から導出)がすべて揃う。
+
+### アイテム編集イベント(ItemMove / ItemScale / ItemRotate)
+
+`Overlay.tsx` は、操作開始時の現在フレームのアイテムを編集前とし、選択中のアイテムを画面上(キャンバス座標)の値のまま編集したものを編集後として、`window.events.reduceItemMove/Scale/Rotate(newItems, oldItems)` で全プラグインに通す(ハンドラーは `handler(oldItems, newItems)`)。ハンドラーは編集前後を比べて編集後のアイテムをパラメーター上の値に書き換え、UI は返ってきた選択中のアイテムをタイムラインに反映する。編集前のアイテムは `BeforeMakeFrame` 適用前のもの。
+
+- グループ(`base_object.group_object`)はメンバーの `x/y` の差分を、支配するグループの鎖の逆変換(`回転(-r) / 拡大率`)で戻す。回転は加算・拡大率は乗算で合成されるので差分は書き換えない
 
 ---
 

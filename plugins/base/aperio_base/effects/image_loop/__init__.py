@@ -2,7 +2,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -67,7 +67,7 @@ class ImageLoopEffect(VideoEffectGeneratorBase):
         if scale < 1.0:
             builder = builder.add_shader(self.resize_shader, struct.pack("ii", tile_w, tile_h), tile_w, tile_h)
 
-        elapsed_frames = params.frame_number - params.layer.start
+        elapsed_frames = params.frame_number - params.item.start
         offset_x = round(speed_x * scale * elapsed_frames) % tile_w
         offset_y = round(speed_y * scale * elapsed_frames) % tile_h
 
@@ -76,4 +76,4 @@ class ImageLoopEffect(VideoEffectGeneratorBase):
             struct.pack("iiiiii", tile_w, tile_h, offset_x, offset_y, ow, oh),
             ow, oh,
         )
-        return GeneratorBuilderReturn(builder, ItemResult(ow, oh))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(ow, oh))

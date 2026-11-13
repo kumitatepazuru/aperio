@@ -3,7 +3,7 @@ import os
 
 import aperio_plugin
 from aperio.avloader import PyVideoLoader
-from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import FileFilter, GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorTextureReturn, VideoGenerateParameters, VideoObjectGeneratorBase
 
@@ -75,11 +75,11 @@ class VideoObject(VideoObjectGeneratorBase):
             return None
         video_loader, compiled_func = entry
 
-        video_frame_number = params.frame_number - params.layer.start + 1
+        video_frame_number = params.frame_number - params.item.start + 1
         write_video_sync_frame(params.frame_number, video_frame_number)
 
         return GeneratorTextureReturn(
             compiled=compiled_func,
             params=(video_frame_number, aperio_plugin.context.store_manager.get_state().frame_state.fps),
-            item_result=ItemResult(video_loader.width, video_loader.height),
+            item_result=params.item_result.with_size(video_loader.width, video_loader.height),
         )

@@ -2,7 +2,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -136,4 +136,4 @@ class LensBlurEffect(VideoEffectGeneratorBase):
         # (7) README §4(7): 元のサイズ(拡張後のキャンバス)へ線形空間で拡大。
         builder = builder.add_shader(self.resize_up_shader, struct.pack("ii", gw, gh), gw, gh)
 
-        return GeneratorBuilderReturn(builder, ItemResult(gw, gh))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(gw, gh))

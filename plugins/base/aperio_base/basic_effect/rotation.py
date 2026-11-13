@@ -45,4 +45,4 @@ class RotationEffect(VideoEffectGeneratorBase):
         ry = float(args.get("rotate_y", 0.0))
         rz = float(args.get("rotate_z", 0.0))
 
-        return ItemResult(params.width, params.height, rotate=(rx, ry, rz))
+        return params.item_result.add_rotate(rx, ry, rz)

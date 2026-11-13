@@ -1,7 +1,7 @@
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -147,4 +147,4 @@ class BlurEffect(VideoEffectGeneratorBase):
             builder = builder.add_shader(self.curve_shader, struct.pack("fii", curve_base, 1, 2), cur_w, cur_h)
             builder = builder.add_shader(self.ycbcr_decode_shader, None, cur_w, cur_h)
 
-        return GeneratorBuilderReturn(builder, ItemResult(cur_w, cur_h))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(cur_w, cur_h))

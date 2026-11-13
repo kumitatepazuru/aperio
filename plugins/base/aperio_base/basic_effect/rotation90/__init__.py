@@ -1,7 +1,7 @@
 import struct
 
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -55,4 +55,4 @@ class Rotation90Effect(VideoEffectGeneratorBase):
 
         shader_params = struct.pack("iii", mode, new_width, new_height)
 
-        return GeneratorShaderReturn(self.shader, shader_params, ItemResult(new_width, new_height))
+        return GeneratorShaderReturn(self.shader, shader_params, params.item_result.with_size(new_width, new_height))

@@ -52,7 +52,7 @@ class VibrationEffect(VideoEffectGeneratorBase):
         half_period = max(1, int(args.get("half_period", 1)))
         random_strength = bool(args.get("random_strength", True))
         complex_mode = bool(args.get("complex_mode", False))
-        t = params.frame_number - params.layer.start
+        t = params.frame_number - params.item.start
 
         if not complex_mode:
             octaves = [half_period]
@@ -85,4 +85,4 @@ class VibrationEffect(VideoEffectGeneratorBase):
                     r = 1.0
                 disp[axis] += weight * amp[axis] * r * s
 
-        return ItemResult(params.width, params.height, pos=(disp[0], disp[1], disp[2]))
+        return params.item_result.add_pos(disp[0], disp[1], disp[2])

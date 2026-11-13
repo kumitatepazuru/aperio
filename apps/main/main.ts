@@ -21,6 +21,7 @@ import {
 } from "native";
 import setMenu from "./menu";
 import { registerContextMenuIpc } from "./contextMenu";
+import { registerEventIpc } from "./eventIpc";
 import { registerPluginProtocol, registerPluginScheme } from "./pluginProtocol";
 
 const fileName = fileURLToPath(import.meta.url);
@@ -179,19 +180,7 @@ ipcMain.handle(IpcChannel.getFontsList, () => {
   return nativeModule.aperioManager.getFontsList();
 });
 
-ipcMain.handle(
-  IpcChannel.requestNew,
-  (_, pluginName: string, args: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestNew(pluginName, args);
-  },
-);
-
-ipcMain.handle(
-  IpcChannel.requestParameterStruct,
-  (_, pluginName: string, params: Record<string, unknown>) => {
-    return nativeModule.aperioManager.requestStructure(pluginName, params);
-  },
-);
+registerEventIpc(nativeModule);
 
 // ─── Sync Server ─────────────────────────────────────────────────────────────
 

@@ -110,7 +110,7 @@ class AudioObject(AudioObjectGeneratorBase):
 
         if link_video:
             state = aperio_plugin.context.store_manager.get_state()
-            video_item = self._find_linked_video(params.layer, state)
+            video_item = self._find_linked_video(params.item, state)
             if video_item is None:
                 return None
 
@@ -141,7 +141,7 @@ class AudioObject(AudioObjectGeneratorBase):
                 return None
 
             fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
-            audio_time = params.start_time - params.layer.start / fps
+            audio_time = params.start_time - params.item.start / fps
             if audio_time >= loader.duration:
                 logger.error(f"audio_time >= duration, returning None")
                 return None

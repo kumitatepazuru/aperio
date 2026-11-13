@@ -30,6 +30,7 @@ from .mirror import MirrorEffect
 from .monochromatic import MonochromaticEffect
 from .mozaic import MozaicEffect
 from .noise import NoiseEffect
+from .offscreen_rendering import OffscreenRenderingEffect
 from .polar_coordinate_transform import PolarCoordinateTransformEffect
 from .raster import RasterEffect
 from .rgb_split import RgbSplitEffect
@@ -79,6 +80,7 @@ class AperioBaseEffectPlugin(MainPluginBase):
         aperio_plugin.plugin_manager.add_generator(MonochromaticEffect())
         aperio_plugin.plugin_manager.add_generator(MozaicEffect())
         aperio_plugin.plugin_manager.add_generator(NoiseEffect())
+        aperio_plugin.plugin_manager.add_generator(OffscreenRenderingEffect())
         aperio_plugin.plugin_manager.add_generator(PolarCoordinateTransformEffect())
         aperio_plugin.plugin_manager.add_generator(RasterEffect())
         aperio_plugin.plugin_manager.add_generator(RgbSplitEffect())

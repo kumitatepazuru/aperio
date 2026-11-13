@@ -2,7 +2,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import (
     GeneratorBuilderReturn,
@@ -100,7 +100,7 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
         key_params = struct.pack("fffff", key_y, key_cb, key_cr, luma_range, chroma_range)
 
         if border_correction == 0:
-            return GeneratorShaderReturn(self.flat_shader, key_params, ItemResult(w, h))
+            return GeneratorShaderReturn(self.flat_shader, key_params, params.item_result.with_size(w, h))
 
         r = border_correction
         a_const = ab_constant(r)
@@ -120,4 +120,4 @@ class ColorKeyEffect(VideoEffectGeneratorBase):
         pass3_params = struct.pack("iiif", r, w, h, a_const)
         builder = stage2.add_shader(self.border_pass3_shader, pass3_params, w, h)
 
-        return GeneratorBuilderReturn(builder, ItemResult(w, h))
+        return GeneratorBuilderReturn(builder, params.item_result.with_size(w, h))

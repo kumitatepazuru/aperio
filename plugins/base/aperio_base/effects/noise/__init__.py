@@ -1,7 +1,7 @@
 import functools
 import struct
 
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -96,7 +96,7 @@ class NoiseEffect(VideoEffectGeneratorBase):
         seed = int(args.get("seed", 0))
 
         # exedit-inspect noise README §9: `速度X`/`速度Y`/`変化速度`の時間積分は経過フレーム数に対して行われる
-        elapsed_frames = params.frame_number - params.layer.start
+        elapsed_frames = params.frame_number - params.item.start
         ox = elapsed_frames * velocity_x
         oy = elapsed_frames * velocity_y
         oz = elapsed_frames * change_speed
@@ -131,4 +131,4 @@ class NoiseEffect(VideoEffectGeneratorBase):
             params.width, params.height,
         ) + _packed_noise_field()
 
-        return GeneratorShaderReturn(self.noise_shader, shader_params, ItemResult(params.width, params.height))
+        return GeneratorShaderReturn(self.noise_shader, shader_params, params.item_result.with_size(params.width, params.height))

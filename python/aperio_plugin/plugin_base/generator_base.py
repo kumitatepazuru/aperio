@@ -56,21 +56,29 @@ class VideoGenerateParameters:
 
     frame_number: int
     """生成するフレームの番号"""
-    layer: "ItemStructure.Video"
-    """生成するフレームのレイヤー情報"""
+    item: "ItemStructure.Video"
+    """生成するフレームのアイテム情報"""
     args: dict
     """フレーム生成に必要な引数群"""
     width: int
     """生成元のフレームの幅。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
     height: int
     """生成元のフレームの高さ。オブジェクトの場合はフレームサイズ、エフェクトの場合はオブジェクトサイズが入っている"""
+    item_result: ItemResult
+    """
+    この生成の直前までに作成されたItemResultのコピー。これをもとに、生成後のItemResultを作る。
+    """
     structure_id: str = ""
-    """この呼び出しが対応する`GenerateStructure.id`(`layer.object["id"]`または対応するeffectの`["id"]`)。"""
+    """この呼び出しが対応する`GenerateStructure.id`(`item.object["id"]`または対応するeffectの`["id"]`)。"""
+    canvas_width: int = 0
+    """合成先キャンバスの幅(px)。"""
+    canvas_height: int = 0
+    """合成先キャンバスの高さ(px)"""
 
 @dataclass
 class AudioGeneratorReturn:
     """オーディオの generate() の戻り値。additional_item は video 側の
-    ItemResult.additional_item と対称な仕組みで、自分と同じ時間窓に
+    ItemResult.additional_items と対称な仕組みで、自分と同じ時間窓に
     加算ミックスする追加のオーディオアイテムを指定できる(behind は無視される。
     音声は加算合成なので順序に意味が無いため)。"""
 
@@ -84,8 +92,8 @@ class AudioGenerateParameters:
 
     start_time: float
     """生成を開始する時間（秒）。フレーム番号にfpsをかけたもの"""
-    layer: "ItemStructure.Audio"
-    """生成するサンプルのレイヤー情報"""
+    item: "ItemStructure.Audio"
+    """生成するサンプルのアイテム情報"""
     sample_rate: int
     """サンプルレート"""
     channels: int

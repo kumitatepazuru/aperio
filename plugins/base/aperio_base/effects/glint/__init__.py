@@ -3,7 +3,7 @@ import struct
 
 import aperio_plugin
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -175,7 +175,7 @@ class GlintEffect(VideoEffectGeneratorBase):
         # オブジェクトを元の位置に留める(実機のfpip+0xD4/+0xD8の補正と同じ式)。
         center_x = w // 2 - (x0 + ow // 2)
         center_y = h // 2 - (y0 + oh // 2)
-        return GeneratorShaderReturn(self.glint_shader, glint_params, ItemResult(ow, oh, center_x=center_x, center_y=center_y))
+        return GeneratorShaderReturn(self.glint_shader, glint_params, params.item_result.with_size(ow, oh).add_center(center_x, center_y))
 
     def _grow_canvas(self, w: int, h: int, cx: int, cy: int, strength_ratio: float) -> tuple[int, int, int, int]:
         """光条の端がちょうど収まるまでキャンバスを広げ、上限で切り詰める(README手順3)。

@@ -1,7 +1,7 @@
 import struct
 
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -66,7 +66,7 @@ class RippleEffect(VideoEffectGeneratorBase):
 
         w, h = params.width, params.height
         fps = aperio_plugin.context.store_manager.get_state().frame_state.fps
-        elapsed_seconds = (params.frame_number - params.layer.start) / fps
+        elapsed_seconds = (params.frame_number - params.item.start) / fps
         wavefront = speed * elapsed_seconds
 
         shader_params = struct.pack(
@@ -74,4 +74,4 @@ class RippleEffect(VideoEffectGeneratorBase):
             center_x, center_y, ring_spacing, max_displacement,
             wavefront, ring_count, ring_interval, ramp_count, w, h,
         )
-        return GeneratorShaderReturn(self.ripple_shader, shader_params, ItemResult(w, h))
+        return GeneratorShaderReturn(self.ripple_shader, shader_params, params.item_result.with_size(w, h))

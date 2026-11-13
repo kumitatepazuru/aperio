@@ -95,8 +95,8 @@ const ObjectParameter = () => {
       setParams({});
       return;
     }
-    window.main
-      .requestParameterStruct(
+    window.events
+      .requestStructure(
         selectedItem.object.name,
         selectedItem.object.parameters,
       )
@@ -121,7 +121,7 @@ const ObjectParameter = () => {
     setParams(newParams);
 
     try {
-      const struct = await window.main.requestParameterStruct(
+      const struct = await window.events.requestStructure(
         selectedItem.object.name,
         newParams,
       );

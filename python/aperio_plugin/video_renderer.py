@@ -1,6 +1,6 @@
 import os.path
 import traceback
-from typing import Callable, Literal
+from typing import Literal
 
 from aperio import gpu_util, logger
 from aperio.item_structures import AdditionalItem, GeneratorEvent, ItemResult, ItemStructure
@@ -95,9 +95,7 @@ class VideoRenderer:
             if width <= 0 or height <= 0:
                 raise ValueError("width and height must be positive integers")
 
-            frame_structure = self._events.reduce_event(
-                GeneratorEvent.BeforeMakeFrame, _apply_before_make_frame, frame_structure
-            )
+            frame_structure = self._events.reduce_event(GeneratorEvent.BeforeMakeFrame, frame_structure)
 
             composition = _FrameComposition(self._registry, frame_number, width, height)
             for layer in frame_structure:
@@ -107,25 +105,13 @@ class VideoRenderer:
                 composition.add_item(layer)
 
             builder = composition.to_builder(self._compose_shader, self._fill_black_shader)
+            results = self._events.reduce_event(GeneratorEvent.AfterMakeFrame, composition.results, frame_structure)
 
         except Exception as e:
             logger.error(traceback.format_exc())
             raise RuntimeError(f"Failed to build frame pipeline: {e}") from e
 
-        return builder, composition.results
-
-
-def _apply_before_make_frame(
-    frame_structure: list[ItemStructure],
-    handler: Callable[[list[ItemStructure]], list[ItemStructure] | None],
-) -> list[ItemStructure]:
-    """BeforeMakeFrame ハンドラーを呼び、None 以外が返ればその構造に差し替える。"""
-    result = handler(frame_structure)
-    if result is None:
-        return frame_structure
-    if not isinstance(result, list):
-        raise TypeError("BeforeMakeFrame handler must return a list of ItemStructure or None")
-    return result
+        return builder, results
 
 
 class _FrameComposition:
@@ -156,12 +142,13 @@ class _FrameComposition:
         builder, item_result = chain.finish()
         self.results[layer.id] = item_result
 
-        behind_entries = self._resolve_additional(chain.behind, layer.id)
-        ahead_entries = self._resolve_additional(chain.ahead, layer.id)
+        additional_items = item_result.additional_items
+        behind_entries = self._resolve_additional([a for a in additional_items if a.behind], layer.id)
+        ahead_entries = self._resolve_additional([a for a in additional_items if not a.behind], layer.id)
 
         for entry in behind_entries:
             self._push(*entry)
-        self._push(builder, layer, item_result)
+        self._push(builder, item_result)
         for entry in ahead_entries:
             self._push(*entry)
 
@@ -179,13 +166,17 @@ class _FrameComposition:
             ) # TODO: render Passを使っての高速化と簡潔化を試みる
         )
 
-    def _push(self, builder: gpu_util.PyImageGenerateBuilder, item: "ItemStructure.Video", result: ItemResult) -> None:
+    def _push(self, builder: gpu_util.PyImageGenerateBuilder, result: ItemResult) -> None:
+        # 描画するステップが無い(ItemResult だけを返すグループ等)ものを積むと、
+        # compose シェーダーの入力テクスチャとレイヤーパラメーターの数がずれてしまう
+        if not builder.get_id_tree():
+            return
         self._layer_builders.append(builder)
-        self._layer_params.append(layer_params(item, result, self._height))
+        self._layer_params.append(layer_params(result, self._height))
 
     def _resolve_additional(
         self, items: list[AdditionalItem], layer_id: str
-    ) -> list[tuple[gpu_util.PyImageGenerateBuilder, "ItemStructure.Video", ItemResult]]:
+    ) -> list[tuple[gpu_util.PyImageGenerateBuilder, ItemResult]]:
         entries = []
         for additional in items:
             if not isinstance(additional.item, ItemStructure.Video):
@@ -194,8 +185,7 @@ class _FrameComposition:
             chain = self._resolve_chain(additional.item)
             if chain is None:
                 continue
-            builder, item_result = chain.finish()
-            entries.append((builder, additional.item, item_result))
+            entries.append(chain.finish())
         return entries
 
     def _resolve_chain(self, layer: ItemStructure.Video) -> _VideoChain | None:
@@ -203,23 +193,28 @@ class _FrameComposition:
         1つの Video アイテムの object→effects チェーンを解決する。
         オブジェクトのジェネレーターが None を返した場合(スキップ対象)は None を返す。
         """
-        chain = _VideoChain(self._structure_targets)
+        chain = _VideoChain(self._structure_targets, layer)
 
         obj = layer.object
         if obj.get("link_id") is not None:
             chain.link(obj["id"], obj["link_id"])
         else:
-            result = self._generate(GeneratorKind.VIDEO_OBJECT, layer, obj, self._width, self._height)
+            result = self._generate(GeneratorKind.VIDEO_OBJECT, layer, obj, self._width, self._height, None)
             if result is None:
                 return None
             chain.apply(obj["id"], result)
+
+        if not chain.has_pipeline:
+            # テクスチャを持たないオブジェクト(グループ等)には、エフェクトを適用する対象が無い
+            return chain
 
         for effect in layer.effects:
             if effect.get("link_id") is not None:
                 chain.link(effect["id"], effect["link_id"])
                 continue
-            current = chain.item_result
-            result = self._generate(GeneratorKind.VIDEO_EFFECT, layer, effect, current.width, current.height)
+            # プラグインが変更してから None を返しても(スキップ)累積値が汚れないようにコピーを渡す
+            current = chain.item_result.copy()
+            result = self._generate(GeneratorKind.VIDEO_EFFECT, layer, effect, current.width, current.height, current)
             if result is not None:
                 chain.apply(effect["id"], result)
 
@@ -228,36 +223,44 @@ class _FrameComposition:
     def _generate(
         self,
         kind: Literal[GeneratorKind.VIDEO_OBJECT, GeneratorKind.VIDEO_EFFECT],
-        layer: ItemStructure.Video,
+        item: ItemStructure.Video,
         structure: dict,
         width: int,
         height: int,
+        item_result: ItemResult | None,
     ) -> VideoGenerateResult | None:
         """
         structure(GenerateStructure) に対応するジェネレーターを呼び出す。
 
         Args:
             width, height: 生成元のサイズ。オブジェクトの場合はフレームサイズ、エフェクトの場合は直前までのオブジェクトサイズ
+            item_result: 直前までの累積結果。None(オブジェクトの場合)ならアイテム自身から作る
         """
+        if item_result is None:
+            item_result = ItemResult.from_item(item)
         generator = self._registry.get(structure["name"], kind)
         params = VideoGenerateParameters(
             frame_number=self._frame_number,
-            layer=layer,
+            item=item,
             args=structure["parameters"],
             width=width,
             height=height,
             structure_id=structure["id"],
+            item_result=item_result,
+            canvas_width=self._width,
+            canvas_height=self._height,
         )
         return generator.generate(params)
 
 
 class _VideoChain:
     """
-    1アイテム分の object→effects チェーンの途中状態。ビルダー・合成後の ItemResult・チェーン中に現れた追加アイテムを積み上げていく。
+    1アイテム分の object→effects チェーンの途中状態。ビルダーと、各ステップが返した最新の ItemResultを持つ。
     """
 
-    def __init__(self, structure_targets: dict[str, StructureTarget]) -> None:
+    def __init__(self, structure_targets: dict[str, StructureTarget], layer: ItemStructure.Video) -> None:
         self._structure_targets = structure_targets
+        self._layer = layer
         self._builder = gpu_util.PyImageGenerateBuilder()
         self._item_result: ItemResult | None = None
         # link_idが連続するチェーンでは、実際にadd_linkedをビルダーに反映するのは
@@ -265,14 +268,17 @@ class _VideoChain:
         # エイリアス登録のみ)。Linkedは直前の状態を無視してリンク先のテクスチャに
         # 差し替えるため、連続してadd_linkedすると手前の分が無駄になってしまうため。
         self._pending_link: StructureTarget | None = None
-        self.behind: list[AdditionalItem] = []
-        self.ahead: list[AdditionalItem] = []
 
     @property
     def item_result(self) -> ItemResult:
         if self._item_result is None:
             raise RuntimeError("The chain has no object step yet")
         return self._item_result
+
+    @property
+    def has_pipeline(self) -> bool:
+        """描画するステップ(またはリンク)を持っているか。ItemResult だけを返したオブジェクトは持たない。"""
+        return self._pending_link is not None or bool(self._builder.get_id_tree())
 
     def link(self, structure_id: str, link_id: str) -> None:
         """プラグインを呼ばず、link_idが指す既存のパイプライン出力をそのまま使い回すステップ。"""
@@ -281,19 +287,15 @@ class _VideoChain:
             raise ValueError(f"link_id {link_id} was not resolved before use (structure {structure_id})")
         self._structure_targets[structure_id] = target
         self._pending_link = target
-        self._item_result = ItemResult(target[1], target[2])
+        # リンク先のテクスチャに差し替わるので、変形はアイテム自身のものからやり直す。additional_itemsは引き継ぐ
+        linked = ItemResult.from_item(self._layer, target[1], target[2])
+        if self._item_result is not None:
+            linked.additional_items = self._item_result.additional_items
+        self._item_result = linked
 
     def apply(self, structure_id: str, result: VideoGenerateResult) -> None:
-        """ジェネレーターの生成結果をチェーンに積み、その出力を `structure_id` で参照できるよう登録する。"""
-        step_result = result if isinstance(result, ItemResult) else result.item_result
-        additional = step_result.additional_item
-        if additional is not None:
-            (self.behind if additional.behind else self.ahead).append(additional)
-
-        if self._item_result is None:
-            self._item_result = step_result
-        else:
-            self._item_result.combine(step_result)
+        """ジェネレーターの生成結果(絶対値)で累積値を置き換え、その出力を `structure_id` で参照できるよう登録する。"""
+        self._item_result = result if isinstance(result, ItemResult) else result.item_result
 
         self._flush_link()
         if not isinstance(result, ItemResult):

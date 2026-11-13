@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from typing import Any
 
 from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, ItemStructure, PluginNameInfo
@@ -96,6 +97,21 @@ class PluginManager:
             イベント種別に応じた戻り値
         """
         return self._events.call_event(plugin_name, type, params)
+
+    def reduce_event[T](self, type: GeneratorEvent, initial: T, *args: Any) -> T:
+        """
+        全ジェネレーターの、指定イベント種別に対応するハンドラーを登録順に畳み込む。
+        各ハンドラーは handler(*args, 現在の値) として呼ばれ、新しい値を返すか、None(変更なし)を返す。
+
+        Args:
+            type: イベント種別
+            initial: 初期値
+            *args: 各ハンドラーに現在の値の前に渡す引数
+
+        Returns:
+            すべてのハンドラーを畳み込んだ後の値
+        """
+        return self._events.reduce_event(type, initial, *args)
 
     # --- 描画 ---
 

@@ -113,7 +113,7 @@ class AudioRenderer:
 
     def _process_item(
         self,
-        layer: "ItemStructure.Audio",
+        item: "ItemStructure.Audio",
         start_time: float,
         sample_rate: int,
         channels: int,
@@ -128,14 +128,14 @@ class AudioRenderer:
         """
         additional_items: list[AdditionalItem] = []
 
-        obj_plugin = self._registry.get(layer.object["name"], GeneratorKind.AUDIO_OBJECT)
+        obj_plugin = self._registry.get(item.object["name"], GeneratorKind.AUDIO_OBJECT)
         obj_params = AudioGenerateParameters(
             start_time=start_time,
-            layer=layer,
+            item=item,
             sample_rate=sample_rate,
             channels=channels,
             sample_count=sample_count,
-            args=layer.object["parameters"],
+            args=item.object["parameters"],
         )
         layer_result = obj_plugin.generate(obj_params)
         if layer_result is None:
@@ -144,11 +144,11 @@ class AudioRenderer:
             additional_items.append(layer_result.additional_item)
 
         # エフェクトを順番に適用（各エフェクトは前段サンプルをinput_samplesで受け取る）
-        for effect in layer.effects:
+        for effect in item.effects:
             effect_plugin = self._registry.get(effect["name"], GeneratorKind.AUDIO_EFFECT)
             effect_params = AudioGenerateParameters(
                 start_time=start_time,
-                layer=layer,
+                item=item,
                 sample_rate=sample_rate,
                 channels=channels,
                 sample_count=sample_count,

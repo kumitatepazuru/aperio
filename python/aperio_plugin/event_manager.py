@@ -1,28 +1,40 @@
-from typing import Any, Callable, Literal, cast, overload
+import builtins
+from typing import Any, Callable, Concatenate, Literal, cast, overload
 
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemStructure
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, ItemStructure
 from aperio_plugin.plugin_base.generator_base import *
 
 from .generator_registry import GeneratorNotFoundError, GeneratorRegistry
 from .plugin_base import GeneratorBase
 
-type EventCallable[T, U] = Callable[[Callable[[Any, T], U]], Callable[[Any, T], U]]
+# self に続いて P を受け取り R を返すハンドラー
+type EventCallable[**P, R] = Callable[
+    [Callable[Concatenate[Any, P], R]], Callable[Concatenate[Any, P], R]
+]
 
 
 @overload
-def event(*, type: Literal[GeneratorEvent.New]) -> EventCallable[dict, GeneratorInformation]: ...
+def event(*, type: Literal[GeneratorEvent.New]) -> EventCallable[[dict], GeneratorInformation]: ...
 @overload
-def event(*, type: Literal[GeneratorEvent.RequestStructure]) -> EventCallable[dict, GeneratorInformation]: ...
+def event(*, type: Literal[GeneratorEvent.RequestStructure]) -> EventCallable[[dict], GeneratorInformation]: ...
 @overload
 def event(
     *, type: Literal[GeneratorEvent.BeforeMakeFrame]
-) -> EventCallable[list[ItemStructure], list[ItemStructure] | None]: ...
-def event(*, type: GeneratorEvent) -> EventCallable:
+) -> EventCallable[[list[ItemStructure]], list[ItemStructure] | None]: ...
+@overload
+def event(
+    *, type: Literal[GeneratorEvent.AfterMakeFrame]
+) -> EventCallable[[list[ItemStructure], dict[str, ItemResult]], dict[str, ItemResult] | None]: ...
+@overload
+def event(
+    *, type: Literal[GeneratorEvent.ItemMove, GeneratorEvent.ItemScale, GeneratorEvent.ItemRotate]
+) -> EventCallable[[list[ItemStructure], list[ItemStructure]], list[ItemStructure] | None]: ...
+def event(*, type: GeneratorEvent) -> EventCallable[..., Any]:
     """
     プラグインのイベントハンドラーを登録するデコレーター。
 
     Args:
-        type: ハンドルするイベントの種別 (GeneratorEvent.New / GeneratorEvent.RequestStructure / GeneratorEvent.BeforeMakeFrame)
+        type: ハンドルするイベントの種別
     """
 
     def decorator(func: Callable) -> Callable:
@@ -67,27 +79,39 @@ class EventDispatcher:
             )
         return handler(params)
 
-    def reduce_event[T](self, type: GeneratorEvent, func: Callable[[T, Callable[..., Any]], T], initial: T) -> T:
+    def reduce_event[T](self, type: GeneratorEvent, initial: T, *args: Any) -> T:
         """
         全ジェネレーターの、指定イベント種別に対応するハンドラーを登録順に畳み込む。
+        各ハンドラーは handler(*args, 現在の値) として呼ばれ、新しい値を返すか、None(変更なし)を返す。
 
         Args:
             type: イベント種別
-            func: (現在の値, ハンドラー) を受け取り、任意の方法でハンドラーを呼び出して新しい値を返す関数
             initial: 初期値
+            *args: 各ハンドラーに現在の値の前に渡す引数
 
         Returns:
             すべてのハンドラーを畳み込んだ後の値
+
+        Raises:
+            TypeError: ハンドラーが現在の値と異なる型の値を返した場合
         """
         acc = initial
         for generator in self._registry:
             handler = self._find_handler(generator, type)
-            if handler is not None:
-                acc = func(acc, handler)
+            if handler is None:
+                continue
+            result = handler(*args, acc)
+            if result is None:
+                continue
+            if not isinstance(result, builtins.type(acc)):
+                raise TypeError(
+                    f"{type!r} handler must return {builtins.type(acc).__name__} or None, got {builtins.type(result).__name__}"
+                )
+            acc = result
         return acc
 
     @staticmethod
-    def _find_handler(generator: GeneratorBase, type: GeneratorEvent) -> Callable[[dict], Any] | None:
+    def _find_handler(generator: GeneratorBase, type: GeneratorEvent) -> Callable[..., Any] | None:
         for attr_name in dir(generator):
             method = getattr(generator, attr_name, None)
             if callable(method) and type in getattr(method, "_event_type", []):

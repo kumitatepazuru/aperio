@@ -2,7 +2,7 @@ import math
 import struct
 
 import aperio_plugin
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorShaderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
@@ -59,4 +59,4 @@ class PolarCoordinateTransformEffect(VideoEffectGeneratorBase):
         swirl_rate = swirl * 2.0 * math.pi / max(1e-3, r - center_hole)
 
         shader_params = struct.pack("ifffii", center_hole, r, rotation_rad, swirl_rate, s, s)
-        return GeneratorShaderReturn(self.shader, shader_params, ItemResult(s, s))
+        return GeneratorShaderReturn(self.shader, shader_params, params.item_result.with_size(s, s))

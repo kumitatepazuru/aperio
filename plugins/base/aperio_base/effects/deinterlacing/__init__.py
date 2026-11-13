@@ -1,7 +1,7 @@
 import struct
 
 from aperio import gpu_util
-from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, RequestStructureParameter
+from aperio.item_structures import GeneratorEvent, GeneratorInformation, RequestStructureParameter
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import (
     GeneratorShaderReturn,
@@ -59,7 +59,7 @@ class DeinterlacingEffect(VideoEffectGeneratorBase):
             # README §7: `worker_blend` のガードは h < 2。
             if h < 2:
                 return None
-            return GeneratorShaderReturn(self.blend_shader, None, ItemResult(w, h))
+            return GeneratorShaderReturn(self.blend_shader, None, params.item_result.with_size(w, h))
 
         # README §7: `worker_field` は ceil(h/2) < 2、つまり h <= 2 で何もせずに帰る。
         if h <= 2:
@@ -67,4 +67,4 @@ class DeinterlacingEffect(VideoEffectGeneratorBase):
 
         # README §4: 未知の選択値は `奇数解除` と同じ扱いになる。
         field_parity = _FIELD_PARITY.get(mode, 1)
-        return GeneratorShaderReturn(self.field_shader, struct.pack("i", field_parity), ItemResult(w, h))
+        return GeneratorShaderReturn(self.field_shader, struct.pack("i", field_parity), params.item_result.with_size(w, h))

@@ -1,3 +1,5 @@
+import type { AperioManager } from "native";
+
 /**
  * Electron IPCのチャンネル名。main(ipcMain)とpreload(ipcRenderer)の双方がこの定数を参照することで、
  * 文字列リテラルの食い違いを防ぐ。
@@ -24,8 +26,22 @@ export const IpcChannel = {
   addObject: "add-object",
   getPluginNames: "get-plugin-names",
   getFontsList: "get-fonts-list",
-  requestParameterStruct: "request-parameter-struct",
-  requestNew: "request-new",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
+
+/**
+ * レンダラーから window.events で呼べる、AperioManager のプラグインイベント系メソッド
+ */
+export const EVENT_METHODS = [
+  "requestNew",
+  "requestStructure",
+  "reduceItemMove",
+  "reduceItemScale",
+  "reduceItemRotate",
+] as const satisfies readonly (keyof AperioManager)[];
+
+export type EventMethod = (typeof EVENT_METHODS)[number];
+
+/** EVENT_METHODS の各メソッドを呼ぶ IPC チャンネル名 */
+export const eventChannel = (method: EventMethod) => `event:${method}`;

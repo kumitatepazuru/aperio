@@ -1,4 +1,4 @@
-import { IpcChannel } from "@aperio/shared";
+import { EVENT_METHODS, eventChannel, IpcChannel } from "@aperio/shared";
 import {
   contextBridge,
   ipcRenderer,
@@ -125,12 +125,17 @@ contextBridge.exposeInMainWorld("main", {
   getPluginNames: () => ipcRenderer.invoke(IpcChannel.getPluginNames),
   getFontsList: (): Promise<Record<string, number[]>> =>
     ipcRenderer.invoke(IpcChannel.getFontsList),
-  requestParameterStruct: (
-    pluginName: string,
-    params: Record<string, unknown>,
-  ) => ipcRenderer.invoke(IpcChannel.requestParameterStruct, pluginName, params),
-  requestNewGenerator: (pluginName: string, args: Record<string, unknown>) =>
-    ipcRenderer.invoke(IpcChannel.requestNew, pluginName, args),
   showOpenDialog: (options: OpenDialogOptions): Promise<string[] | undefined> =>
     ipcRenderer.invoke(IpcChannel.showOpenDialog, options),
 });
+
+// プラグインイベント API。EVENT_METHODS の各メソッドを同名の IPC 呼び出しとして公開する
+contextBridge.exposeInMainWorld(
+  "events",
+  Object.fromEntries(
+    EVENT_METHODS.map((method) => [
+      method,
+      (...args: unknown[]) => ipcRenderer.invoke(eventChannel(method), ...args),
+    ]),
+  ),
+);
