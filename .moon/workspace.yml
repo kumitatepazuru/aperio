@@ -11,6 +11,7 @@ projects:
   vcpkg: "native"
   group-item: "plugins/base/frontend/group_item"
   base-plugin: "plugins/base"
+  lua-gpu: "plugins/lua"
 
 vcs:
   client: "git"
