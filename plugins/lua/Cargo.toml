@@ -1,0 +1,22 @@
+[package]
+name = "lua_runtime"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[lib]
+name = "lua_runtime"
+# cdylib: maturin で Python 拡張モジュールにする / rlib: tests/ の結合テストから使う
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# pyo3 バインディング。maturin(pyproject.toml)からのみ有効化し、
+# `cargo test -p lua_runtime` では libpython をリンクしないようにする。
+python = ["dep:pyo3"]
+
+[dependencies]
+mlua = { version = "0.12", features = ["luajit"] }
+pyo3 = { workspace = true, optional = true }
+
+[dev-dependencies]
+aperio-gpu = { path = "../../crates/aperio-gpu" }
