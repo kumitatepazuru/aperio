@@ -20,13 +20,14 @@ tasks:
     outputs:
       - /build/stub/aperio_plugin
 
-  # aperio.* / aperio_plugin.* の両スタブを配布用の stub-only wheel(python/stubs)にまとめて build/stubs-wheel/ に出力する。
+  # aperio.* / aperio_plugin.* / lua_runtime のスタブを配布用の stub-only wheel(python/stubs)にまとめて build/stubs-wheel/ に出力する。
   stubs-wheel:
     command: uv
     args: [build, --wheel, python/stubs, -o, build/stubs-wheel]
     deps:
       - ~:stubgen
       - python:stubgen
+      - lua-runtime:stubgen
     inputs:
       - /python/stubs/**/*
       - /build/stub/**/*

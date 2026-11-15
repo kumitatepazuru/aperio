@@ -1,20 +1,27 @@
-# Lua(LuaJIT) → Slang 変換ライブラリ lua_runtime の wheel ビルドとテスト。
+# Lua(LuaJIT) ランタイム lua_runtime の wheel ビルド・スタブ生成・テスト。
 tasks:
   # 同梱用 wheel を build/plugins/ に出力する(base-plugin:wheel と同じ場所。aperio-env に入る)。
   wheel:
     command: uvx
     args:
       [maturin, build, --release, -m, plugins/lua/Cargo.toml, -o, build/plugins]
-    inputs:
+    inputs: &maturin-inputs
       - src/**/*
       - Cargo.toml
       - pyproject.toml
-      - lua_runtime.pyi
       - /Cargo.toml
       - /Cargo.lock
     # base-plugin:wheel と出力ディレクトリを共有するので、自分の wheel だけに絞る。
     outputs:
       - /build/plugins/lua_runtime-*.whl
+
+  # pyo3 側の Python スタブ(lua_runtime)を build/stub/ に生成する
+  stubgen:
+    command: uv
+    args: [tool, run, maturin, generate-stubs, --out, build/stub, -m, plugins/lua/Cargo.toml]
+    inputs: *maturin-inputs
+    outputs:
+      - /build/stub/lua_runtime
 
   # dev 依存の aperio-gpu(生成シェーダーのコンパイル・GPU 差分テスト)が slang を必要とする。
   test:
