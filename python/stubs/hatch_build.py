@@ -10,7 +10,7 @@ from pathlib import Path
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 STUB_DIR = Path(__file__).resolve().parent.parent.parent / "build" / "stub"
-PACKAGES = ("aperio", "aperio_plugin")
+PACKAGES = ("aperio", "aperio_plugin", "lua_runtime")
 
 
 class StubBuildHook(BuildHookInterface):

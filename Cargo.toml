@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/aperio-gpu", "crates/aperio-macros", "crates/aperio-media", "crates/aperio-napi", "crates/aperio-text"]
+members = ["crates/aperio-gpu", "crates/aperio-macros", "crates/aperio-media", "crates/aperio-napi", "crates/aperio-text", "plugins/lua"]
 resolver = "2"
 
 [workspace.package]

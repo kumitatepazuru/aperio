@@ -10,6 +10,7 @@ tasks:
       - napi:debug
       - main:build
       - base-plugin:wheel
+      - lua-runtime:wheel
       - ui:start
     preset: server
     options:
@@ -25,6 +26,7 @@ tasks:
       - napi:build
       - main:build
       - base-plugin:wheel
+      - lua-runtime:wheel
     options:
       runDepsInParallel: false
 

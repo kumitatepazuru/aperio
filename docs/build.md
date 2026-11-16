@@ -42,7 +42,8 @@ TypeScript/React のビルド・bundle 系(`ui:start`, `ui:build`, `main:build`,
 - `bun moon run plugin:stubgen` で、プラグインマネージャ(`python/aperio_plugin/`)のPythonコードからstubファイルを `build/stub/aperio_plugin/` に生成することが可能
   - これにより、Pythonコードの型定義をプラグイン側で利用できるようになる
   - stubは生成物でgit管理されない。`uv sync` で入る `aperio-plugin-stubs` の `.pth` と、`mypy` の `mypy_path`、`.vscode/settings.json` の `python.analysis.extraPaths` が `build/stub/` を参照する
-- `bun moon run plugin:stubs-wheel` で、両方のstubを含む配布用のstub-only wheelを `build/stubs-wheel/` に生成する(stubは自動で生成される)
+- `bun moon run lua-runtime:stubgen` で、Luaランタイム(`plugins/lua/`、モジュール `lua_runtime`)のRustコードからstubファイルを `build/stub/lua_runtime/` に生成できる
+- `bun moon run plugin:stubs-wheel` で、すべてのstub(`aperio` / `aperio_plugin` / `lua_runtime`)を含む配布用のstub-only wheelを `build/stubs-wheel/` に生成する(stubは自動で生成される)
   - 中身は `python/stubs/`(`aperio-plugin-stubs`)で、wheelにはhatchのビルドフック(`hatch_build.py`)が `build/stub/` を取り込む。`uv sync` ではeditableインストールになるのでstub未生成でも通る
   - sdistには `build/stub/` が含まれないため、配布は必ずwheel(`uv build --wheel python/stubs`)で行う
 - `bun moon run plugin:check` で、生成済みstubと実際のコードの不整合を検査する(必要なstubは自動で生成される)
