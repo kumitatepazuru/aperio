@@ -12,6 +12,7 @@ projects:
   group-item: "plugins/base/frontend/group_item"
   base-plugin: "plugins/base"
   lua-runtime: "plugins/lua"
+  aviutl-lua-plugin: "plugins/aviutl_lua"
 
 vcs:
   client: "git"

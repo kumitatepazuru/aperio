@@ -1,0 +1,10 @@
+tasks:
+  # build/plugins/ に出力する(aperio-env に入る)
+  wheel:
+    command: uv
+    args: [build, --wheel, plugins/aviutl_lua, -o, build/plugins]
+    inputs:
+      - aviutl_lua/**/*
+      - pyproject.toml
+    outputs:
+      - /build/plugins/aviutl_lua_plugin-*.whl
