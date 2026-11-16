@@ -39,6 +39,7 @@ mod utils;
 
 #[napi(object)]
 #[derive(Clone)]
+#[pyclass(frozen, get_all)]
 pub struct Dirs {
     pub data_dir: String,
     pub local_data_dir: String,

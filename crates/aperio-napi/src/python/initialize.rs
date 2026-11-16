@@ -98,7 +98,10 @@ fn register_plugin_indexes(dirs: &Dirs) -> Result<()> {
         dirs,
         &[
             (python::utils::PLUGIN_WHEELS_INDEX, &plugin_wheels_dir),
-            (python::utils::DEFAULT_PLUGINS_INDEX, Path::new(&dirs.default_plugins_dir)),
+            (
+                python::utils::DEFAULT_PLUGINS_INDEX,
+                Path::new(&dirs.default_plugins_dir),
+            ),
         ],
     )
 }
@@ -107,9 +110,12 @@ fn register_plugin_indexes(dirs: &Dirs) -> Result<()> {
 fn install_default_plugins(dirs: &Dirs) -> Result<()> {
     // 同じパッケージの別バージョンのwheelが並んでいても1回だけaddする
     let mut packages = BTreeSet::new();
-    for entry in std::fs::read_dir(&dirs.default_plugins_dir)
-        .with_context(|| format!("Failed to read default plugins dir: {}", dirs.default_plugins_dir))?
-    {
+    for entry in std::fs::read_dir(&dirs.default_plugins_dir).with_context(|| {
+        format!(
+            "Failed to read default plugins dir: {}",
+            dirs.default_plugins_dir
+        )
+    })? {
         let path = entry?.path();
         if path.extension().is_some_and(|ext| ext == "whl") {
             packages.insert(
@@ -120,7 +126,10 @@ fn install_default_plugins(dirs: &Dirs) -> Result<()> {
     }
 
     if packages.is_empty() {
-        println!("No default plugin wheels found in {}", dirs.default_plugins_dir);
+        println!(
+            "No default plugin wheels found in {}",
+            dirs.default_plugins_dir
+        );
         return Ok(());
     }
 
@@ -152,7 +161,7 @@ pub fn initialize_pl_manager(dirs: &Dirs, py_managers: PyManagers) -> Result<Py<
         // aperio_pluginのPluginManagerを初期化し、プラグインを読み込む
         let pl_manager = py
             .import("aperio_plugin")?
-            .call_method1("initialize", (py_managers,))?;
+            .call_method1("initialize", (py_managers, dirs.clone()))?;
 
         Ok::<Py<PyAny>, PyErr>(pl_manager.unbind())
     })?;
