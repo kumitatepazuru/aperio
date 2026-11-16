@@ -1,14 +1,34 @@
+from typing import ClassVar
+
 from aperio import logger
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult
 from aperio_plugin.event_manager import event
-from aperio_plugin.plugin_base.generator_base import VideoEffectGeneratorBase, VideoGenerateParameters
+from aperio_plugin.plugin_base.generator_base import (
+    VideoEffectGeneratorBase,
+    VideoGenerateParameters,
+    VideoGeneratorBase,
+    VideoObjectGeneratorBase,
+)
 from lua_runtime import LuaRuntime
 
 from .script_parser import Section, parse_parameters
 
 
-class LuaScriptEffect(VideoEffectGeneratorBase):
-    """AviUtl 形式のLuaスクリプトを実行するエフェクト。"""
+class LuaScriptGenerator(VideoGeneratorBase):
+    """AviUtl 形式の Lua スクリプトを実行するジェネレーターの共通実装。"""
+
+    extension: ClassVar[str]
+    """読み込むスクリプトファイルの拡張子(先頭の.(ドット)を含む)"""
+    name_prefix: ClassVar[str] = ""
+    """ジェネレーター名のprefix。オブジェクトとエフェクトでファイル名が同じでも、名前が衝突しないようにする"""
+    duration_frames: ClassVar[int | None] = None
+    """アイテムを追加したときの既定の長さ(フレーム)。None なら呼び出し側に任せる。"""
+
+    @classmethod
+    def generator_name(cls, plugin_name: str, section: Section) -> str:
+        """このセクションから作られるジェネレーターの名前。"""
+        name = f"{plugin_name}.{cls.name_prefix}{section.path.stem}"
+        return f"{name}@{section.display_name}" if section.has_header else name
 
     def __init__(self, name: str, section: Section) -> None:
         super().__init__()
@@ -40,18 +60,23 @@ class LuaScriptEffect(VideoEffectGeneratorBase):
     def on_request_structure(self, _: dict) -> GeneratorInformation:
         return GeneratorInformation(
             display_name=self.display_name,
-            duration_frames=None,
+            duration_frames=self.duration_frames,
             max_frame=None,
             min_frame=None,
             structure=[param.ui for param in self._parameters],
         )
 
-    def generate(self, params: VideoGenerateParameters) -> ItemResult:
+    def _set_variables(self, params: VideoGenerateParameters) -> None:
+        """スクリプトを実行する前に、Lua 側の変数を設定する。
+        ``--track`` などのパラメータは共通でここで設定する。種別ごとの変数はサブクラスで追加する。"""
         args = params.args
+        for param in self._parameters:
+            value = param.convert(args[param.id]) if param.id in args else param.default
+            self._runtime.set_variable(param.lua_name, value)
+
+    def generate(self, params: VideoGenerateParameters) -> ItemResult:
         try:
-            for param in self._parameters:
-                value = param.convert(args[param.id]) if param.id in args else param.default
-                self._runtime.set_variable(param.lua_name, value)
+            self._set_variables(params)
             if self._prelude:
                 self._runtime.run(self._prelude)
             self._runtime.run(self._script)
@@ -66,3 +91,17 @@ class LuaScriptEffect(VideoEffectGeneratorBase):
 
         # TODO: obj.draw などの描画結果を反映する
         return params.item_result
+
+
+class LuaScriptEffect(LuaScriptGenerator, VideoEffectGeneratorBase):
+    """AviUtl のアニメーション効果スクリプト(.anm)を実行するエフェクト。"""
+
+    extension = ".anm"
+
+
+class LuaScriptObject(LuaScriptGenerator, VideoObjectGeneratorBase):
+    """AviUtl のオブジェクトスクリプト(.obj)を実行するオブジェクト。"""
+
+    extension = ".obj"
+    name_prefix = "obj."
+    duration_frames = 300
