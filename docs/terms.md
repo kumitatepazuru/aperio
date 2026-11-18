@@ -205,7 +205,7 @@
 - `a + b` / `a += b`: `b` を差分として積む。`pos/center/rotate` は加算、`scale/alpha` は乗算、`additional_items` は連結。サイズは `a` のまま(`b` のサイズは使わないので、差分は `ItemResult(0, 0, pos=…)` のように作る)。
 - `to_offscreen(width, height)`: 下記。
 
-**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(item)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.layer_params` は `ItemResult` だけから合成パラメーターを作る(アイテムの値は読まない)。
+**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(item)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.layer_params` は `ItemResult` だけから合成パラメーターを作る(アイテムの値は読まない)。合成パラメーターは全アイテムの生成と `AfterMakeFrame` が終わってから作るので、それまでに `ItemResult` を書き換えれば(`params.item_results` 経由など)合成に反映される。
 
 **`offscreen`(オフスクリーン済み):** `オフスクリーン描画` エフェクトが、そこまでの変形をキャンバス大のテクスチャに焼き込んだことを示すフラグ。
 - `to_offscreen(width, height)`: 変形を持たない `width x height` の結果を返す。`offscreen` を立て、`offscreen_source` に焼き込み前の形を残し、`additional_items` は引き継ぐ。
@@ -323,6 +323,8 @@
 | `structure_id` | `str`                 | 対応する `GenerateStructure.id` |
 | `item_result`  | `ItemResult`          | 直前までに積まれた累積結果（絶対値）のコピー。オブジェクトには `ItemResult.from_item(item)` が入る。ジェネレーターはこれを変更して返す |
 | `canvas_width` / `canvas_height` | `int` | 合成先キャンバスのサイズ（px）。エフェクトでは `width`/`height` が直前のオブジェクトサイズなので別に持つ |
+| `parent_id`    | `str \| None`         | 追加アイテムの場合、その生成元アイテムの id。通常のアイテムでは `None` |
+| `item_results` | `dict[str, ItemResult]` | これまでに生成が終わったアイテムの最終結果(アイテムid → `ItemResult`)。コピーではなくフレーム内で共有される辞書そのもので、書き換えると合成と `AfterMakeFrame` の `results` に反映される。生成中のアイテム自身(`item_result` を使う)と追加アイテムは含まれない |
 
 **戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | ItemResult | None`。返した `ItemResult` がそのまま新しい累積結果になる。
 
@@ -472,7 +474,7 @@
 | `GeneratorEvent.New`              | プラグインが新規追加されたときのイベント |
 | `GeneratorEvent.RequestStructure` | パラメータ構造の再取得イベント           |
 | `GeneratorEvent.BeforeMakeFrame`  | フレーム生成直前に `frame_structure` を受け取り、`list[ItemStructure]` を返すと差し替える(`None` なら変更なし)イベント |
-| `GeneratorEvent.AfterMakeFrame`   | フレーム生成直後に `frame_structure`(`BeforeMakeFrame` 適用後)と `dict[str, ItemResult]` を受け取り、`dict[str, ItemResult]` を返すと生成結果を差し替える(`None` なら変更なし)イベント。UI の枠に使われる |
+| `GeneratorEvent.AfterMakeFrame`   | フレーム生成直後に `frame_structure`(`BeforeMakeFrame` 適用後)と `dict[str, ItemResult]` を受け取り、`dict[str, ItemResult]` を返すと生成結果を差し替える(`None` なら変更なし)イベント。全アイテムの生成後、合成パラメーターを作る前に呼ばれるので、返した `ItemResult`(座標・拡大率など)がそのまま合成に使われる。UI の枠にも使われる |
 | `GeneratorEvent.ItemMove`         | UI の枠でアイテムを動かしたときに、編集前と編集後の現在フレームのアイテム(`list[ItemStructure]` 2つ)を受け取り、書き換えた編集後の list を返す(`None` なら変更なし)イベント |
 | `GeneratorEvent.ItemScale`        | 同上。枠の角で拡大縮小したとき |
 | `GeneratorEvent.ItemRotate`       | 同上。枠の回転ハンドルで回転したとき |
@@ -491,7 +493,7 @@
 
 `Overlay.tsx` は、操作開始時の現在フレームのアイテムを編集前とし、選択中のアイテムを画面上(キャンバス座標)の値のまま編集したものを編集後として、`window.events.reduceItemMove/Scale/Rotate(newItems, oldItems)` で全プラグインに通す(ハンドラーは `handler(oldItems, newItems)`)。ハンドラーは編集前後を比べて編集後のアイテムをパラメーター上の値に書き換え、UI は返ってきた選択中のアイテムをタイムラインに反映する。編集前のアイテムは `BeforeMakeFrame` 適用前のもの。
 
-- グループ(`base_object.group_object`)はメンバーの `x/y` の差分を、支配するグループの鎖の逆変換(`回転(-r) / 拡大率`)で戻す。回転は加算・拡大率は乗算で合成されるので差分は書き換えない
+
 
 ---
 
