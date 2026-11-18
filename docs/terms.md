@@ -324,7 +324,7 @@
 | `item_result`  | `ItemResult`          | 直前までに積まれた累積結果（絶対値）のコピー。オブジェクトには `ItemResult.from_item(item)` が入る。ジェネレーターはこれを変更して返す |
 | `canvas_width` / `canvas_height` | `int` | 合成先キャンバスのサイズ（px）。エフェクトでは `width`/`height` が直前のオブジェクトサイズなので別に持つ |
 | `parent_id`    | `str \| None`         | 追加アイテムの場合、その生成元アイテムの id。通常のアイテムでは `None` |
-| `item_results` | `dict[str, ItemResult]` | これまでに生成が終わったアイテムの最終結果(アイテムid → `ItemResult`)。コピーではなくフレーム内で共有される辞書そのもので、書き換えると合成と `AfterMakeFrame` の `results` に反映される。生成中のアイテム自身(`item_result` を使う)と追加アイテムは含まれない |
+| `item_results` | `dict[str, ItemResult]` | これまでに生成が終わったアイテムの最終結果(アイテムid → `ItemResult`)。コピーではなくフレーム内で共有される辞書そのもので、書き換えると合成と `AfterMakeFrame` の `results` に反映される。生成中のアイテム自身はitem_resultを使用。 |
 
 **戻り値:** `GeneratorShaderReturn | GeneratorFuncReturn | GeneratorTextureReturn | GeneratorBuilderReturn | ItemResult | None`。返した `ItemResult` がそのまま新しい累積結果になる。
 
