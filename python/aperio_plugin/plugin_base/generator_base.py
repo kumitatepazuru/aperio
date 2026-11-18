@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar
 from aperio.item_structures import AdditionalItem, ItemResult, ItemStructure
@@ -78,6 +78,11 @@ class VideoGenerateParameters:
     """
     `item`が`AdditionalItem`として別のアイテムから生成されたものである場合、その生成元アイテムのid。
     通常のアイテムでは None。
+    """
+    item_results: dict[str, ItemResult] = field(default_factory=dict)
+    """
+    これまでに生成が終わったアイテムの最終的なItemResult。
+    ここの書き換えは合成処理にすべて反映される。生成中のItemを変更する場合はitem_resultを変更すること。
     """
 
 @dataclass

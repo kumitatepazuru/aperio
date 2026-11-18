@@ -104,8 +104,9 @@ class VideoRenderer:
                     continue
                 composition.add_item(layer)
 
-            builder = composition.to_builder(self._compose_shader, self._fill_black_shader)
             results = self._events.reduce_event(GeneratorEvent.AfterMakeFrame, composition.results, frame_structure)
+            composition.results = results
+            builder = composition.to_builder(self._compose_shader, self._fill_black_shader)
 
         except Exception as e:
             logger.error(traceback.format_exc())
@@ -127,8 +128,7 @@ class _FrameComposition:
         self._height = height
         # link_id の解決に使う。通常のエントリを処理するたびに、その出力をここに登録する
         self._structure_targets: dict[str, StructureTarget] = {}
-        self._layer_builders: list[gpu_util.PyImageGenerateBuilder] = []
-        self._layer_params: list[bytes] = []
+        self._layers: list[tuple[gpu_util.PyImageGenerateBuilder, str | None, ItemResult]] = []
         self.results: dict[str, ItemResult] = {}
 
     def add_item(self, layer: ItemStructure.Video) -> None:
@@ -148,35 +148,39 @@ class _FrameComposition:
 
         for entry in behind_entries:
             self._push(*entry)
-        self._push(builder, item_result)
+        self._push(builder, item_result, layer.id)
         for entry in ahead_entries:
             self._push(*entry)
 
     def to_builder(
         self, compose_shader: gpu_util.PyCompiledShader, fill_black_shader: gpu_util.PyCompiledShader
     ) -> gpu_util.PyImageGenerateBuilder:
-        if not self._layer_builders:
+        if not self._layers:
             return gpu_util.PyImageGenerateBuilder().add_shader(fill_black_shader, None, self._width, self._height)
 
+        # resultsを差し替えられていても、キーで引き直して最終的な値を使う
+        layer_params_list = [
+            layer_params(self.results.get(key, result) if key is not None else result, self._height)
+            for _, key, result in self._layers
+        ]
         return (
             gpu_util.PyImageGenerateBuilder()
-            .add_parallel(self._layer_builders)
+            .add_parallel([builder for builder, _, _ in self._layers])
             .add_shader(
-                compose_shader, b"".join(self._layer_params), self._width, self._height
+                compose_shader, b"".join(layer_params_list), self._width, self._height
             ) # TODO: render Passを使っての高速化と簡潔化を試みる
         )
 
-    def _push(self, builder: gpu_util.PyImageGenerateBuilder, result: ItemResult) -> None:
+    def _push(self, builder: gpu_util.PyImageGenerateBuilder, result: ItemResult, key: str | None = None) -> None:
         # 描画するステップが無い(ItemResult だけを返すグループ等)ものを積むと、
         # compose シェーダーの入力テクスチャとレイヤーパラメーターの数がずれてしまう
         if not builder.get_id_tree():
             return
-        self._layer_builders.append(builder)
-        self._layer_params.append(layer_params(result, self._height))
+        self._layers.append((builder, key, result))
 
     def _resolve_additional(
         self, items: list[AdditionalItem], layer_id: str
-    ) -> list[tuple[gpu_util.PyImageGenerateBuilder, ItemResult]]:
+    ) -> list[tuple[gpu_util.PyImageGenerateBuilder, ItemResult, str]]:
         entries = []
         for additional in items:
             if not isinstance(additional.item, ItemStructure.Video):
@@ -185,7 +189,13 @@ class _FrameComposition:
             chain = self._resolve_chain(additional.item, parent_id=layer_id)
             if chain is None:
                 continue
-            entries.append(chain.finish())
+            builder, item_result = chain.finish()
+            item_id = additional.item.id
+            if item_id in self.results:
+                logger.warning(f"additional_item id {item_id} of layer {layer_id} is already used. Overwriting its result.")
+            # 通常のアイテムと同じく、AfterMakeFrame などで書き換えられるよう results に載せてキーで引き直す
+            self.results[item_id] = item_result
+            entries.append((builder, item_result, item_id))
         return entries
 
     def _resolve_chain(self, layer: ItemStructure.Video, parent_id: str | None = None) -> _VideoChain | None:
@@ -257,6 +267,7 @@ class _FrameComposition:
             canvas_width=self._width,
             canvas_height=self._height,
             parent_id=parent_id,
+            item_results=self.results,
         )
         return generator.generate(params)
 
