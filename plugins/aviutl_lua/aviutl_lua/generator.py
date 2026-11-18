@@ -102,26 +102,46 @@ class LuaScriptGenerator(VideoGeneratorBase):
         """obj.w, obj.h に入れる画像サイズ。"""
         return 0.0, 0.0
 
+    @staticmethod
+    def _base_pos(base: ItemStructure.Video) -> tuple[float, float, float]:
+        """表示基準座標(obj.x, obj.y, obj.z)。ItemStructure に z は無いので 0。"""
+        return base.x, base.y, 0.0
+
+    @staticmethod
+    def _apparent_transform(
+        result: ItemResult,
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float], float]:
+        """
+        画面上での見かけの (位置, 回転, 拡大率, 不透明度)を取得
+
+        オフスクリーン描画済みなら、焼き込み後の pos の X/Y は焼き込んだ位置(offscreen_source.pos)からのずれなので足し合わせる。
+        Z・回転・拡大率・不透明度は焼き込み後は合成で無視されるので、焼き込み前の値がそのまま見かけの値になる。
+        """
+        source = result.offscreen_source
+        if not result.offscreen or source is None:
+            return result.pos, result.rotate, result.scale, result.alpha
+        sx, sy, sz = source.pos
+        return (sx + result.pos[0], sy + result.pos[1], sz), source.rotate, source.scale, source.alpha
+
     def _set_variables(self, params: VideoGenerateParameters, base: ItemStructure.Video, frame_state: FrameState) -> None:
         """スクリプトを実行する前に、Lua 側の変数を設定する。"""
         rt = self._runtime
         result = params.item_result
 
-        # 表示基準座標。ItemStructure に z は無いので 0
-        base_pos = (base.x, base.y, 0.0)
-        for axis, b, p in zip("xyz", base_pos, result.pos):
+        pos, rotate, scale, alpha = self._apparent_transform(result)
+        for axis, b, p in zip("xyz", self._base_pos(base), pos):
             rt.set_variable(f"obj.{axis}", b)
             rt.set_variable(f"obj.o{axis}", p - b)
-        for axis, r in zip("xyz", result.rotate):
+        for axis, r in zip("xyz", rotate):
             rt.set_variable(f"obj.r{axis}", r)
         rt.set_variable("obj.cx", result.center_x)
         rt.set_variable("obj.cy", result.center_y)
         # TODO: ItemResult に center_z が無いので、常に 0 で計算する
         rt.set_variable("obj.cz", 0.0)
-        zoom, aspect = zoom_aspect(*result.scale)
+        zoom, aspect = zoom_aspect(*scale)
         rt.set_variable("obj.zoom", zoom)
         rt.set_variable("obj.aspect", aspect)
-        rt.set_variable("obj.alpha", result.alpha)
+        rt.set_variable("obj.alpha", alpha)
 
         w, h = self._image_size(params)
         rt.set_variable("obj.w", w)
@@ -150,11 +170,21 @@ class LuaScriptGenerator(VideoGeneratorBase):
         before = params.item_result
         result = before.copy()
 
-        result.pos = (base.x + values["obj.ox"], base.y + values["obj.oy"], 0.0 + values["obj.oz"])
-        result.rotate = (values["obj.rx"], values["obj.ry"], values["obj.rz"])
+        bx, by, bz = self._base_pos(base)
+        pos = (bx + values["obj.ox"], by + values["obj.oy"], bz + values["obj.oz"])
         result.center_x = values["obj.cx"]
         result.center_y = values["obj.cy"]
         # TODO: ItemResult に center_z が無いので、obj.cz は反映しない
+
+        source = before.offscreen_source
+        if before.offscreen and source is not None:
+            # 焼き込み後は焼き込んだ位置からの X/Y のずれと基点だけが合成に効く。
+            # Z・回転・拡大率・不透明度は無視されるので書き戻さない
+            result.pos = (pos[0] - source.pos[0], pos[1] - source.pos[1], before.pos[2])
+            return result
+
+        result.pos = pos
+        result.rotate = (values["obj.rx"], values["obj.ry"], values["obj.rz"])
         result.alpha = values["obj.alpha"]
         # 負の拡大率などは zoom/aspect との往復で壊れるので、変わったときだけ計算し直す
         zoom, aspect = values["obj.zoom"], values["obj.aspect"]
