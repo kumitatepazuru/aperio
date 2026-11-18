@@ -7,6 +7,7 @@ members = [
     "aperio",
     "aperio-base-plugin",
     "aperio-plugin-stubs",
+    "aviutl-lua-plugin",
     "lua-runtime",
 ]
 
@@ -58,6 +59,25 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "numpy", specifier = ">=2.3.3" }]
+
+[[package]]
+name = "aviutl-lua-plugin"
+version = "1.0.0"
+source = { editable = "plugins/aviutl_lua" }
+dependencies = [
+    { name = "lua-runtime" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "aperio-plugin-stubs" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "lua-runtime", editable = "plugins/lua" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "aperio-plugin-stubs", editable = "python/stubs" }]
 
 [[package]]
 name = "certifi"

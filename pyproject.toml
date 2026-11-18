@@ -22,6 +22,7 @@ members = ["python/stubs", "plugins/*"]
 
 [tool.uv.sources]
 aperio-base-plugin = { workspace = true }
+aviutl-lua-plugin = { workspace = true }
 aperio-plugin-stubs = { workspace = true }
 lua-runtime = { workspace = true }
 

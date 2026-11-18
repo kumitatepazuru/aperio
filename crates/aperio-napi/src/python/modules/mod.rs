@@ -36,6 +36,8 @@ mod aperio {
     #[pymodule_export]
     use super::PyManagers;
     #[pymodule_export]
+    use crate::Dirs;
+    #[pymodule_export]
     use crate::managers::wrappers::audio_manager::audio_register;
     #[pymodule_export]
     use crate::managers::wrappers::config_manager::config_manager;

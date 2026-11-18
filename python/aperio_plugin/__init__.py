@@ -1,4 +1,4 @@
-from aperio import PyManagers
+from aperio import Dirs, PyManagers
 from aperio import logger
 
 # https://stackoverflow.com/questions/42339034/python-module-in-dist-packages-vs-site-packages
@@ -30,7 +30,7 @@ context: AperioContext
 plugin_manager: PluginManager
 
 
-def initialize(managers: PyManagers) -> PluginManager:
+def initialize(managers: PyManagers, dirs: Dirs) -> PluginManager:
     """
     プラグイン実行環境を初期化し、インストール済みのプラグインを読み込む。Rust 側から呼ばれる。
 
@@ -38,7 +38,7 @@ def initialize(managers: PyManagers) -> PluginManager:
     """
     global context, plugin_manager
 
-    context = AperioContext.from_managers(managers)
+    context = AperioContext.from_managers(managers, dirs)
     plugin_manager = PluginManager(context)
     plugin_manager.load_plugins()
     return plugin_manager

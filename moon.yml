@@ -1,7 +1,6 @@
 # ルートプロジェクト: アプリ全体の dev / build / dist をまとめる。
 # 実体は各プロジェクトのタスク(ui / napi / main)で、ここでは実行順だけを決める。
 tasks:
-  # 旧 `npm-run-all napi:debug main:build --parallel ui:start electron:dev`。
   # napi -> main を順に済ませてから、vite の dev server と Electron を起動する。
   dev:
     command: bun
@@ -11,12 +10,12 @@ tasks:
       - main:build
       - base-plugin:wheel
       - lua-runtime:wheel
+      - aviutl-lua-plugin:wheel
       - ui:start
     preset: server
     options:
       runDepsInParallel: false
 
-  # 旧 `uv run tools/build.py all --release`。
   # vite の出力は dist/app/ に napi / rolldown と同居し、main は napi が生成する
   # dist/app/native/index.js を取り込むため、ui -> napi -> main の順に実行する。
   build:
@@ -27,10 +26,10 @@ tasks:
       - main:build
       - base-plugin:wheel
       - lua-runtime:wheel
+      - aviutl-lua-plugin:wheel
     options:
       runDepsInParallel: false
 
-  # 旧 `run-s build && electron-builder`。
   dist:
     command: bun
     args: [x, electron-builder]

@@ -38,6 +38,7 @@ class GroupObject(VideoObjectGeneratorBase):
 
     @event(type=GeneratorEvent.BeforeMakeFrame)
     def on_before_make_frame(self, frame_structure: list[ItemStructure]) -> list[ItemStructure] | None:
+        # 位置・拡大率・回転・透明度は ItemStructure ではなく AfterMakeFrame で ItemResult に適用する。
         parent = self._build_parent_table(frame_structure)
         if not parent:
             return None
@@ -47,7 +48,8 @@ class GroupObject(VideoObjectGeneratorBase):
             if not isinstance(item, ItemStructure.Video) or self._is_group(item) or item.layer not in parent:
                 result.append(item)
                 continue
-            result.append(_apply_chain(item, _parent_chain(item, parent)))
+            chain = _parent_chain(item, parent)
+            result.append(_inherit_effects(item, chain) if any(g.effects for g in chain) else item)
         return result
 
     @event(type=GeneratorEvent.ItemMove)
@@ -84,18 +86,40 @@ class GroupObject(VideoObjectGeneratorBase):
     def on_after_make_frame(
         self, frame_structure: list[ItemStructure], results: dict[str, ItemResult]
     ) -> dict[str, ItemResult] | None:
-        """グループの ItemResult を、支配下のメンバー全員を囲む大きさに書き換える(UI の枠に使われる)。"""
+        """
+        メンバーの ItemResult にグループの変形(位置・拡大率・回転・透明度)を適用し、
+        グループ自身の ItemResult を、支配下のメンバー全員を囲む大きさに書き換える(UI の枠に使われる)。
+        """
         groups = [item for item in frame_structure if isinstance(item, ItemStructure.Video) and self._is_group(item)]
         if not groups:
             return None
         parent = self._build_parent_table(frame_structure)
+
+        # メンバーのエフェクトまで含めた累積結果に、グループの変形を重ねる。
+        # 変形後の ItemResult はこの後の合成にそのまま使われる
+        new_results = dict(results)
+        for item in frame_structure:
+            if not isinstance(item, ItemStructure.Video) or self._is_group(item) or item.layer not in parent:
+                continue
+            result = results.get(item.id)
+            if result is None:
+                continue
+            chain = _parent_chain(item, parent)
+            new_results[item.id] = _apply_chain(result, chain)
+            # 追加アイテム(別オブジェクトの影等)もメンバーと同じ座標系で作られているので、同じ変形を重ねる
+            for additional in result.additional_items:
+                if not isinstance(additional.item, ItemStructure.Video):
+                    continue
+                additional_result = results.get(additional.item.id)
+                if additional_result is not None:
+                    new_results[additional.item.id] = _apply_chain(additional_result, chain)
 
         # グループ id → 支配下のメンバーの枠の角(フレーム座標)。入れ子のグループには内側のメンバーも含める
         corners: dict[str, list[tuple[float, float]]] = {}
         for item in frame_structure:
             if not isinstance(item, ItemStructure.Video) or self._is_group(item) or item.layer not in parent:
                 continue
-            result = results.get(item.id)
+            result = new_results.get(item.id)
             if result is None:
                 continue
             points = _box_corners(result)
@@ -106,12 +130,11 @@ class GroupObject(VideoObjectGeneratorBase):
                     break
                 owner = parent[owner.layer]
 
-        new_results = dict(results)
         for group in groups:
             points = corners.get(group.id)
             if not points or group.id not in results:
                 continue
-            # グループ自身は BeforeMakeFrame で書き換えないので、上位グループの変形をここで合成して絶対値にする
+            # グループ自身は上位グループの影響を受けるときだけ変形するので、上位グループの変形をここで合成して絶対値にする
             scale, rotation, x, y, alpha = _compose_chain([group, *_parent_chain(group, parent)])
             if scale == 0:
                 continue
@@ -231,14 +254,25 @@ def _compose_chain(chain: list[ItemStructure.Video]) -> tuple[float, float, floa
     return scale, rotation, tx, ty, alpha
 
 
-def _apply_chain(item: ItemStructure.Video, chain: list[ItemStructure.Video]) -> ItemStructure.Video:
+def _apply_chain(result: ItemResult, chain: list[ItemStructure.Video]) -> ItemResult:
     """
-    グループの鎖(内側 → 外側)を1つの相似変換に合成し、メンバーの位置・回転・拡大率・透明度に適用する。
-    エフェクトはメンバー自身 → 内側 → 外側の順に積む。
+    グループの鎖(内側 → 外側)を1つの相似変換に合成し、メンバーの ItemResult の位置・回転・拡大率・透明度に適用したコピーを返す。
     """
     scale, rotation, tx, ty, alpha = _compose_chain(chain)
 
-    x, y = _rotate(item.x, item.y, rotation)
+    new_result = result.copy()
+    x, y = _rotate(result.pos[0], result.pos[1], rotation)
+    new_result.pos = (scale * x + tx, scale * y + ty, result.pos[2])
+    new_result.scale = (result.scale[0] * scale, result.scale[1] * scale)
+    new_result.rotate = (result.rotate[0], result.rotate[1], result.rotate[2] + rotation)
+    new_result.alpha = result.alpha * alpha
+    return new_result
+
+
+def _inherit_effects(item: ItemStructure.Video, chain: list[ItemStructure.Video]) -> ItemStructure.Video:
+    """
+    メンバーのエフェクトの末尾に、グループのエフェクトをメンバー自身 → 内側 → 外側の順に積んだアイテムを返す。
+    """
     effects = [_rebuild(e) for e in item.effects]
     for group in chain:
         group_effect_ids = {e["id"] for e in group.effects}
@@ -251,11 +285,11 @@ def _apply_chain(item: ItemStructure.Video, chain: list[ItemStructure.Video]) ->
         end=item.end,
         min=item.min,
         max=item.max,
-        x=scale * x + tx,
-        y=scale * y + ty,
-        scale=item.scale * scale,
-        rotation=item.rotation + rotation,
-        alpha=item.alpha * alpha,
+        x=item.x,
+        y=item.y,
+        scale=item.scale,
+        rotation=item.rotation,
+        alpha=item.alpha,
         object=_rebuild(item.object),
         effects=effects,
     )
