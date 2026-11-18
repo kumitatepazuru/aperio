@@ -74,6 +74,11 @@ class VideoGenerateParameters:
     """合成先キャンバスの幅(px)。"""
     canvas_height: int = 0
     """合成先キャンバスの高さ(px)"""
+    parent_id: str | None = None
+    """
+    `item`が`AdditionalItem`として別のアイテムから生成されたものである場合、その生成元アイテムのid。
+    通常のアイテムでは None。
+    """
 
 @dataclass
 class AudioGeneratorReturn:

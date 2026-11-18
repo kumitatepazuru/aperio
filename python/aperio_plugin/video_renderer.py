@@ -182,16 +182,19 @@ class _FrameComposition:
             if not isinstance(additional.item, ItemStructure.Video):
                 logger.warning(f"additional_item of layer {layer_id} is not a video item. Skipping.")
                 continue
-            chain = self._resolve_chain(additional.item)
+            chain = self._resolve_chain(additional.item, parent_id=layer_id)
             if chain is None:
                 continue
             entries.append(chain.finish())
         return entries
 
-    def _resolve_chain(self, layer: ItemStructure.Video) -> _VideoChain | None:
+    def _resolve_chain(self, layer: ItemStructure.Video, parent_id: str | None = None) -> _VideoChain | None:
         """
         1つの Video アイテムの object→effects チェーンを解決する。
         オブジェクトのジェネレーターが None を返した場合(スキップ対象)は None を返す。
+
+        Args:
+            parent_id: layer が追加アイテムの場合、その生成元アイテムの id。通常のアイテムでは None
         """
         chain = _VideoChain(self._structure_targets, layer)
 
@@ -199,7 +202,7 @@ class _FrameComposition:
         if obj.get("link_id") is not None:
             chain.link(obj["id"], obj["link_id"])
         else:
-            result = self._generate(GeneratorKind.VIDEO_OBJECT, layer, obj, self._width, self._height, None)
+            result = self._generate(GeneratorKind.VIDEO_OBJECT, layer, obj, self._width, self._height, None, parent_id)
             if result is None:
                 return None
             chain.apply(obj["id"], result)
@@ -214,7 +217,9 @@ class _FrameComposition:
                 continue
             # プラグインが変更してから None を返しても(スキップ)累積値が汚れないようにコピーを渡す
             current = chain.item_result.copy()
-            result = self._generate(GeneratorKind.VIDEO_EFFECT, layer, effect, current.width, current.height, current)
+            result = self._generate(
+                GeneratorKind.VIDEO_EFFECT, layer, effect, current.width, current.height, current, parent_id
+            )
             if result is not None:
                 chain.apply(effect["id"], result)
 
@@ -228,6 +233,7 @@ class _FrameComposition:
         width: int,
         height: int,
         item_result: ItemResult | None,
+        parent_id: str | None = None,
     ) -> VideoGenerateResult | None:
         """
         structure(GenerateStructure) に対応するジェネレーターを呼び出す。
@@ -235,6 +241,7 @@ class _FrameComposition:
         Args:
             width, height: 生成元のサイズ。オブジェクトの場合はフレームサイズ、エフェクトの場合は直前までのオブジェクトサイズ
             item_result: 直前までの累積結果。None(オブジェクトの場合)ならアイテム自身から作る
+            parent_id: item が追加アイテムの場合、その生成元アイテムの id
         """
         if item_result is None:
             item_result = ItemResult.from_item(item)
@@ -249,6 +256,7 @@ class _FrameComposition:
             item_result=item_result,
             canvas_width=self._width,
             canvas_height=self._height,
+            parent_id=parent_id,
         )
         return generator.generate(params)
 
