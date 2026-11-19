@@ -14,14 +14,14 @@ aperio の GPU 処理は、自前の RHI (`crates/aperio-gpu/src/rhi/`) を介�
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | **Vulkan 1.2**                             | descriptor indexing をコア機能として使う                                                                  |
 | `shaderSampledImageArrayNonUniformIndexing` (Vulkan 1.2)           | 入力テクスチャ配列を `NonUniformResourceIndex` で引く (`common/select.slang` など)                        |
-| `descriptorBindingVariableDescriptorCount` (Vulkan 1.2)           | レイヤー数がフレームごとに変わる可変長テクスチャ配列 (`compose.slang`、`input_texture_layout="variable"`) |
+| `descriptorBindingVariableDescriptorCount` (Vulkan 1.2)           | レイヤー数がフレームごとに変わる可変長テクスチャ配列 (`input_texture_layout="variable"`) |
 | `runtimeDescriptorArray` (Vulkan 1.2)                              | サイズ未指定の `Texture2D tex[]`                                                                          |
 | `shaderDrawParameters` (Vulkan 1.1)              | Slang / DXC が `SV_VertexID` を `DrawParameters` capability 付きで出力する                                |
 | `VK_KHR_dynamic_rendering` と `dynamicRendering` (Vulkan 1.3 or 1.2 Extension) | render pass / framebuffer を作らずにラスター描画する                                                      |
 
 可変長テクスチャ配列の最大本数はデバイス依存で、
 `min(maxPerStageDescriptorSampledImages, maxDescriptorSetSampledImages, maxPerStageResources - 3)` になる
-(`Device::max_variable_texture_array_len`)。レイヤー数がこれを超えるとディスパッチ時にエラーになる。
+(`Device::max_variable_texture_array_len`)。入力本数がこれを超えるとディスパッチ時にエラーになる。
 
 ## 任意の機能
 
@@ -86,6 +86,9 @@ modifier が LINEAR / INVALID なら LINEAR タイリング、それ以外なら
   Slang と違い、エントリポイント名は SPIR-V にそのまま残る。
 - ラスター描画では NDC の y+ を画面上方向に揃えるため、ビューポートを上下反転している。
   D3D / wgpu 向けに書かれたシェーダーがそのまま同じ向きで描ける。
+- ラスターシェーダー (`PyCompiledShader.from_slang_raster`) は入力テクスチャ = set 0 (固定長)、
+  サンプラー → params = set 1 に束縛する。出力はカラーターゲットで、描画前に1枚目の入力の内容がコピーされる
+  (入力が無ければ透明でクリア)。ブレンドモードはこの形で実行される (`tests/raster_blend_step.rs`)。
 
 ## 既知の制約・未対応
 

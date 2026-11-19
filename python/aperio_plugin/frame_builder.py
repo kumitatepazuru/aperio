@@ -93,7 +93,7 @@ def last_leaf_id(id_tree_list: list) -> str:
 
 
 def pack_layer_params(inv: list[list[float]], center_x: float, center_y: float, alpha: float) -> bytes:
-    """逆ホモグラフィ・基点オフセット・透明度から、compose.slang のLayerParams(64バイト)を作る。
+    """逆ホモグラフィ・基点オフセット・透明度から、逆ホモグラフィで合成するシェーダー向けのLayerParams(64バイト)を作る。
     struct LayerParams: inv_transform (mat3x3), center_x, center_y, alpha, _pad -> 64 bytes
     """
     return struct.pack(
@@ -105,27 +105,27 @@ def pack_layer_params(inv: list[list[float]], center_x: float, center_y: float, 
     )
 
 
-def _offscreen_layer_params(result: ItemResult) -> bytes:
-    """オフスクリーン描画済みのレイヤー用LayerParamsの生成"""
-    tx = float(math.trunc(result.pos[0]))
-    ty = float(math.trunc(result.pos[1]))
-    # 平行移動 (tx, ty) の逆行列
-    inv = [[1.0, 0.0, -tx], [0.0, 1.0, -ty], [0.0, 0.0, 1.0]]
-    return pack_layer_params(inv, result.center_x, result.center_y, 1.0)
+IDENTITY_3X3 = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
 
 
-def layer_params(result: ItemResult, canvas_height: int) -> bytes:
-    """1レイヤーぶんの、compose.slang に渡す `LayerParams` を組み立てる。
+def layer_homography(result: ItemResult, canvas_height: int) -> tuple[list[list[float]], float, bool]:
+    """1レイヤー分の配置を表す順方向ホモグラフィを求める。
 
     レイヤーを「ローカル z=0 平面上にある、基点(ピボット)中心のテクスチャ矩形」とみなし、
     拡大率 -> 3D回転 -> 平行移動(X/Y/Z) -> 透視投影 の順で画面へ送る。平面なので
-    この一連の変換は3x3ホモグラフィ1枚で表せる。compose.slang には逆行列を渡す。
-    変形はすべて `result` の絶対値から読む。
+    この一連の変換は3x3ホモグラフィ1枚で表せる。変形はすべて `result` の絶対値から読む。
 
     offscreenのときは、最終描画は矩形転送なので、X/Y の平行移動(整数画素への0方向切り捨て)と基点オフセットだけを使う。
+
+    Returns:
+        (forward, alpha, visible)。forward はレイヤーのローカル座標(基点原点のpx)から
+        キャンバス中央原点のpxへの同次変換。visible が False のとき(平面が真横を向いている /
+        カメラより手前にある)は画面に何も映らない。
     """
     if result.offscreen:
-        return _offscreen_layer_params(result)
+        tx = float(math.trunc(result.pos[0]))
+        ty = float(math.trunc(result.pos[1]))
+        return [[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]], 1.0, True
 
     # 整数に丸めず実数のまま持つ (実機の Q12 = 1/4096px 相当のサブピクセル座標)
     eff_x, eff_y, eff_z = result.pos
@@ -133,9 +133,6 @@ def layer_params(result: ItemResult, canvas_height: int) -> bytes:
     rx_rad = math.radians(result.rotate[0])
     ry_rad = math.radians(result.rotate[1])
     rz_rad = math.radians(result.rotate[2])
-
-    eff_center_x = result.center_x
-    eff_center_y = result.center_y
 
     eff_scale_x, eff_scale_y = result.scale
 
@@ -159,14 +156,42 @@ def layer_params(result: ItemResult, canvas_height: int) -> bytes:
         [r10 * eff_scale_x, r11 * eff_scale_y, eff_y],
         [r20 * eff_scale_x / d, r21 * eff_scale_y / d, (d + eff_z) / d],
     ]
-    inv = invert_3x3(forward)
-
     alpha = max(0.0, min(1.0, result.alpha))
+    # 平面が真横を向いている(退化) / オブジェクトがカメラ位置より手前にある
+    visible = d + eff_z > 0.0 and invert_3x3(forward) is not None
+    return forward, alpha, visible
 
-    if inv is None or d + eff_z <= 0.0:
-        # 平面が真横を向いている / オブジェクトがカメラ位置より手前にある。
-        # どちらも画面上では何も映らないので、alpha=0 でシェーダー側にスキップさせる。
-        inv = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+
+def layer_params(result: ItemResult, canvas_height: int) -> bytes:
+    """1レイヤー分の、逆ホモグラフィで合成するシェーダー向けの `LayerParams`(64バイト)を組み立てる。
+    配置の求め方は `layer_homography` を参照。シェーダーには逆行列を渡す。"""
+    forward, alpha, visible = layer_homography(result, canvas_height)
+    inv = invert_3x3(forward) if visible else None
+    if inv is None:
+        # 画面上では何も映らないので、alpha=0 でシェーダー側にスキップさせる。
+        inv = IDENTITY_3X3
         alpha = 0.0
 
-    return pack_layer_params(inv, eff_center_x, eff_center_y, alpha)
+    return pack_layer_params(inv, result.center_x, result.center_y, alpha)
+
+
+def blend_layer_params(result: ItemResult, canvas_height: int) -> bytes:
+    """1レイヤー分の、ブレンドモードのシェーダーに渡す `BlendLayerParams`(64バイト)を組み立てる
+    (並びは shaders/blend/aperio_blend.slang と同じ)。頂点シェーダーがレイヤー矩形の四隅を
+    順方向ホモグラフィで画面へ送るので、逆行列ではなく forward の各行を渡す。
+
+    struct BlendLayerParams: transform_row0..2 (float4 x3), center (float2), alpha, _pad -> 64 bytes
+    """
+    forward, alpha, visible = layer_homography(result, canvas_height)
+    if not visible:
+        # 何も描かせない(頂点が退化しても、フラグメントは alpha=0 で必ず捨てられる)
+        forward = IDENTITY_3X3
+        alpha = 0.0
+
+    return struct.pack(
+        "<16f",
+        forward[0][0], forward[0][1], forward[0][2], 0.0,
+        forward[1][0], forward[1][1], forward[1][2], 0.0,
+        forward[2][0], forward[2][1], forward[2][2], 0.0,
+        result.center_x, result.center_y, alpha, 0.0,
+    )

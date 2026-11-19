@@ -50,6 +50,11 @@ fn verify_all_effect_shaders_compile_with_pinned_bindings() {
         if !source.contains("ParameterBlock<") || !source.contains("res;") {
             continue;
         }
+        // ラスター(頂点+フラグメント)シェーダー(ブレンドモード等)はエントリポイントもリソース規約も
+        // 異なるため対象外(raster_blend_step.rsで確認する)。
+        if !source.contains("[shader(\"compute\")]") {
+            continue;
+        }
 
         checked += 1;
 

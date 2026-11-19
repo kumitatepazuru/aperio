@@ -281,6 +281,14 @@ impl ComputePipeline {
     }
 }
 
+impl GraphicsPipeline {
+    pub fn layout(&self) -> &PipelineLayoutDesc {
+        match self {
+            Self::Vulkan(p) => p.layout_desc(),
+        }
+    }
+}
+
 /// 1バインディングに束縛するリソース。
 #[derive(Clone, Copy)]
 pub enum Resource<'a> {
@@ -358,6 +366,18 @@ pub struct Draw<'a> {
     pub vertex_buffers: &'a [&'a Buffer],
     pub vertex_count: u32,
     pub instance_count: u32,
+}
+
+/// `Device::render_pass_with_init`でのカラーターゲットの初期化方法。
+#[derive(Clone, Copy)]
+pub enum RenderTargetInit<'a> {
+    /// 既存の内容を保持する。
+    Load,
+    /// 指定色でクリアする。
+    Clear([f32; 4]),
+    /// 同じサイズ・フォーマットのテクスチャの内容を描画前にコピーする(同じsubmit内で行う)。
+    /// コピー元は`TRANSFER_SRC`、ターゲットは`TRANSFER_DST`用途で作られている必要がある。
+    CopyFrom(&'a Texture),
 }
 
 /// `Device::copy_textures`の1件分(フォーマットが一致する矩形コピー)。
@@ -465,9 +485,31 @@ impl Device {
         clear: Option<[f32; 4]>,
         draws: &[Draw<'_>],
     ) -> Result<()> {
+        let init = match clear {
+            Some(color) => RenderTargetInit::Clear(color),
+            None => RenderTargetInit::Load,
+        };
+        self.render_pass_with_init(target, init, draws)
+    }
+
+    /// `render_pass`の初期化方法を明示する版。`RenderTargetInit::CopyFrom`を使うと、
+    /// 既存のテクスチャを下地にした描画をコピーと合わせて1回のsubmitで行える。
+    pub fn render_pass_with_init(
+        &self,
+        target: &TextureView,
+        init: RenderTargetInit<'_>,
+        draws: &[Draw<'_>],
+    ) -> Result<()> {
         match self {
             Self::Vulkan(d) => {
                 let TextureView::Vulkan(target) = target;
+                let init = match init {
+                    RenderTargetInit::Load => vulkan::TargetInit::Load,
+                    RenderTargetInit::Clear(color) => vulkan::TargetInit::Clear(color),
+                    RenderTargetInit::CopyFrom(Texture::Vulkan(src)) => {
+                        vulkan::TargetInit::CopyFrom(src)
+                    }
+                };
                 let draws: Vec<vulkan::Draw<'_>> = draws
                     .iter()
                     .map(|draw| {
@@ -489,7 +531,7 @@ impl Device {
                         }
                     })
                     .collect();
-                d.render_pass(target, clear, &draws)
+                d.render_pass(target, init, &draws)
             }
         }
     }

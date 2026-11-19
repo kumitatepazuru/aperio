@@ -55,6 +55,8 @@ declare global {
     main: {
       getPluginNames: () => Promise<PluginNameInfo>;
       getFontsList: () => Promise<FontsList>;
+      /** 登録されているブレンドモードの id → 表示名(登録順) */
+      getBlendMode: () => Promise<Record<string, string>>;
       getConfig: () => Promise<AperioConfig>;
       saveConfig: (config: Partial<AperioConfig>) => Promise<void>;
       openContextMenu: (id: string) => Promise<void>;

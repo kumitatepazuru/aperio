@@ -19,6 +19,7 @@ aperio-plugin-stubs = { workspace = true }
 base_object = "aperio_base.objects:AperioBaseObjectPlugin"
 base_effect = "aperio_base.effects:AperioBaseEffectPlugin"
 basic_effect = "aperio_base.basic_effect:AperioBaseBasicEffectPlugin"
+base_blend = "aperio_base.blend_modes:AperioBaseBlendModePlugin"
 
 [build-system]
 requires = ["hatchling"]

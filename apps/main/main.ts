@@ -180,6 +180,10 @@ ipcMain.handle(IpcChannel.getFontsList, () => {
   return nativeModule.aperioManager.getFontsList();
 });
 
+ipcMain.handle(IpcChannel.getBlendMode, () => {
+  return nativeModule.aperioManager.getBlendMode();
+});
+
 registerEventIpc(nativeModule);
 
 // ─── Sync Server ─────────────────────────────────────────────────────────────

@@ -153,6 +153,20 @@ impl AperioManager {
         Ok(result)
     }
 
+    /// 登録されているブレンドモードの id → 表示名 の対応表を、登録順のまま返す。
+    #[napi(ts_return_type = "Record<string, string>")]
+    pub fn get_blend_mode(&self) -> napi::Result<indexmap::IndexMap<String, String>> {
+        let pl_manager = &self.plmanager;
+
+        let result = Python::attach(|py| -> PyResult<indexmap::IndexMap<String, String>> {
+            let pl_manager = pl_manager.bind(py);
+            Ok(pl_manager.call_method0("get_blend_mode")?.extract()?)
+        })
+        .map_err(|e| napi::Error::from_reason(format!("Failed to get blend modes: {:?}", e)))?;
+
+        Ok(result)
+    }
+
     #[napi]
     pub fn get_frame_buf(
         &self,
