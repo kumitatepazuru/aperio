@@ -5,7 +5,7 @@ from aperio.item_structures import GeneratorEvent, GeneratorInformation, Request
 from aperio_plugin.event_manager import event
 from aperio_plugin.plugin_base.generator_base import GeneratorBuilderReturn, VideoEffectGeneratorBase, VideoGenerateParameters
 
-from ..common.params import make_generator_information, pack_box_blur_dir_params, split_radius
+from ..common.params import aspect_shrink_factors, make_generator_information, pack_box_blur_dir_params, split_radius
 from ..common.shader_loader import effect_dirs, shared_slang_shader
 
 
@@ -84,12 +84,9 @@ class BlurEffect(VideoEffectGeneratorBase):
         # aspect < 0: 縦方向のみに近づく → 横半径を縮小
         # aspectが±100を超えて縮小方向の半径が負になっても、下のh_pass/v_passが
         # radius<=0を無視して素通しするだけなので安全。
-        if aspect >= 0:
-            h_radius = blur_radius
-            v_radius = round(blur_radius * (1 - aspect / 100))
-        else:
-            h_radius = round(blur_radius * (1 + aspect / 100))
-            v_radius = blur_radius
+        v_shrink, h_shrink = aspect_shrink_factors(aspect)
+        h_radius = round(blur_radius * h_shrink)
+        v_radius = round(blur_radius * v_shrink)
 
         if h_radius == 0 and v_radius == 0:
             return None

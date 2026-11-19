@@ -4,13 +4,13 @@ import aperio_plugin
 from aperio.avloader import PyImageLoader
 from aperio.gpu_util import PyCompiledTextureFunc
 
-# `パターン画像ファイル`ボタン(shadow・border 共通)が受け付ける拡張子。
+# shadow・borderと図形の画像ファイルが受け付ける拡張子。
 PATTERN_EXTENSIONS = ["png", "jpg", "jpeg", "bmp", "webp", "gif", "tiff", "tga"]
 
 
 class PatternImageCache:
-    """`パターン画像ファイル`パラメータのパスから PyImageLoader / PyCompiledTextureFunc を
-    作って使い回すキャッシュ(shadow・border が共通で持つ定型処理をまとめたもの)。"""
+    """画像ファイルパラメータのパスから PyImageLoader / PyCompiledTextureFunc を
+    作って使い回すキャッシュ(shadow・border・figure が共通で持つ定型処理をまとめたもの)。"""
 
     def __init__(self, func_id: str) -> None:
         self._func_id = func_id

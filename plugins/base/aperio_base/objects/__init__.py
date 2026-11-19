@@ -3,6 +3,7 @@ import os.path
 import aperio_plugin
 from aperio_plugin.plugin_base import MainPluginBase
 from .audio import AudioObject
+from .figure import FigureObject
 from .group import GroupObject
 from .text import TextObject
 from .video import VideoObject
@@ -22,6 +23,7 @@ class AperioBaseObjectPlugin(MainPluginBase):
 
         plugin_manager = aperio_plugin.plugin_manager
         plugin_manager.add_generator(AudioObject())
+        plugin_manager.add_generator(FigureObject())
         plugin_manager.add_generator(GroupObject())
         plugin_manager.add_component(self, os.path.join(FRONTEND_DIR, "group_item"), "item")
         plugin_manager.add_generator(TextObject())

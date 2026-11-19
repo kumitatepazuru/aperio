@@ -21,6 +21,17 @@ def make_generator_information(
     )
 
 
+def aspect_shrink_factors(aspect: float) -> tuple[float, float]:
+    """縦横比(-100〜100)を、片方の軸だけを縮める倍率の組 `(正のとき縮む軸, 負のとき縮む軸)`
+    にする。縦横比 > 0 なら1つ目だけ `1 - aspect/100`、< 0 なら2つ目だけ `1 + aspect/100` に
+    なり、もう片方は 1.0。どちらの軸に割り当てるかは呼び出し側が決める
+    (`ぼかし`/`境界ぼかし` は 縦半径, 横半径 の順、`図形` は 幅, 高さ の順)。
+    ±100を超えて倍率が負になっても、呼び出し側が0以下を無視する前提でクランプしない。"""
+    positive = 1.0 - aspect / 100.0 if aspect > 0 else 1.0
+    negative = 1.0 + aspect / 100.0 if aspect < 0 else 1.0
+    return positive, negative
+
+
 def pack_expand_params(
     off_x: int, off_y: int, new_w: int, new_h: int, border: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 ) -> bytes:
