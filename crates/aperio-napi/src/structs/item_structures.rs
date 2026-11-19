@@ -41,6 +41,8 @@ pub struct ItemResult {
     pub offscreen: bool,
     // 焼き込み直前のオブジェクトの形。offscreenではないときはNone。
     pub offscreen_source: Option<OffscreenSource>,
+    // フレームへ合成するときのブレンドモードのid(add_blend_modeで登録したもの)。Noneなら既定(通常)。
+    pub blend_mode: Option<String>,
 }
 
 /// オフスクリーン描画で焼き込まれる直前の、オブジェクトの幅・高さと累積変形(絶対値)。
@@ -74,6 +76,8 @@ impl From<&ItemResult> for OffscreenSource {
 }
 
 impl ItemResult {
+    // TODO: すべての値がItemStructureからそのまま受け継げるようになればこのメソッドはいらなくなる
+    // というかItemStructure自体がこの構造体を持つようにすればいいのでは？（traitで不必要なものは分ける感じで）
     /// デフォルト値
     pub fn identity(width: i32, height: i32) -> Self {
         Self {
@@ -88,6 +92,7 @@ impl ItemResult {
             additional_items: Vec::new(),
             offscreen: false,
             offscreen_source: None,
+            blend_mode: None,
         }
     }
 
@@ -99,6 +104,7 @@ impl ItemResult {
             scale,
             rotation,
             alpha,
+            blend_mode,
             ..
         } = item
         else {
@@ -109,6 +115,7 @@ impl ItemResult {
         r.mul_scale_inner(scale / 100.0, scale / 100.0);
         r.add_rotate_inner(0.0, 0.0, *rotation);
         r.mul_alpha_inner(alpha / 100.0);
+        r.blend_mode = blend_mode.clone();
         Some(r)
     }
 
@@ -150,6 +157,8 @@ impl ItemResult {
         r.offscreen = true;
         r.offscreen_source = Some(OffscreenSource::from(self));
         r.additional_items = self.additional_items.clone();
+        // 焼き込んだテクスチャも最終的にはフレームへ合成するので、ブレンドモードは引き継ぐ
+        r.blend_mode = self.blend_mode.clone();
         r
     }
 }
@@ -157,7 +166,7 @@ impl ItemResult {
 #[pymethods]
 impl ItemResult {
     #[new]
-    #[pyo3(signature = (width, height, pos=None, center_x=None, center_y=None, scale=None, rotate=None, alpha=None, additional_items=None, offscreen=false))]
+    #[pyo3(signature = (width, height, pos=None, center_x=None, center_y=None, scale=None, rotate=None, alpha=None, additional_items=None, offscreen=false, blend_mode=None))]
     fn new(
         width: i32,
         height: i32,
@@ -169,6 +178,7 @@ impl ItemResult {
         alpha: Option<f64>,
         additional_items: Option<Vec<AdditionalItem>>,
         offscreen: bool,
+        blend_mode: Option<String>,
     ) -> Self {
         let mut r = Self::identity(width, height);
         if let Some(v) = pos {
@@ -193,6 +203,7 @@ impl ItemResult {
             r.additional_items = v;
         }
         r.offscreen = offscreen;
+        r.blend_mode = blend_mode;
         r
     }
 
@@ -268,8 +279,8 @@ impl ItemResult {
 
     fn __repr__(&self) -> String {
         format!(
-            "ItemResult(width={:?}, height={:?}, pos={:?}, center_x={:?}, center_y={:?}, scale={:?}, rotate={:?}, alpha={:?}, additional_items={:?}, offscreen={:?}, offscreen_source={:?})",
-            self.width, self.height, self.pos, self.center_x, self.center_y, self.scale, self.rotate, self.alpha, self.additional_items, self.offscreen, self.offscreen_source
+            "ItemResult(width={:?}, height={:?}, pos={:?}, center_x={:?}, center_y={:?}, scale={:?}, rotate={:?}, alpha={:?}, additional_items={:?}, offscreen={:?}, offscreen_source={:?}, blend_mode={:?})",
+            self.width, self.height, self.pos, self.center_x, self.center_y, self.scale, self.rotate, self.alpha, self.additional_items, self.offscreen, self.offscreen_source, self.blend_mode
         )
     }
 }
@@ -431,7 +442,7 @@ impl GenerateStructure {
 #[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ItemStructure {
-    #[pyo3(constructor = (id, layer, start, end, x, y, scale, rotation, alpha, object, effects, min=None, max=None))]
+    #[pyo3(constructor = (id, layer, start, end, x, y, scale, rotation, alpha, object, effects, min=None, max=None, blend_mode=None))]
     Video {
         id: String,
         layer: i32,
@@ -446,6 +457,8 @@ pub enum ItemStructure {
         effects: Vec<GenerateStructure>,
         min: Option<i32>, // アイテムの有効な最小フレーム（省略可能）
         max: Option<i32>, // アイテムの有効な最大フレーム（省略可能）
+        // フレームへ合成するときのブレンドモードのid（省略時は既定のブレンドモード）
+        blend_mode: Option<String>,
     },
     #[pyo3(constructor = (id, layer, start, end, volume, pan, object, effects, min=None, max=None))]
     Audio {

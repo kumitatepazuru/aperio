@@ -15,7 +15,7 @@ mod resources;
 pub use bindings::{Resource, ResourceBinding};
 pub use device::VulkanDevice;
 pub use dispatch::TextureCopy;
-pub use graphics::{Draw, GraphicsPipeline};
+pub use graphics::{Draw, GraphicsPipeline, TargetInit};
 pub use pipeline::ComputePipeline;
 pub use resources::{Buffer, Sampler, Texture, TextureView};
 

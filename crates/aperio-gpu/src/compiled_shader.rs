@@ -140,12 +140,35 @@ pub fn compile_slang_to_spirv(
     Ok(spirv)
 }
 
+/// シェーダーの実行方式。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShaderKind {
+    /// コンピュートシェーダー。spirv/entry_pointがそのままコンピュートステージになり、
+    /// 出力はストレージテクスチャ(res のbinding 0)に書き込む。
+    Compute,
+    /// ラスター(頂点+フラグメント)シェーダー。spirv/entry_pointがフラグメントステージ。
+    ///
+    /// 出力テクスチャはカラーターゲットとして描画され、描画前に1枚目の入力テクスチャの内容で
+    /// 初期化される(入力が無ければ透明でクリア)。
+    ///
+    /// リソース規約: set 0 = 入力テクスチャ(固定長、binding i = i枚目の入力)、
+    /// set 1 = (サンプラー) -> (params)。どちらも頂点・フラグメントの両ステージから参照できる。
+    Raster {
+        vertex_spirv: Vec<u32>,
+        vertex_entry: String,
+        /// 1回の描画で流す頂点数(三角形リスト)。
+        vertex_count: u32,
+    },
+}
+
 /// コンパイル済みのSPIR-Vシェーダー1つ分。
 pub struct CompiledShader {
     /// パイプラインキャッシュのキーにもなる名前。
     pub name: String,
+    /// コンピュートシェーダー、またはラスターシェーダーのフラグメントステージ。
     pub spirv: Vec<u32>,
     pub entry_point: String,
+    pub kind: ShaderKind,
     /// このシェーダーの出力ストレージテクスチャが実際に使うフォーマット。
     pub output_format: ImagePixelFormat,
     pub input_arity: InputArity,
@@ -219,9 +242,78 @@ impl CompiledShader {
             name: name.to_string(),
             spirv,
             entry_point: entry_point.to_string(),
+            kind: ShaderKind::Compute,
             output_format,
             input_arity,
             sampler,
         })
+    }
+
+    /// 1つのslang sourceに書かれた頂点・フラグメントのエントリポイントを、それぞれコンパイルして
+    /// ラスターシェーダーにする。入力テクスチャは常に固定長。
+    ///
+    /// nameはパイプラインキャッシュのキーとしても使われるため、同じソースを異なるdefinesで
+    /// コンパイルする場合は必ず別のnameを渡すこと。
+    pub fn from_slang_raster(
+        name: &str,
+        source: &str,
+        vertex_entry: &str,
+        fragment_entry: &str,
+        vertex_count: u32,
+        generator: &ImageGenerator,
+        output_format: ImagePixelFormat,
+        search_paths: &[&str],
+        defines: &[(&str, &str)],
+        sampler_options: Option<&SamplerOptions>,
+    ) -> Result<Self> {
+        if vertex_count == 0 {
+            bail!("Raster shader '{name}' must draw at least one vertex");
+        }
+        let mut all_defines: Vec<(&str, &str)> = defines.to_vec();
+        all_defines.push((
+            "APERIO_IMAGE_FORMAT",
+            output_format.to_slang_image_format_literal(),
+        ));
+
+        let module_path = format!("{name}.slang");
+        let vertex_spirv = compile_slang_to_spirv(
+            name,
+            &module_path,
+            source,
+            vertex_entry,
+            search_paths,
+            &all_defines,
+        )?;
+        let fragment_spirv = compile_slang_to_spirv(
+            name,
+            &module_path,
+            source,
+            fragment_entry,
+            search_paths,
+            &all_defines,
+        )?;
+
+        let sampler = sampler_options
+            .map(|options| generator.device.create_sampler(options))
+            .transpose()?;
+
+        // Slangは単一エントリポイントのSPIR-Vを常に"main"という名前で出力する。
+        Ok(Self {
+            name: name.to_string(),
+            spirv: fragment_spirv,
+            entry_point: "main".to_string(),
+            kind: ShaderKind::Raster {
+                vertex_spirv,
+                vertex_entry: "main".to_string(),
+                vertex_count,
+            },
+            output_format,
+            input_arity: InputArity::Fixed,
+            sampler,
+        })
+    }
+
+    pub fn is_raster(&self) -> bool {
+        matches!(self.kind, ShaderKind::Raster { .. })
     }
 }

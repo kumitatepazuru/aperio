@@ -8,7 +8,8 @@ use ash::vk;
 use super::bindings::{ResourceBinding, TouchedTextures};
 use super::descriptor::DescriptorSetLayout;
 use super::device::VulkanDevice;
-use super::resources::{to_vk_format, Buffer, TextureView};
+use super::dispatch::COLOR_SUBRESOURCE;
+use super::resources::{to_vk_format, Buffer, Texture, TextureView};
 use crate::rhi::{
     BlendFactor, BlendState, GraphicsPipelineDesc, PipelineLayoutDesc, TextureFormat, VertexFormat,
 };
@@ -37,6 +38,16 @@ impl Drop for GraphicsPipeline {
                 .destroy_pipeline_layout(self.layout, None);
         }
     }
+}
+
+/// render_pass開始時のカラーターゲットの初期化方法。
+pub enum TargetInit<'a> {
+    /// 既存の内容を保持する。
+    Load,
+    /// 指定色でクリアする。
+    Clear([f32; 4]),
+    /// 同じサイズ・フォーマットのテクスチャの内容を、描画前に同じコマンドバッファ内でコピーする。
+    CopyFrom(&'a Texture),
 }
 
 /// VulkanDevice::render_passの1回の描画コマンド。
@@ -211,17 +222,35 @@ impl VulkanDevice {
         }))
     }
 
-    /// 1つのカラーターゲットへ`draws`を順に描画する(同期)。`clear`がNoneなら既存内容を保持する。
+    /// 1つのカラーターゲットへ`draws`を順に描画する(同期)。ターゲットの初期化方法は`init`で指定する。
     ///
     /// ビューポートのY軸は反転させ、NDCのy+が画面上方向になる(wgpu/D3D/Metalと同じ向き)
     pub fn render_pass(
         &self,
         target: &TextureView,
-        clear: Option<[f32; 4]>,
+        init: TargetInit<'_>,
         draws: &[Draw<'_>],
     ) -> Result<()> {
         let target_texture = target.texture();
         let (width, height) = (target_texture.width(), target_texture.height());
+
+        if let TargetInit::CopyFrom(src) = &init {
+            if (src.width(), src.height()) != (width, height) || src.format() != target_texture.format() {
+                bail!(
+                    "render_pass: copy source ({}x{} {:?}) must match the target ({}x{} {:?})",
+                    src.width(),
+                    src.height(),
+                    src.format(),
+                    width,
+                    height,
+                    target_texture.format()
+                );
+            }
+        }
+        let clear = match init {
+            TargetInit::Clear(color) => Some(color),
+            TargetInit::Load | TargetInit::CopyFrom(_) => None,
+        };
 
         // 検証と、全ドローぶんのディスクリプタプールのサイズ算出。
         let mut all_variable_counts = Vec::with_capacity(draws.len());
@@ -286,6 +315,50 @@ impl VulkanDevice {
                 vk::AccessFlags::empty(),
                 vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::COLOR_ATTACHMENT_READ,
             );
+
+            if let TargetInit::CopyFrom(src) = &init {
+                src.transition(
+                    self,
+                    cb,
+                    vk::ImageLayout::GENERAL,
+                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::AccessFlags::empty(),
+                    vk::AccessFlags::TRANSFER_READ,
+                );
+                let region = vk::ImageCopy {
+                    src_subresource: COLOR_SUBRESOURCE,
+                    src_offset: vk::Offset3D::default(),
+                    dst_subresource: COLOR_SUBRESOURCE,
+                    dst_offset: vk::Offset3D::default(),
+                    extent: vk::Extent3D { width, height, depth: 1 },
+                };
+                self.device.cmd_copy_image(
+                    cb,
+                    src.handle(),
+                    vk::ImageLayout::GENERAL,
+                    target_texture.handle(),
+                    vk::ImageLayout::GENERAL,
+                    &[region],
+                );
+                // レイアウトは両方ともGENERALのままなので、コピーの書き込みを描画(LOAD)から
+                // 見えるようにするメモリバリアだけを明示的に張る。
+                let barrier = vk::MemoryBarrier::default()
+                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                    .dst_access_mask(
+                        vk::AccessFlags::COLOR_ATTACHMENT_READ
+                            | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                    );
+                self.device.cmd_pipeline_barrier(
+                    cb,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::DependencyFlags::empty(),
+                    &[barrier],
+                    &[],
+                    &[],
+                );
+            }
 
             let attachment = vk::RenderingAttachmentInfo::default()
                 .image_view(target.handle())
