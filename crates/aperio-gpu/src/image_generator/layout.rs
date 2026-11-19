@@ -82,6 +82,49 @@ impl ShaderShape {
     }
 }
 
+/// ラスターシェーダー(`ShaderKind::Raster`)のリソース形状。
+///
+///   set 0: 入力テクスチャ(固定長、binding i = i枚目)
+///   set 1: (サンプラー) -> (params)   ※どちらも無ければset 1自体を持たない
+///
+/// 出力はカラーターゲットなのでディスクリプタには現れない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RasterShape {
+    pub input_count: u32,
+    pub has_sampler: bool,
+    pub has_params: bool,
+}
+
+impl RasterShape {
+    pub fn layout(&self) -> PipelineLayoutDesc {
+        let binding = |binding, kind| BindingDesc {
+            binding,
+            kind,
+            count: 1,
+            variable_count: false,
+            stages: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+        };
+
+        let inputs = (0..self.input_count)
+            .map(|i| binding(i, BindingKind::SampledImage))
+            .collect();
+
+        let mut res = Vec::new();
+        if self.has_sampler {
+            res.push(binding(res.len() as u32, BindingKind::Sampler));
+        }
+        if self.has_params {
+            res.push(binding(res.len() as u32, BindingKind::StorageBuffer));
+        }
+
+        let mut sets = vec![SetLayoutDesc { bindings: inputs }];
+        if !res.is_empty() {
+            sets.push(SetLayoutDesc { bindings: res });
+        }
+        PipelineLayoutDesc { sets }
+    }
+}
+
 /// `dispatch`の出力先。
 pub enum DispatchOutput<'a> {
     Texture(&'a TextureView),

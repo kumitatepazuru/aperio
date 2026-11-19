@@ -26,9 +26,16 @@ export const IpcChannel = {
   addObject: "add-object",
   getPluginNames: "get-plugin-names",
   getFontsList: "get-fonts-list",
+  getBlendMode: "get-blend-mode",
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
+
+/**
+ * 新しいアイテムに設定する既定のブレンドモードの id。
+ * python/aperio_plugin/blend_mode.py・crates/aperio-napi の DEFAULT_BLEND_MODE_ID と揃える。
+ */
+export const DEFAULT_BLEND_MODE_ID = "normal";
 
 /**
  * レンダラーから window.events で呼べる、AperioManager のプラグインイベント系メソッド

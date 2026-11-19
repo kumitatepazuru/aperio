@@ -5,9 +5,10 @@ from typing import Literal
 from aperio import gpu_util, logger
 from aperio.item_structures import AdditionalItem, GeneratorEvent, ItemResult, ItemStructure
 
+from .blend_mode import BLEND_SHADER_DIR, DEFAULT_BLEND_MODE_ID, BlendModeRegistry
 from .context import AperioContext
 from .event_manager import EventDispatcher
-from .frame_builder import apply_generate_result, last_leaf_id, layer_params
+from .frame_builder import apply_generate_result, blend_layer_params, last_leaf_id
 from .generator_registry import GeneratorRegistry
 from .plugin_base.generator_base import (
     GeneratorBuilderReturn,
@@ -25,33 +26,45 @@ type StructureTarget = tuple[str, int, int]
 SHADER_DIR = os.path.join(os.path.dirname(__file__), "shaders")
 
 
+def _read_shader(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 class VideoRenderer:
     """
     フレーム構造からジェネレーターを呼び出してレイヤーごとのパイプラインを組み立て、
-    compose シェーダーで1枚のフレームに合成する。
+    各レイヤーのブレンドモードで黒背景のフレームへ順に合成する。
     """
 
-    def __init__(self, context: AperioContext, registry: GeneratorRegistry, events: EventDispatcher) -> None:
+    def __init__(
+        self,
+        context: AperioContext,
+        registry: GeneratorRegistry,
+        blend_modes: BlendModeRegistry,
+        events: EventDispatcher,
+    ) -> None:
         self._context = context
         self._registry = registry
         self._events = events
 
         generator = context.image_generator
-        with open(os.path.join(SHADER_DIR, "compose.slang"), "r", encoding="utf-8") as f:
-            sampler = gpu_util.PySamplerOptions("clamp_to_edge", "linear")
-            # レイヤー数はフレームごとに変わるので、入力テクスチャは可変長配列
-            self._compose_shader = gpu_util.PyCompiledShader.from_slang(
-                "compose_layer",
-                f.read(),
+        self._fill_black_shader = gpu_util.PyCompiledShader.from_slang(
+            "fill_black", _read_shader(os.path.join(SHADER_DIR, "fill_black.slang")), generator, search_paths=[SHADER_DIR]
+        )
+        self._blender = _LayerBlender(
+            blend_modes,
+            fallback_shader=gpu_util.PyCompiledShader.from_slang_raster(
+                "aperio_blend_fallback_normal",
+                _read_shader(os.path.join(BLEND_SHADER_DIR, "fallback_normal.slang")),
                 generator,
-                search_paths=[SHADER_DIR],
-                input_texture_layout="variable",
-                sampler_options=sampler,
-            )
-        with open(os.path.join(SHADER_DIR, "fill_black.slang"), "r", encoding="utf-8") as f:
-            self._fill_black_shader = gpu_util.PyCompiledShader.from_slang(
-                "fill_black", f.read(), generator, search_paths=[SHADER_DIR]
-            )
+                search_paths=[BLEND_SHADER_DIR],
+                sampler_options=gpu_util.PySamplerOptions("clamp_to_edge", "linear"),
+                vertex_entry="vs_main",
+                fragment_entry="fs_main",
+                vertex_count=6,
+            ),
+        )
 
     def render_buf(
         self,
@@ -106,7 +119,7 @@ class VideoRenderer:
 
             results = self._events.reduce_event(GeneratorEvent.AfterMakeFrame, composition.results, frame_structure)
             composition.results = results
-            builder = composition.to_builder(self._compose_shader, self._fill_black_shader)
+            builder = composition.to_builder(self._fill_black_shader, self._blender)
 
         except Exception as e:
             logger.error(traceback.format_exc())
@@ -115,9 +128,48 @@ class VideoRenderer:
         return builder, results
 
 
+class _LayerBlender:
+    """
+    ItemResult.blend_mode の id からブレンドモードを選び、レイヤーを編集中のフレームへ合成するステップを組み立てる。
+    """
+
+    def __init__(self, blend_modes: BlendModeRegistry, fallback_shader: gpu_util.PyCompiledShader) -> None:
+        self._blend_modes = blend_modes
+        # アイテムのブレンドモードの id が登録されていないときに使う組み込みの通常合成
+        self._fallback_shader = fallback_shader
+        # 毎フレーム同じ警告を出さないよう、警告済みの未登録 id を覚えておく
+        self._warned_ids: set[str] = set()
+
+    def blend(
+        self,
+        frame: gpu_util.PyImageGenerateBuilder,
+        layer: gpu_util.PyImageGenerateBuilder,
+        result: ItemResult,
+        width: int,
+        height: int,
+    ) -> gpu_util.PyImageGenerateBuilder:
+        """
+        frame(編集中のフレームを出力するビルダー)に layer を合成したフレームを出力するビルダーを返す。
+        """
+        params = blend_layer_params(result, height)
+        shader = self._resolve(result.blend_mode)
+        # 入力 = [編集中のフレーム, レイヤー]。出力はフレームのコピーを下地にした render pass
+        return gpu_util.PyImageGenerateBuilder().add_parallel([frame, layer]).add_shader(shader, params, width, height)
+
+    def _resolve(self, blend_mode: str) -> gpu_util.PyCompiledShader:
+        mode = self._blend_modes.get(blend_mode)
+        if mode is not None:
+            return mode.shader
+        # 既定の id はプラグインが登録するまで組み込みで描くのが正常なので、警告しない
+        if blend_mode != DEFAULT_BLEND_MODE_ID and blend_mode not in self._warned_ids:
+            self._warned_ids.add(blend_mode)
+            logger.warning(f"Blend mode '{blend_mode}' is not registered. Falling back to the normal blend.")
+        return self._fallback_shader
+
+
 class _FrameComposition:
     """
-    1フレーム分の合成状態。レイヤーごとのビルダーと compose シェーダーへのパラメーター、
+    1フレーム分の合成状態。合成順に並べたレイヤーのビルダーと ItemResult、
     GenerateStructure.id → パイプライン出力の対応表を、フレームの処理中だけ保持する。
     """
 
@@ -153,27 +205,18 @@ class _FrameComposition:
             self._push(*entry)
 
     def to_builder(
-        self, compose_shader: gpu_util.PyCompiledShader, fill_black_shader: gpu_util.PyCompiledShader
+        self, fill_black_shader: gpu_util.PyCompiledShader, blender: _LayerBlender
     ) -> gpu_util.PyImageGenerateBuilder:
-        if not self._layers:
-            return gpu_util.PyImageGenerateBuilder().add_shader(fill_black_shader, None, self._width, self._height)
-
-        # resultsを差し替えられていても、キーで引き直して最終的な値を使う
-        layer_params_list = [
-            layer_params(self.results.get(key, result) if key is not None else result, self._height)
-            for _, key, result in self._layers
-        ]
-        return (
-            gpu_util.PyImageGenerateBuilder()
-            .add_parallel([builder for builder, _, _ in self._layers])
-            .add_shader(
-                compose_shader, b"".join(layer_params_list), self._width, self._height
-            ) # TODO: render Passを使っての高速化と簡潔化を試みる
-        )
+        """黒で塗ったフレームから始めて、各レイヤーを合成順(背面→前面)にブレンドモードで重ねるビルダーを返す。"""
+        frame = gpu_util.PyImageGenerateBuilder().add_shader(fill_black_shader, None, self._width, self._height)
+        for builder, key, result in self._layers:
+            # resultsを差し替えられていても、キーで引き直して最終的な値を使う
+            final_result = self.results.get(key, result) if key is not None else result
+            frame = blender.blend(frame, builder, final_result, self._width, self._height)
+        return frame
 
     def _push(self, builder: gpu_util.PyImageGenerateBuilder, result: ItemResult, key: str | None = None) -> None:
-        # 描画するステップが無い(ItemResult だけを返すグループ等)ものを積むと、
-        # compose シェーダーの入力テクスチャとレイヤーパラメーターの数がずれてしまう
+        # 描画するステップが無い(ItemResult だけを返すグループ等)ものは、合成するテクスチャが無い
         if not builder.get_id_tree():
             return
         self._layers.append((builder, key, result))

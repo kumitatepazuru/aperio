@@ -33,6 +33,7 @@
 | `scale`    | `number` | 拡大率（%、100が等倍）     |
 | `rotation` | `number` | 回転角（度）               |
 | `alpha`    | `number` | 不透明度（%、100が不透明） |
+| `blendMode` | `string` | ブレンドモードの id（`add_blend_mode` で登録したもの）。新規アイテムは `normal`。未登録の id なら組み込みの通常合成で描く |
 
 **Audio アイテム固有フィールド:**
 
@@ -193,23 +194,24 @@
 | `additional_items` | `list[AdditionalItem]` | チェーン中に積まれた追加アイテム。合成時に `behind` に従ってアイテムの背面/前面に配置される |
 | `offscreen` | `bool` | オフスクリーン描画済みか(下記) |
 | `offscreen_source` | `OffscreenSource \| None` | 焼き込み直前の形(下記) |
+| `blend_mode` | `str` | フレームへ合成するときのブレンドモードの id(`ItemStructure.Video.blend_mode` を引き継ぐ。コンストラクタの既定値は `normal`) |
 
 変形の既定値(位置0・等倍・無回転・不透明・基点ずれ0)は Rust の `ItemResult::identity` だけで定義する。コンストラクタの省略した引数はこの値になる。
 
 **生成とユーティリティ(Python):**
 
-- `ItemResult.from_item(item, width=0, height=0)`: `ItemStructure.Video` の `x/y/scale/rotation/alpha` を絶対値にした結果(`pos=(x, y, 0)`、`scale=scale/100`、`rotate=(0, 0, rotation)`、`alpha=alpha/100`)。
+- `ItemResult.from_item(item, width=0, height=0)`: `ItemStructure.Video` の `x/y/scale/rotation/alpha` を絶対値にした結果(`pos=(x, y, 0)`、`scale=scale/100`、`rotate=(0, 0, rotation)`、`alpha=alpha/100`)。`blend_mode` はそのまま引き継ぐ。
 - `with_size(width, height)`: 変形を保ったままサイズだけを変えたコピー。
 - `copy()`: コピー。
 - `add_pos(x, y, z=0)` / `add_center(x, y)` / `mul_scale(x, y)` / `add_rotate(x, y, z)` / `mul_alpha(a)` / `add_additional_item(item)`: 自身を変更して自身を返す(チェーンできる)。
 - `a + b` / `a += b`: `b` を差分として積む。`pos/center/rotate` は加算、`scale/alpha` は乗算、`additional_items` は連結。サイズは `a` のまま(`b` のサイズは使わないので、差分は `ItemResult(0, 0, pos=…)` のように作る)。
 - `to_offscreen(width, height)`: 下記。
 
-**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(item)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.layer_params` は `ItemResult` だけから合成パラメーターを作る(アイテムの値は読まない)。合成パラメーターは全アイテムの生成と `AfterMakeFrame` が終わってから作るので、それまでに `ItemResult` を書き換えれば(`params.item_results` 経由など)合成に反映される。
+**チェーンでの扱い:** `video_renderer` はオブジェクトに `from_item(item)` を、エフェクトに直前の結果のコピーを `params.item_result` として渡し、返された `ItemResult` で累積結果を置き換える。`frame_builder.blend_layer_params` は `ItemResult` だけから合成パラメーターを作り(アイテムの値は読まない)、`ItemResult.blend_mode` の id で選んだブレンドモードで、黒背景のフレームへレイヤーを背面から順に合成する。
 
 **`offscreen`(オフスクリーン済み):** `オフスクリーン描画` エフェクトが、そこまでの変形をキャンバス大のテクスチャに焼き込んだことを示すフラグ。
-- `to_offscreen(width, height)`: 変形を持たない `width x height` の結果を返す。`offscreen` を立て、`offscreen_source` に焼き込み前の形を残し、`additional_items` は引き継ぐ。
-- `frame_builder.layer_params`: `pos` の X/Y(0方向へ整数画素に切り捨て)と `center` だけで合成する。`scale/rotate/alpha/pos.z` は無視する。
+- `to_offscreen(width, height)`: 変形を持たない `width x height` の結果を返す。`offscreen` を立て、`offscreen_source` に焼き込み前の形を残し、`additional_items` と `blend_mode` は引き継ぐ。
+- `frame_builder.layer_homography`(`layer_params` / `blend_layer_params`): `pos` の X/Y(0方向へ整数画素に切り捨て)と `center` だけで合成する。`scale/rotate/alpha/pos.z` は無視する。
 - `OffscreenSource`(`width/height/pos/center_x/center_y/scale/rotate/alpha`): 焼き込み直前の形。`offscreen` が偽のときは `None`。
 - `Overlay.tsx`: 枠とハンドルを `offscreenSource` の形で描く。焼き込み後に置いた `座標` の X/Y は枠に反映されない。
 - 二重に焼き込まないよう、`オフスクリーン描画` は `offscreen` が立っていれば何もしない。

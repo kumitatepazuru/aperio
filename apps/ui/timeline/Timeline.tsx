@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { useShallow } from "zustand/shallow";
+import { DEFAULT_BLEND_MODE_ID } from "@aperio/shared";
 import useStore, { getCurrentFrameCount } from "@aperio/ui/store";
 import {
   useCallback,
@@ -243,6 +244,7 @@ const Timeline = () => {
               scale: 100.0,
               rotation: 0.0,
               alpha: 100.0,
+              blendMode: DEFAULT_BLEND_MODE_ID,
             };
             setTimelineItems([...timelineItems, newItem]);
           } else {

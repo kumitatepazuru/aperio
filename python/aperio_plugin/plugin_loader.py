@@ -6,7 +6,9 @@ from importlib.metadata import EntryPoint, entry_points
 from types import MappingProxyType
 
 from aperio import logger
+from aperio.gpu_util import PyCompiledShader
 
+from .blend_mode import BlendModeRegistry
 from .component_registry import ComponentRegistry
 from .generator_registry import GeneratorRegistry
 from .plugin_base import GeneratorBase, MainPluginBase
@@ -24,12 +26,16 @@ UI は plugin://{name}/ の host として参照し、host は小文字に正規
 class PluginLoader:
     """
     uv でインストールされたプラグインパッケージを entry point から発見し、メインプラグインをインスタンス化する。
-    メインプラグインは初期化中に add_generator() でジェネレーターを、add_component() でコンポーネントを登録する。
+    メインプラグインは初期化中に add_generator() でジェネレーターを、add_component() でコンポーネントを、
+    add_blend_mode() でブレンドモードを登録する。
     """
 
-    def __init__(self, registry: GeneratorRegistry, components: ComponentRegistry) -> None:
+    def __init__(
+        self, registry: GeneratorRegistry, components: ComponentRegistry, blend_modes: BlendModeRegistry
+    ) -> None:
         self._registry = registry
         self._components = components
+        self._blend_modes = blend_modes
         self._plugins: dict[str, MainPluginBase] = {}
         # 読み込み中だけ値を持つ。_loading はインスタンス化中のメインプラグインの名前(= entry point 名)
         self._loading: str | None = None
@@ -60,7 +66,7 @@ class PluginLoader:
 
     def add_generator(self, generator: GeneratorBase) -> None:
         """
-        インスタンス化中のメインプラグインにジェネレーターを登録する。
+        ジェネレーターを登録する。
 
         Raises:
             RuntimeError: メインプラグインの初期化中以外に呼ばれた場合
@@ -71,6 +77,21 @@ class PluginLoader:
         self._registry.add(self._loading, generator)
         if self._progress is not None:
             self._progress.generator_added(generator)
+
+    def add_blend_mode(self, id: str, display_name: str, shader: PyCompiledShader) -> bool:
+        """
+        ブレンドモードを登録する。id が重複している場合などはエラーをログに出してスキップする(例外は投げない)。
+
+        Returns:
+            登録できたら True
+
+        Raises:
+            RuntimeError: メインプラグインの初期化中以外に呼ばれた場合
+        """
+        if self._loading is None:
+            raise RuntimeError("add_blend_mode() can only be called while a main plugin is being initialized")
+
+        return self._blend_modes.add(self._loading, id, display_name, shader)
 
     def _import_entry_points(self, eps: list[EntryPoint]) -> dict[str, type[MainPluginBase]]:
         assert self._progress is not None
@@ -138,12 +159,16 @@ class PluginLoader:
             component_owners: name のほかに、コンポーネントの pluginId として使われたかもしれない名前 (plugin.name)
         """
         self._registry.remove_owned_by(name)
+        self._blend_modes.remove_owned_by(name)
         for owner in {name, *component_owners}:
             self._components.remove_owned_by(owner)
 
     def _log_summary(self, elapsed: float) -> None:
         counts = ", ".join(f"{self._registry.count(kind)} {kind.display_name}" for kind in GeneratorKind)
-        logger.info(f"Total plugins loaded: {len(self._plugins)}, including {counts} generators.")
+        logger.info(
+            f"Total plugins loaded: {len(self._plugins)}, including {counts} generators "
+            f"and {len(self._blend_modes)} blend modes."
+        )
         logger.info(f"it takes {elapsed:.2f} seconds.")
 
         logger.info("Loaded Plugins ---")

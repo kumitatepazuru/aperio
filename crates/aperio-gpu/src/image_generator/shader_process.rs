@@ -11,18 +11,22 @@ use crate::{
 };
 
 /// CPU側の`Vec<f32>`(RGBA32Float相当)をGPUテクスチャへアップロードする。
-fn upload_cpu_data_as_texture(
+pub(crate) fn upload_cpu_data_as_texture(
     generator: &ImageGenerator,
     data: &[f32],
     width: u32,
     height: u32,
     label: &str,
 ) -> Result<rhi::Texture> {
+    // TRANSFER_SRC: ラスターステップが1枚目の入力を出力の下地としてコピーするため
     let texture = generator.get_or_create_texture(
         width,
         height,
         ImagePixelFormat::Rgba32Float,
-        TextureUsage::SAMPLED | TextureUsage::STORAGE | TextureUsage::TRANSFER_DST,
+        TextureUsage::SAMPLED
+            | TextureUsage::STORAGE
+            | TextureUsage::TRANSFER_SRC
+            | TextureUsage::TRANSFER_DST,
         label,
     )?;
 

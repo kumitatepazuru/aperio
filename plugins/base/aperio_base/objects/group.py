@@ -292,6 +292,7 @@ def _inherit_effects(item: ItemStructure.Video, chain: list[ItemStructure.Video]
         alpha=item.alpha,
         object=_rebuild(item.object),
         effects=effects,
+        blend_mode=item.blend_mode,
     )
 
 
@@ -311,6 +312,7 @@ def _with_position(item: ItemStructure.Video, x: float, y: float) -> ItemStructu
         alpha=item.alpha,
         object=_rebuild(item.object),
         effects=[_rebuild(e) for e in item.effects],
+        blend_mode=item.blend_mode,
     )
 
 

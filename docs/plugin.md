@@ -29,3 +29,23 @@ clamp/round等の計算は、通常より上レイヤーのUIレベルで行う�
 | 5 | バッファ確保サイズ・カーネル半径・配列添字・キャンバス拡張量に効く値の下限/上限clamp、ゼロ除算防止のclamp | **維持** | 上流保証が無い以上、このレイヤーがクラッシュ/破綻を防ぐために必要 |
 | 6 | 最終アルファ `clamp(out_alpha,0,1)`、被覆率 `min(1.0, occupancy)`、色相の `mod 360` wraparound、負輝度の彩度落とし(`luma_undershoot`) | **維持** | 原作再現ではなく、アルゴリズム自体の不変条件(値域維持・折返し)。無いと合成が破綻する |
 | 7 | 実際の数式(ボックスぼかしの除数 `2r+1`、コントラスト伸張カーブ、exp/log トーンカーブ、BT.601行列) | **維持** | 冗長な往復ではなく、そもそもの計算式 |
+
+## ブレンドモード
+
+アイテムのテクスチャを編集中のフレームへ合成する方法(ブレンドモード)は、メインプラグインの `__init__` から登録する。
+
+```python
+aperio_plugin.plugin_manager.add_blend_mode("multiply", "乗算", shader)
+```
+
+- id はアイテムの `blend_mode`(必須)に保存される。既に登録されている id はエラーをログに出してスキップされる。
+- アイテムの `blend_mode` が未登録の id なら、マネージャー組み込みの通常合成で描かれる(新しいアイテムの既定値は `normal`)。
+- 登録済みの一覧は `plugin_manager.get_blend_mode()`(UI からは `window.main.getBlendMode()`)で `{id: 表示名}` として取得できる。
+
+シェーダーはラスター(render pass)で実行し、レイヤー矩形が覆う画素だけを処理する。
+
+- `blend_vertex(vertex_id)`: レイヤー矩形を移動・拡大・回転・透視投影して画面へ置く頂点シェーダー本体
+- `blend_fetch(v, f)`: この画素のフレームの色(`f.dst`)・レイヤーの色(`f.src`)・不透明度(`f.alpha`)を読む。レイヤーの外なら false
+- `blend_composite(f, blend_rgb)`: `blend_rgb` を src とみなした通常合成(全モード共通の末尾)
+
+モードごとに書くのは `blend_rgb` の求め方だけでよい(テンプレートは `aperio_blend.slang` の冒頭)。

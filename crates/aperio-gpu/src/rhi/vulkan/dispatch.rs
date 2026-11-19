@@ -71,7 +71,7 @@ fn to_vk_filter(mode: FilterMode) -> vk::Filter {
     }
 }
 
-const COLOR_SUBRESOURCE: vk::ImageSubresourceLayers = vk::ImageSubresourceLayers {
+pub(super) const COLOR_SUBRESOURCE: vk::ImageSubresourceLayers = vk::ImageSubresourceLayers {
     aspect_mask: vk::ImageAspectFlags::COLOR,
     mip_level: 0,
     base_array_layer: 0,

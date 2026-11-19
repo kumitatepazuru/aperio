@@ -4,6 +4,7 @@ pub mod final_process;
 pub mod layout;
 pub(crate) mod linked_memo;
 pub mod parallel_process;
+pub mod raster_process;
 pub mod shader_process;
 pub mod texture_func_process;
 
@@ -15,19 +16,20 @@ use crate::texture_to_native::linux::{attach_texture_to_shared_texture, SharedTe
 use crate::texture_to_native::windows::{attach_texture_to_shared_texture, SharedTextureHandle};
 
 use crate::{
-    compiled_shader::compile_slang_to_spirv,
+    compiled_shader::{compile_slang_to_spirv, ShaderKind},
     image_generate_builder::{ImageGenerateBuilder, PipelineStep},
     image_generator::{
         cpu_func_process::handle_cpu_func_step,
         final_process::handle_final_process,
-        layout::{InputArity, OutputKind, ShaderShape},
+        layout::{InputArity, OutputKind, RasterShape, ShaderShape},
         parallel_process::handle_parallel_step,
+        raster_process::handle_raster_step,
         shader_process::handle_shader_step,
         texture_func_process::handle_texture_func_step,
     },
     image_pixel_format::ImagePixelFormat,
     resource_pool::{LruCache, ResourcePool},
-    rhi::{self, BufferUsage, TextureFormat, TextureUsage},
+    rhi::{self, BufferUsage, GraphicsPipelineDesc, TextureFormat, TextureUsage},
 };
 use anyhow::{bail, Context, Result};
 use std::sync::{Arc, Mutex};
@@ -87,6 +89,9 @@ pub struct ImageGenerator {
     // パイプラインキャッシュ（LRU、共有読み取り専用）
     pipeline_cache: Arc<Mutex<LruCache<String, rhi::ComputePipeline>>>,
 
+    // ラスターシェーダー用のパイプラインキャッシュ（LRU、共有読み取り専用）
+    raster_pipeline_cache: Arc<Mutex<LruCache<String, rhi::GraphicsPipeline>>>,
+
     // テクスチャリソースプール
     // 同一キーに対して複数インスタンスを管理し、並列パイプラインでの競合を防ぐ
     texture_pool: Arc<Mutex<ResourcePool<TextureCacheKey, rhi::Texture>>>,
@@ -138,6 +143,7 @@ impl ImageGenerator {
 
             // パイプラインキャッシュの初期化
             pipeline_cache: Arc::new(Mutex::new(LruCache::new(100))),
+            raster_pipeline_cache: Arc::new(Mutex::new(LruCache::new(100))),
 
             // テクスチャリソースプールの初期化（キーごとに最大10インスタンスを保持）
             texture_pool: Arc::new(Mutex::new(ResourcePool::new(10))),
@@ -157,6 +163,7 @@ impl ImageGenerator {
     /// パイプラインキャッシュの最大サイズを設定します。
     pub fn set_max_cache_size(&mut self, size: usize) {
         self.pipeline_cache.lock().unwrap().set_max_size(size);
+        self.raster_pipeline_cache.lock().unwrap().set_max_size(size);
     }
 
     /// テクスチャを取得または作成するためのヘルパーメソッド。
@@ -217,15 +224,27 @@ impl ImageGenerator {
                     output_width,
                     output_height,
                     ..
-                } => handle_shader_step(
-                    self,
-                    &state,
-                    slang,
-                    params,
-                    i,
-                    *output_width,
-                    *output_height,
-                )?,
+                } => match &slang.kind {
+                    ShaderKind::Compute => handle_shader_step(
+                        self,
+                        &state,
+                        slang,
+                        params,
+                        i,
+                        *output_width,
+                        *output_height,
+                    )?,
+                    ShaderKind::Raster { vertex_count, .. } => handle_raster_step(
+                        self,
+                        &state,
+                        slang,
+                        *vertex_count,
+                        params,
+                        i,
+                        *output_width,
+                        *output_height,
+                    )?,
+                },
                 PipelineStep::Parallel { pipelines, .. } => {
                     handle_parallel_step(self, &mut state, pipelines, i, memo).await?
                 }
@@ -363,6 +382,62 @@ impl ImageGenerator {
         let pipeline =
             self.device
                 .create_compute_pipeline(&shader.spirv, &shader.entry_point, &layout)?;
+
+        cache.insert(cache_key, pipeline.clone());
+        Ok(pipeline)
+    }
+
+    /// ラスターシェーダー(`ShaderKind::Raster`)から(キャッシュがあればそれを使って)
+    /// グラフィックスパイプラインを得る。カラーターゲットのフォーマットはシェーダーの出力フォーマット。
+    pub(crate) fn get_or_create_raster_pipeline(
+        &self,
+        shader: &crate::compiled_shader::CompiledShader,
+        input_count: u32,
+        has_params: bool,
+    ) -> Result<rhi::GraphicsPipeline> {
+        let ShaderKind::Raster {
+            vertex_spirv,
+            vertex_entry,
+            ..
+        } = &shader.kind
+        else {
+            bail!("Shader '{}' is not a raster shader", shader.name);
+        };
+
+        let layout = RasterShape {
+            input_count,
+            has_sampler: shader.sampler.is_some(),
+            has_params,
+        }
+        .layout();
+        let cache_key = format!("{}#{:?}", shader.name, shader.output_format);
+
+        let mut cache = self.raster_pipeline_cache.lock().unwrap();
+        if let Some(cached) = cache.get(&cache_key) {
+            if *cached.layout() != layout {
+                bail!(
+                    "Raster shader '{}' was first used with a different resource shape \
+                     than this call ({} input texture(s), has_params={}). A compiled \
+                     shader's resource shape must stay consistent across all uses.",
+                    shader.name,
+                    input_count,
+                    has_params
+                );
+            }
+            return Ok(cached);
+        }
+
+        let pipeline = self.device.create_graphics_pipeline(&GraphicsPipelineDesc {
+            vertex_spirv,
+            vertex_entry,
+            fragment_spirv: &shader.spirv,
+            fragment_entry: &shader.entry_point,
+            layout,
+            vertex_buffers: vec![],
+            color_format: shader.output_format.into(),
+            // 合成はフラグメントシェーダー側で行う(下地は描画前にコピー済み)
+            blend: None,
+        })?;
 
         cache.insert(cache_key, pipeline.clone());
         Ok(pipeline)

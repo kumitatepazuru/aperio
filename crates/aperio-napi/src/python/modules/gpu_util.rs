@@ -280,6 +280,75 @@ impl PyCompiledShader {
         })
     }
 
+    /// `source`に書かれた頂点・フラグメントのエントリポイントをラスター(render pass)で実行するシェーダーを作る。
+    ///
+    /// add_shaderで追加すると、出力テクスチャは1枚目の入力の内容で初期化され(入力が無ければ透明)、
+    /// その上にvertex_count頂点分の三角形リストが描画される。
+    /// リソースは入力テクスチャ=set 0(固定長、binding i = i枚目)、サンプラー・params=set 1
+    /// (サンプラー → paramsの順に詰めて番号を振る)に束縛すること。
+    /// `name`・`min_output_format`の意味は`from_slang`と同じ。
+    #[staticmethod]
+    #[pyo3(signature = (name, source, generator, search_paths=None, defines=None, min_output_format=None, sampler_options=None, vertex_entry="vs_main", fragment_entry="fs_main", vertex_count=6))]
+    pub fn from_slang_raster(
+        name: &str,
+        source: &str,
+        generator: &PyImageGenerator,
+        search_paths: Option<Vec<String>>,
+        defines: Option<HashMap<String, String>>,
+        min_output_format: Option<WrappedImagePixelFormat>,
+        sampler_options: Option<&PySamplerOptions>,
+        vertex_entry: &str,
+        fragment_entry: &str,
+        vertex_count: u32,
+    ) -> PyResult<Self> {
+        let floor = min_output_format
+            .map(|f| f.to_native())
+            .unwrap_or(aperio_gpu::ImagePixelFormat::Rgba8Unorm);
+        let output_format = generator.inner.image_format().max(floor);
+
+        let search_paths = search_paths.unwrap_or_default();
+        let search_paths: Vec<&str> = search_paths.iter().map(String::as_str).collect();
+        let defines = defines.unwrap_or_default();
+        let defines: Vec<(&str, &str)> = defines
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let inner = CompiledShader::from_slang_raster(
+            name,
+            source,
+            vertex_entry,
+            fragment_entry,
+            vertex_count,
+            &generator.inner,
+            output_format,
+            &search_paths,
+            &defines,
+            sampler_options.map(|s| &s.inner),
+        )?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    /// パイプラインキャッシュのキーにもなる名前
+    #[getter]
+    pub fn name(&self) -> String {
+        self.inner.name.clone()
+    }
+
+    /// ラスター(render pass)で実行するシェーダーか (`from_slang_raster`で作ったもの)
+    #[getter]
+    pub fn is_raster(&self) -> bool {
+        self.inner.is_raster()
+    }
+
+    /// サンプラーを持つか (`sampler_options`を指定して作ったもの)
+    #[getter]
+    pub fn has_sampler(&self) -> bool {
+        self.inner.sampler.is_some()
+    }
+
     /// HLSLのコンピュートシェーダー`source`を、エントリポイント`entry_point`(既定は`main`)で
     /// DXC経由でSPIR-Vへコンパイルする。引数の意味は`from_slang`と同じ
     /// (`include_dirs`は`#include`の検索パス、`search_paths`に相当)。

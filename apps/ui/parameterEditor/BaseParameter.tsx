@@ -1,10 +1,12 @@
 import type { ConfigableValue, Vec2Value } from "@/configable/utils";
 import Configable from "@/configable/Configable";
+import { DEFAULT_BLEND_MODE_ID } from "@aperio/shared";
 import useStore, { getStoreState } from "@aperio/ui/store";
 import type { RequestStructureParameter } from "native";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // TODO: ID重複の時にエラーを出す
+// TODO: プラグイン側で書き換えられるようにする
 const videoBaseParameterStructure: RequestStructureParameter[] = [
   {
     type: "Vec2Int",
@@ -59,11 +61,45 @@ const audioBaseParameterStructure: RequestStructureParameter[] = [
   },
 ];
 
+/** 合成モードのプルダウン。 */
+const blendModeParameter = (
+  blendModes: Record<string, string>,
+  current: string,
+): RequestStructureParameter => ({
+  type: "List",
+  id: "blendMode",
+  title: "合成モード",
+  // 登録が外れた id を保存しているアイテムでも、選択中の値がそのまま見えるようにする
+  values:
+    current in blendModes
+      ? blendModes
+      : { ...blendModes, [current]: `${current} (不明)` },
+  defaultValue: DEFAULT_BLEND_MODE_ID,
+});
+
 const BaseParameter = () => {
   const selectedItemId = useStore((state) => state.mainSelectedItemId);
   const setTimelineItems = useStore((state) => state.setTimelineItems);
   const selectedItem = useStore((state) =>
     state.timelineItems.find((item) => item.id === state.mainSelectedItemId),
+  );
+  const [blendModes, setBlendModes] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    window.main.getBlendMode().then(setBlendModes);
+  }, []);
+
+  const videoBlendMode =
+    selectedItem?.type === "Video"
+      ? selectedItem.blendMode
+      : DEFAULT_BLEND_MODE_ID;
+
+  const videoStructure = useMemo(
+    () => [
+      ...videoBaseParameterStructure,
+      blendModeParameter(blendModes, videoBlendMode),
+    ],
+    [blendModes, videoBlendMode],
   );
 
   const baseParams = useMemo<Record<string, ConfigableValue> | null>(() => {
@@ -74,6 +110,7 @@ const BaseParameter = () => {
         scale: selectedItem.scale,
         rotation: selectedItem.rotation,
         alpha: selectedItem.alpha,
+        blendMode: selectedItem.blendMode,
       };
       return r;
     } else {
@@ -114,7 +151,7 @@ const BaseParameter = () => {
     <Configable
       structures={
         selectedItem?.type === "Video"
-          ? videoBaseParameterStructure
+          ? videoStructure
           : audioBaseParameterStructure
       }
       value={baseParams ?? {}}
