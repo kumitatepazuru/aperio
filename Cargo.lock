@@ -160,6 +160,7 @@ dependencies = [
  "cpal",
  "env_logger",
  "half",
+ "indexmap",
  "libc",
  "log",
  "napi",
@@ -1094,6 +1095,7 @@ dependencies = [
  "anyhow",
  "bitflags",
  "ctor",
+ "indexmap",
  "napi-build",
  "napi-sys",
  "nohash-hasher",
@@ -1498,6 +1500,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91fd8e38a3b50ed1167fb981cd6fd60147e091784c427b8f7183a7ee32c31c12"
 dependencies = [
  "anyhow",
+ "indexmap",
  "libc",
  "once_cell",
  "portable-atomic",

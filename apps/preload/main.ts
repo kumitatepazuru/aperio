@@ -125,6 +125,8 @@ contextBridge.exposeInMainWorld("main", {
   getPluginNames: () => ipcRenderer.invoke(IpcChannel.getPluginNames),
   getFontsList: (): Promise<Record<string, number[]>> =>
     ipcRenderer.invoke(IpcChannel.getFontsList),
+  getBlendMode: (): Promise<Record<string, string>> =>
+    ipcRenderer.invoke(IpcChannel.getBlendMode),
   showOpenDialog: (options: OpenDialogOptions): Promise<string[] | undefined> =>
     ipcRenderer.invoke(IpcChannel.showOpenDialog, options),
 });

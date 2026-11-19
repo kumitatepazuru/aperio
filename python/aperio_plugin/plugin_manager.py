@@ -5,6 +5,12 @@ from aperio import gpu_util
 from aperio.item_structures import GeneratorEvent, GeneratorInformation, ItemResult, ItemStructure, PluginNameInfo
 
 from .audio_renderer import AudioRenderer
+from .blend_mode import (
+    BLEND_SHADER_DIR,
+    DEFAULT_BLEND_MODE_ID,
+    FALLBACK_BLEND_MODE_DISPLAY_NAME,
+    BlendModeRegistry,
+)
 from .component_registry import ComponentRegistry
 from .context import AperioContext
 from .event_manager import EventDispatcher
@@ -25,9 +31,10 @@ class PluginManager:
         self.context = context
         self.generators = GeneratorRegistry()
         self.components = ComponentRegistry(context.store_manager)
-        self._loader = PluginLoader(self.generators, self.components)
+        self.blend_modes = BlendModeRegistry()
+        self._loader = PluginLoader(self.generators, self.components, self.blend_modes)
         self._events = EventDispatcher(self.generators)
-        self._video = VideoRenderer(context, self.generators, self._events)
+        self._video = VideoRenderer(context, self.generators, self.blend_modes, self._events)
         self._audio = AudioRenderer(context, self.generators)
 
     # --- プラグイン管理 ---
@@ -66,6 +73,40 @@ class PluginManager:
             TypeError: plugin がメインプラグイン(MainPluginBase)ではない場合
         """
         self.components.add(plugin, dir, type)
+
+    # --- ブレンドモード ---
+
+    blend_shader_dir: str = BLEND_SHADER_DIR
+    """ブレンドモード用ヘルパー(aperio_blend.slang)があるディレクトリ"""
+
+    def add_blend_mode(self, id: str, display_name: str, shader: gpu_util.PyCompiledShader) -> bool:
+        """
+        ブレンドモードを id をキーとして登録する。
+
+        Args:
+            id: ブレンドモードの id。アイテムの blend_mode に保存される
+            display_name: UI のプルダウンに表示する名前
+            shader: シェーダー
+
+        Returns:
+            登録できたら True
+
+        Raises:
+            RuntimeError: メインプラグインの初期化中以外に呼ばれた場合
+        """
+        return self._loader.add_blend_mode(id, display_name, shader)
+
+    def get_blend_mode(self) -> dict[str, str]:
+        """
+        登録されているブレンドモードの id と表示名の対応表を、登録順で返す。
+
+        Returns:
+            dict[str, str]: {id: display_name}
+        """
+        names = self.blend_modes.display_names()
+        if DEFAULT_BLEND_MODE_ID not in names:
+            names = {DEFAULT_BLEND_MODE_ID: FALLBACK_BLEND_MODE_DISPLAY_NAME, **names}
+        return names
 
     def get_plugin_names(self) -> PluginNameInfo:
         """

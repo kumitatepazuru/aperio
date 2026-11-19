@@ -10,8 +10,9 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
-napi = { workspace = true }
+napi = { workspace = true, features = ["object_indexmap"] }
 napi-derive = { workspace = true }
+indexmap = "2"
 aperio-macros = { path = "../aperio-macros" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,7 +25,7 @@ aperio-media = { path = "../aperio-media" }
 numpy = { version = "0.28.0", features = ["half"] }
 half = "2"
 tokio = { workspace = true, features = ["macros", "sync"] }
-pyo3 = { workspace = true, features = ["experimental-inspect", "anyhow"]}
+pyo3 = { workspace = true, features = ["experimental-inspect", "anyhow", "indexmap"]}
 anyhow = { workspace = true }
 env_logger = "0.11.8"
 log = { workspace = true }

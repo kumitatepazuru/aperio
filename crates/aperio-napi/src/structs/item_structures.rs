@@ -41,9 +41,13 @@ pub struct ItemResult {
     pub offscreen: bool,
     // 焼き込み直前のオブジェクトの形。offscreenではないときはNone。
     pub offscreen_source: Option<OffscreenSource>,
-    // フレームへ合成するときのブレンドモードのid(add_blend_modeで登録したもの)。Noneなら既定(通常)。
-    pub blend_mode: Option<String>,
+    // フレームへ合成するときのブレンドモードのid(add_blend_modeで登録したもの)。
+    // 未登録のidなら組み込みの通常合成で描かれる。
+    pub blend_mode: String,
 }
+
+/// ブレンドモードの既定のid(python/aperio_plugin/blend_mode.py・packages/shared と揃える)。
+pub const DEFAULT_BLEND_MODE_ID: &str = "normal";
 
 /// オフスクリーン描画で焼き込まれる直前の、オブジェクトの幅・高さと累積変形(絶対値)。
 #[napi(object)]
@@ -92,7 +96,7 @@ impl ItemResult {
             additional_items: Vec::new(),
             offscreen: false,
             offscreen_source: None,
-            blend_mode: None,
+            blend_mode: DEFAULT_BLEND_MODE_ID.to_string(),
         }
     }
 
@@ -166,7 +170,7 @@ impl ItemResult {
 #[pymethods]
 impl ItemResult {
     #[new]
-    #[pyo3(signature = (width, height, pos=None, center_x=None, center_y=None, scale=None, rotate=None, alpha=None, additional_items=None, offscreen=false, blend_mode=None))]
+    #[pyo3(signature = (width, height, pos=None, center_x=None, center_y=None, scale=None, rotate=None, alpha=None, additional_items=None, offscreen=false, blend_mode=DEFAULT_BLEND_MODE_ID.to_string()))]
     fn new(
         width: i32,
         height: i32,
@@ -178,7 +182,7 @@ impl ItemResult {
         alpha: Option<f64>,
         additional_items: Option<Vec<AdditionalItem>>,
         offscreen: bool,
-        blend_mode: Option<String>,
+        blend_mode: String,
     ) -> Self {
         let mut r = Self::identity(width, height);
         if let Some(v) = pos {
@@ -442,7 +446,7 @@ impl GenerateStructure {
 #[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ItemStructure {
-    #[pyo3(constructor = (id, layer, start, end, x, y, scale, rotation, alpha, object, effects, min=None, max=None, blend_mode=None))]
+    #[pyo3(constructor = (id, layer, start, end, x, y, scale, rotation, alpha, blend_mode, object, effects, min=None, max=None))]
     Video {
         id: String,
         layer: i32,
@@ -453,12 +457,12 @@ pub enum ItemStructure {
         scale: f64,
         rotation: f64,
         alpha: f64,
+        // フレームへ合成するときのブレンドモードのid（未登録のidなら組み込みの通常合成）
+        blend_mode: String,
         object: GenerateStructure,
         effects: Vec<GenerateStructure>,
         min: Option<i32>, // アイテムの有効な最小フレーム（省略可能）
         max: Option<i32>, // アイテムの有効な最大フレーム（省略可能）
-        // フレームへ合成するときのブレンドモードのid（省略時は既定のブレンドモード）
-        blend_mode: Option<String>,
     },
     #[pyo3(constructor = (id, layer, start, end, volume, pan, object, effects, min=None, max=None))]
     Audio {

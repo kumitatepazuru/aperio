@@ -323,6 +323,8 @@ class ShadowEffect(VideoEffectGeneratorBase):
             alpha=owner.alpha,
             object=object_stub,
             effects=[*effect_stubs, tail_effect],
+            # 影もownerと同じブレンドモードでフレームへ合成する
+            blend_mode=owner.blend_mode,
         )
         additional_item = AdditionalItem(item=shadow_item, behind=True)
 
