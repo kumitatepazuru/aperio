@@ -306,14 +306,24 @@ impl VulkanDevice {
                 &touched,
                 vk::PipelineStageFlags::VERTEX_SHADER | vk::PipelineStageFlags::FRAGMENT_SHADER,
             );
+            let mut target_dst_stage = vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT;
+            let mut target_dst_access =
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::COLOR_ATTACHMENT_READ;
+            if matches!(init, TargetInit::CopyFrom(_)) {
+                // 直後の cmd_copy_image は TRANSFER ステージでターゲットに書き込む。レイアウト遷移
+                // (新規プールテクスチャの UNDEFINED→GENERAL は内容を破棄しうる) がコピーより前に
+                // 完了するよう、遷移の dst スコープに TRANSFER_WRITE を含める。
+                target_dst_stage |= vk::PipelineStageFlags::TRANSFER;
+                target_dst_access |= vk::AccessFlags::TRANSFER_WRITE;
+            }
             target_texture.transition(
                 self,
                 cb,
                 vk::ImageLayout::GENERAL,
                 vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                target_dst_stage,
                 vk::AccessFlags::empty(),
-                vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::COLOR_ATTACHMENT_READ,
+                target_dst_access,
             );
 
             if let TargetInit::CopyFrom(src) = &init {
