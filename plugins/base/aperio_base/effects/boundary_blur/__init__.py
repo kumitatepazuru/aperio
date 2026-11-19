@@ -10,20 +10,15 @@ from aperio_plugin.plugin_base.generator_base import (
     VideoGenerateParameters,
 )
 
-from ...common.params import clamp, make_generator_information, pack_box_blur_dir_params
+from ...common.params import aspect_shrink_factors, clamp, make_generator_information, pack_box_blur_dir_params
 from ...common.shader_loader import effect_dirs, shared_slang_shader
 
 
 def _axis_radii(radius: int, aspect: int) -> tuple[int, int]:
     """範囲・縦横比 → (rx, ry)。縦横比は片方の軸だけを縮める
     (README: 縦横比>0でry、縦横比<0でrxのみ変化。もう片方はradiusのまま)。"""
-    if aspect >= 0:
-        rx = radius
-        ry = round(radius * (1 - aspect / 100))
-    else:
-        rx = round(radius * (1 + aspect / 100))
-        ry = radius
-    return rx, ry
+    y_shrink, x_shrink = aspect_shrink_factors(aspect)
+    return round(radius * x_shrink), round(radius * y_shrink)
 
 
 class BoundaryBlurEffect(VideoEffectGeneratorBase):
